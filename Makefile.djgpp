@@ -1,0 +1,42 @@
+# Makefile.djgpp - build RetroDesk with DJGPP
+# Usage (inside DJGPP/DOS environment or DOSBox with DJGPP tools installed):
+#   edit PDC_DIR to point to your built PDCurses tree
+#   run: make -f Makefile.djgpp
+#
+# Notes:
+# - This Makefile expects DJGPP toolchain (djgpp-gcc) available in PATH.
+# - Build PDCurses for DJGPP first; set PDC_DIR accordingly.
+# - After building, copy the produced exe to a DOSBox-mounted folder and run there.
+
+PDC_DIR = C:\PDCurses    # adjust to your PDCurses build/install path
+CC = djgpp-gcc
+CFLAGS = -O2 -std=gnu11 -D__DJGPP__ -I./src -I$(PDC_DIR)\include -Wall
+LDFLAGS = -s
+PDC_LIB = $(PDC_DIR)\lib\pdcurses.a
+
+SRCS = \
+	src\main.c \
+	src\desktop.c \
+	src\platform\platform.c \
+	src\ui\dialog.c \
+	src\ui\menu.c \
+	src\ui\mouse.c \
+	src\ui\statusbar.c \
+	src\ui\themes.c \
+	src\ui\window.c
+
+OBJS = $(SRCS:.c=.o)
+TARGET = retrodesk.exe
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(PDC_LIB)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+clean:
+	del /Q $(OBJS) $(TARGET) 2>nul || rm -f $(OBJS) $(TARGET)
+
+.PHONY: all clean

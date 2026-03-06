@@ -1,37 +1,54 @@
+CMAKE ?= cmake
+BUILD_DIR ?= build
+CONFIG ?= Release
+STRICT ?= ON
+WERROR ?= ON
 
-CC := gcc
-SRC_DIR := src
-BUILD_DIR := build
+.PHONY: all configure build clean strict dev dos test smoke
 
-# Root where PDCurses is located (can be overridden):
-PDCURSES_ROOT ?= pdcurses
+all: build
 
-# Detect pdcurses headers in the given root; set flags if present
-ifneq (,$(wildcard $(PDCURSES_ROOT)/include/curses.h))
-PDCFLAGS := -I$(PDCURSES_ROOT)/include -DHAVE_PDCURSES
-ifneq (,$(wildcard $(PDCURSES_ROOT)/lib/libpdcurses.*))
-PDLDFLAGS := -L$(PDCURSES_ROOT)/lib -lpdcurses
-else
-PDLDFLAGS :=
-endif
-else
-PDCFLAGS :=
-PDLDFLAGS :=
-endif
+configure:
+	$(CMAKE) -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=$(CONFIG) \
+		-DENABLE_STRICT_WARNINGS=$(STRICT) -DENABLE_WERROR=$(WERROR)
 
-CFLAGS := $(PDCFLAGS) -Wall -O2
-LDFLAGS := $(PDLDFLAGS)
+build: configure
+	$(CMAKE) --build $(BUILD_DIR) --config $(CONFIG)
 
-SOURCES := $(shell find $(SRC_DIR) -name '*.c')
-TARGET := $(BUILD_DIR)/retrodesk
+strict:
+	$(MAKE) build STRICT=ON WERROR=ON
 
-.PHONY: all clean
+dev:
+	$(MAKE) build STRICT=ON WERROR=OFF CONFIG=Debug
 
-all: $(TARGET)
-
-$(TARGET): $(SOURCES)
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+dos:
+	$(MAKE) -f Makefile.djgpp
 
 clean:
-	rm -rf $(BUILD_DIR)
+	$(CMAKE) -E rm -rf $(BUILD_DIR)
+
+test: build
+	ctest --test-dir $(BUILD_DIR) --output-on-failure
+
+smoke: build
+	@set -eu; \
+	out=$$(mktemp); \
+	if command -v script >/dev/null 2>&1 && \
+	   script -q -e -c "./$(BUILD_DIR)/retrodesk --bench-startup" "$$out" >/dev/null 2>&1; then \
+		grep -Eq "backend: (ncurses|pdcurses)" "$$out" || { \
+			echo "smoke: unexpected backend"; \
+			cat "$$out"; \
+			rm -f "$$out"; \
+			exit 1; \
+		}; \
+		grep -q "mouse_enabled:" "$$out"; \
+		grep -q "drag_enabled:" "$$out"; \
+		grep -q "resize_enabled:" "$$out"; \
+		grep -q "linux_tty_keyboard_only:" "$$out"; \
+		echo "smoke: ok (captured)"; \
+	else \
+		echo "smoke: PTY capture unavailable, running direct bench check"; \
+		./$(BUILD_DIR)/retrodesk --bench-startup; \
+		echo "smoke: ok (direct)"; \
+	fi; \
+	rm -f "$$out"

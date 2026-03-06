@@ -1,0 +1,633 @@
+#include "core/desktop.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "app/app_runtime.h"
+#include "apps/apps.h"
+#include "ui/statusbar.h"
+#include "wm/window_manager.h"
+
+typedef struct RunningApp {
+    RetroAppInstance *app;
+    WindowId window_id;
+} RunningApp;
+
+typedef enum LauncherAction {
+    LAUNCHER_ACTION_FILEMANAGER = 0,
+    LAUNCHER_ACTION_NOTEPAD,
+    LAUNCHER_ACTION_TERMINAL,
+    LAUNCHER_ACTION_CLOSE_ACTIVE,
+    LAUNCHER_ACTION_CLOSE_MENU,
+} LauncherAction;
+
+typedef struct LauncherItem {
+    const char *label;
+    LauncherAction action;
+} LauncherItem;
+
+typedef struct LauncherState {
+    bool open;
+    int selected;
+    WindowId window_id;
+} LauncherState;
+
+struct Desktop {
+    PlatformBackend *platform;
+    Renderer *renderer;
+    WindowManager *wm;
+    StatusBar *statusbar;
+    DesktopConfig config;
+    DesktopCapabilities capabilities;
+    DesktopDiagnostics diagnostics;
+    bool running;
+    bool needs_redraw;
+    time_t last_status_tick;
+    WindowId shell_window_id;
+    LauncherState launcher;
+    RunningApp *apps;
+    size_t app_count;
+    size_t app_capacity;
+};
+
+static const LauncherItem k_launcher_items[] = {
+    {"Launch File Manager", LAUNCHER_ACTION_FILEMANAGER},
+    {"Launch Notepad", LAUNCHER_ACTION_NOTEPAD},
+    {"Launch Terminal", LAUNCHER_ACTION_TERMINAL},
+    {"Close Active Window", LAUNCHER_ACTION_CLOSE_ACTIVE},
+    {"Close Launcher", LAUNCHER_ACTION_CLOSE_MENU},
+};
+
+static bool desktop_add_app(Desktop *desktop, RetroAppInstance *app, WindowId window_id) {
+    if (!desktop || !app) return false;
+    if (desktop->app_count == desktop->app_capacity) {
+        size_t next_cap = desktop->app_capacity ? desktop->app_capacity * 2 : 8;
+        RunningApp *next = realloc(desktop->apps, next_cap * sizeof(*next));
+        if (!next) return false;
+        desktop->apps = next;
+        desktop->app_capacity = next_cap;
+    }
+    desktop->apps[desktop->app_count].app = app;
+    desktop->apps[desktop->app_count].window_id = window_id;
+    desktop->app_count++;
+    return true;
+}
+
+static void desktop_remove_app_at(Desktop *desktop, size_t index) {
+    if (!desktop || index >= desktop->app_count) return;
+    app_destroy(desktop->apps[index].app);
+    for (size_t i = index + 1; i < desktop->app_count; ++i) {
+        desktop->apps[i - 1] = desktop->apps[i];
+    }
+    desktop->app_count--;
+}
+
+static void app_window_draw(RetroWindow *window, RenderContext *ctx, void *user_data) {
+    (void)window;
+    RetroAppInstance *app = (RetroAppInstance *)user_data;
+    app_render(app, ctx);
+}
+
+static void app_window_event(RetroWindow *window, const RetroEvent *event, void *user_data) {
+    RetroAppInstance *app = (RetroAppInstance *)user_data;
+    app_handle_event(app, event);
+    if (app_is_close_requested(app)) {
+        retro_window_request_close(window);
+    }
+}
+
+static void desktop_launcher_close(Desktop *desktop) {
+    if (!desktop || !desktop->launcher.open) return;
+    if (desktop->launcher.window_id > 0 &&
+        wm_window_exists(desktop->wm, desktop->launcher.window_id)) {
+        wm_close_window(desktop->wm, desktop->launcher.window_id);
+    }
+    desktop->launcher.open = false;
+    desktop->launcher.window_id = -1;
+}
+
+static void desktop_launcher_execute(Desktop *desktop, LauncherAction action) {
+    if (!desktop) return;
+    switch (action) {
+    case LAUNCHER_ACTION_FILEMANAGER:
+        app_launch(desktop, "filemanager");
+        break;
+    case LAUNCHER_ACTION_NOTEPAD:
+        app_launch(desktop, "notepad");
+        break;
+    case LAUNCHER_ACTION_TERMINAL:
+        app_launch(desktop, "terminal");
+        break;
+    case LAUNCHER_ACTION_CLOSE_ACTIVE: {
+        WindowId active = wm_active_window(desktop->wm);
+        if (active > 0 && active != desktop->shell_window_id &&
+            active != desktop->launcher.window_id) {
+            wm_close_window(desktop->wm, active);
+        }
+        break;
+    }
+    case LAUNCHER_ACTION_CLOSE_MENU:
+    default:
+        break;
+    }
+    desktop_launcher_close(desktop);
+    desktop_request_redraw(desktop);
+}
+
+static void launcher_draw(RetroWindow *window, RenderContext *ctx, void *user_data) {
+    (void)window;
+    Desktop *desktop = (Desktop *)user_data;
+    if (!desktop) return;
+
+    RenderStyle text = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
+    RenderStyle selected = {RENDER_COLOR_BLACK, RENDER_COLOR_CYAN, false, true};
+
+    render_draw_text(ctx, 1, 2, "Launcher (non-blocking)", &text);
+    render_draw_text(ctx, 2, 2, "w/s or j/k to move, Enter to execute, Esc to close", &text);
+
+    size_t count = sizeof(k_launcher_items) / sizeof(k_launcher_items[0]);
+    for (size_t i = 0; i < count; ++i) {
+        const RenderStyle *row = ((int)i == desktop->launcher.selected) ? &selected : &text;
+        render_draw_text(ctx, 4 + (int)i, 3, k_launcher_items[i].label, row);
+    }
+}
+
+static void launcher_event(RetroWindow *window, const RetroEvent *event, void *user_data) {
+    Desktop *desktop = (Desktop *)user_data;
+    if (!desktop || !event || event->type != RETRO_EVENT_KEY) return;
+
+    int key = event->data.key.key_code;
+    char ch = event->data.key.ascii;
+    size_t count = sizeof(k_launcher_items) / sizeof(k_launcher_items[0]);
+    if (count == 0) return;
+
+    if (key == 27 || ch == 'q') {
+        retro_window_request_close(window);
+        desktop->launcher.open = false;
+        desktop->launcher.window_id = -1;
+        return;
+    }
+
+    if (ch == 'w' || ch == 'k' || ch == 'W' || ch == 'K') {
+        desktop->launcher.selected--;
+        if (desktop->launcher.selected < 0) desktop->launcher.selected = (int)count - 1;
+        return;
+    }
+
+    if (ch == 's' || ch == 'j' || ch == 'S' || ch == 'J') {
+        desktop->launcher.selected = (desktop->launcher.selected + 1) % (int)count;
+        return;
+    }
+
+    if (key == '\n' || key == '\r' || ch == ' ') {
+        LauncherAction action = k_launcher_items[desktop->launcher.selected].action;
+        desktop_launcher_execute(desktop, action);
+    }
+}
+
+static void desktop_launcher_open(Desktop *desktop) {
+    if (!desktop || desktop->launcher.open) return;
+
+    int rows = 0;
+    int cols = 0;
+    renderer_get_screen_size(desktop->renderer, &rows, &cols);
+
+    int h = 12;
+    int w = 52;
+    if (h > rows - 1) h = rows - 1;
+    if (w > cols) w = cols;
+    if (h < 6 || w < 20) return;
+
+    RetroWindowSpec spec = {
+        .height = h,
+        .width = w,
+        .y = (rows - h) / 2,
+        .x = (cols - w) / 2,
+        .title = "Launcher",
+        .flags = WINDOW_FLAG_MODAL | WINDOW_FLAG_POPUP | WINDOW_FLAG_FIXED,
+        .draw_cb = launcher_draw,
+        .event_cb = launcher_event,
+        .user_data = desktop,
+    };
+
+    WindowId wid = wm_create_window(desktop->wm, &spec);
+    if (wid <= 0) return;
+
+    desktop->launcher.open = true;
+    desktop->launcher.selected = 0;
+    desktop->launcher.window_id = wid;
+    wm_focus_window(desktop->wm, wid);
+    wm_bring_to_front(desktop->wm, wid);
+    desktop_request_redraw(desktop);
+}
+
+static void shell_draw(RetroWindow *window, RenderContext *ctx, void *user_data) {
+    Desktop *desktop = (Desktop *)user_data;
+    RenderStyle text = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
+    RenderStyle accent = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, true};
+    char line[128];
+    int y = 0, x = 0, h = 0, w = 0;
+
+    retro_window_get_geometry(window, &y, &x, &h, &w);
+
+    render_draw_text(ctx, 1, 2, "RetroDesk Foundation Runtime", &accent);
+    render_draw_text(ctx, 2, 2,
+                     "Hotkeys: q quit | Tab focus | m launcher | 1/2/3 apps | w close | HJKL move",
+                     &text);
+
+    snprintf(line, sizeof(line), "Window: %dx%d @ %d,%d", w, h, x, y);
+    render_draw_text(ctx, 4, 2, line, &text);
+
+    snprintf(line, sizeof(line), "Backend: %s | mouse=%s drag=%s resize=%s",
+             desktop->diagnostics.backend_name,
+             desktop->diagnostics.mouse_enabled ? "on" : "off",
+             desktop->diagnostics.drag_enabled ? "on" : "off",
+             desktop->diagnostics.resize_enabled ? "on" : "off");
+    render_draw_text(ctx, 5, 2, line, &text);
+
+    snprintf(line, sizeof(line), "linux_tty_keyboard_only=%s",
+             desktop->diagnostics.linux_tty_keyboard_only ? "yes" : "no");
+    render_draw_text(ctx, 6, 2, line, &text);
+
+    if (desktop->diagnostics.drag_degraded) {
+        render_draw_text(ctx, 7, 2, "Drag degraded automatically: use H/J/K/L", &text);
+    }
+}
+
+static void desktop_fill_capabilities(Desktop *desktop,
+                                      const PlatformFeatures *platform_features) {
+    desktop->capabilities.capability_mask = platform_features->capability_mask;
+    desktop->capabilities.keyboard_basic = platform_features->keyboard_basic;
+    desktop->capabilities.mouse_basic = platform_features->mouse_basic;
+    desktop->capabilities.drag_reliable = platform_features->drag_reliable;
+    desktop->capabilities.resize_events = platform_features->resize_events;
+    desktop->capabilities.color = platform_features->color;
+    desktop->capabilities.unicode_basic = platform_features->unicode_basic;
+    desktop->capabilities.double_click = platform_features->double_click;
+    desktop->capabilities.right_click = platform_features->right_click;
+    desktop->capabilities.linux_tty_keyboard_only =
+        platform_features->linux_tty_keyboard_only;
+}
+
+static void desktop_fill_diagnostics(Desktop *desktop) {
+    desktop->diagnostics.backend_name = platform_backend_name(desktop->platform);
+    desktop->diagnostics.mouse_enabled = desktop->capabilities.mouse_basic;
+    if (desktop->wm) {
+        desktop->diagnostics.drag_enabled = wm_drag_is_enabled(desktop->wm);
+        desktop->diagnostics.drag_degraded = wm_drag_is_degraded(desktop->wm);
+        desktop->capabilities.drag_reliable = desktop->diagnostics.drag_enabled;
+    } else {
+        desktop->diagnostics.drag_enabled = desktop->capabilities.drag_reliable;
+        desktop->diagnostics.drag_degraded = false;
+    }
+    desktop->diagnostics.resize_enabled = desktop->capabilities.resize_events;
+    desktop->diagnostics.linux_tty_keyboard_only =
+        desktop->capabilities.linux_tty_keyboard_only;
+}
+
+Desktop *desktop_create(const DesktopConfig *config) {
+    if (!config || !config->platform) return NULL;
+
+    Desktop *desktop = calloc(1, sizeof(*desktop));
+    if (!desktop) return NULL;
+
+    desktop->platform = config->platform;
+    desktop->config = *config;
+    if (desktop->config.input_timeout_ms <= 0) desktop->config.input_timeout_ms = 100;
+    desktop->last_status_tick = -1;
+    desktop->launcher.window_id = -1;
+
+    const PlatformFeatures *features = platform_features(desktop->platform);
+    if (!features) {
+        free(desktop);
+        return NULL;
+    }
+    desktop_fill_capabilities(desktop, features);
+    desktop_fill_diagnostics(desktop);
+
+    desktop->renderer = renderer_create(desktop->platform);
+    if (!desktop->renderer) {
+        free(desktop);
+        return NULL;
+    }
+
+    desktop->wm = wm_create(desktop->renderer);
+    if (!desktop->wm) {
+        renderer_destroy(desktop->renderer);
+        free(desktop);
+        return NULL;
+    }
+    wm_set_drag_enabled(desktop->wm, desktop->capabilities.drag_reliable);
+    wm_set_drag_auto_degrade(desktop->wm, desktop->capabilities.linux_tty_keyboard_only);
+    desktop_fill_diagnostics(desktop);
+
+    desktop->statusbar = statusbar_create();
+    if (!desktop->statusbar) {
+        wm_destroy(desktop->wm);
+        renderer_destroy(desktop->renderer);
+        free(desktop);
+        return NULL;
+    }
+
+    RetroWindowSpec shell_spec = {
+        .height = 10,
+        .width = 72,
+        .y = 1,
+        .x = 2,
+        .title = "Desktop",
+        .flags = WINDOW_FLAG_FIXED,
+        .draw_cb = shell_draw,
+        .event_cb = NULL,
+        .user_data = desktop,
+    };
+    desktop->shell_window_id = wm_create_window(desktop->wm, &shell_spec);
+    if (desktop->shell_window_id <= 0) {
+        statusbar_destroy(desktop->statusbar);
+        wm_destroy(desktop->wm);
+        renderer_destroy(desktop->renderer);
+        free(desktop);
+        return NULL;
+    }
+
+    app_registry_reset();
+    apps_register_builtin();
+    app_launch(desktop, "filemanager");
+    app_launch(desktop, "notepad");
+
+    desktop->needs_redraw = true;
+    return desktop;
+}
+
+RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
+    if (!desktop || !app_id) return NULL;
+
+    const RetroAppDescriptor *desc = app_find(app_id);
+    if (!desc) return NULL;
+
+    if ((desc->required_capabilities & desktop->capabilities.capability_mask) !=
+        desc->required_capabilities) {
+        return NULL;
+    }
+
+    RetroAppInstance *instance = calloc(1, sizeof(*instance));
+    if (!instance) return NULL;
+
+    instance->descriptor = desc;
+    instance->ctx.desktop = desktop;
+    instance->ctx.capabilities = &desktop->capabilities;
+
+    RetroWindowSpec spec = {
+        .height = desc->default_height,
+        .width = desc->default_width,
+        .y = desc->default_y,
+        .x = desc->default_x,
+        .title = desc->display_name,
+        .flags = desc->window_flags,
+        .draw_cb = app_window_draw,
+        .event_cb = app_window_event,
+        .user_data = instance,
+    };
+
+    WindowId wid = wm_create_window(desktop->wm, &spec);
+    if (wid <= 0) {
+        free(instance);
+        return NULL;
+    }
+    instance->ctx.window_id = wid;
+
+    if (desc->create && !desc->create(instance, &instance->ctx)) {
+        wm_close_window(desktop->wm, wid);
+        free(instance);
+        return NULL;
+    }
+
+    if (!desktop_add_app(desktop, instance, wid)) {
+        if (desc->destroy) desc->destroy(instance);
+        wm_close_window(desktop->wm, wid);
+        free(instance);
+        return NULL;
+    }
+
+    desktop->needs_redraw = true;
+    return instance;
+}
+
+void desktop_request_redraw(Desktop *desktop) {
+    if (!desktop) return;
+    desktop->needs_redraw = true;
+}
+
+const DesktopCapabilities *desktop_capabilities(const Desktop *desktop) {
+    if (!desktop) return NULL;
+    return &desktop->capabilities;
+}
+
+const DesktopDiagnostics *desktop_diagnostics(const Desktop *desktop) {
+    if (!desktop) return NULL;
+    return &desktop->diagnostics;
+}
+
+static void desktop_cleanup_apps(Desktop *desktop) {
+    if (!desktop) return;
+
+    if (desktop->launcher.open && desktop->launcher.window_id > 0 &&
+        !wm_window_exists(desktop->wm, desktop->launcher.window_id)) {
+        desktop->launcher.open = false;
+        desktop->launcher.window_id = -1;
+    }
+
+    for (size_t i = 0; i < desktop->app_count;) {
+        RunningApp *slot = &desktop->apps[i];
+        bool should_close = app_is_close_requested(slot->app);
+        bool window_exists = wm_window_exists(desktop->wm, slot->window_id);
+
+        if (should_close && window_exists) {
+            wm_close_window(desktop->wm, slot->window_id);
+            window_exists = false;
+        }
+
+        if (!window_exists || should_close) {
+            desktop_remove_app_at(desktop, i);
+            continue;
+        }
+        ++i;
+    }
+}
+
+static void desktop_update_status(Desktop *desktop) {
+    time_t now = time(NULL);
+    if (now == desktop->last_status_tick && !desktop->needs_redraw) return;
+    desktop->last_status_tick = now;
+
+    desktop->diagnostics.drag_enabled = wm_drag_is_enabled(desktop->wm);
+    desktop->diagnostics.drag_degraded = wm_drag_is_degraded(desktop->wm);
+
+    struct tm *tm_now = localtime(&now);
+    char timestr[32] = "--:--:--";
+    if (tm_now) strftime(timestr, sizeof(timestr), "%H:%M:%S", tm_now);
+
+    WindowId drag_id = -1;
+    int drag_y = 0;
+    int drag_x = 0;
+    bool dragging = wm_get_drag_preview(desktop->wm, &drag_id, &drag_y, &drag_x);
+
+    if (desktop->diagnostics.drag_degraded) {
+        statusbar_set_text(
+            desktop->statusbar,
+            "RetroDesk | windows=%zu apps=%zu | backend=%s | mouse=%s drag=auto-off(%d) use HJKL | %s",
+            wm_window_count(desktop->wm), desktop->app_count,
+            desktop->diagnostics.backend_name,
+            desktop->diagnostics.mouse_enabled ? "on" : "off",
+            wm_drag_no_motion_sessions(desktop->wm), timestr);
+    } else if (dragging) {
+        statusbar_set_text(
+            desktop->statusbar,
+            "RetroDesk | windows=%zu apps=%zu | backend=%s | mouse=%s drag=%s #%d->%d,%d | %s",
+            wm_window_count(desktop->wm), desktop->app_count,
+            desktop->diagnostics.backend_name,
+            desktop->diagnostics.mouse_enabled ? "on" : "off",
+            desktop->diagnostics.drag_enabled ? "on" : "off", drag_id, drag_x, drag_y,
+            timestr);
+    } else {
+        statusbar_set_text(
+            desktop->statusbar,
+            "RetroDesk | windows=%zu apps=%zu | backend=%s | mouse=%s drag=%s | %s",
+            wm_window_count(desktop->wm), desktop->app_count,
+            desktop->diagnostics.backend_name,
+            desktop->diagnostics.mouse_enabled ? "on" : "off",
+            desktop->diagnostics.drag_enabled ? "on" : "off", timestr);
+    }
+}
+
+static void desktop_render_frame(Desktop *desktop) {
+    RenderStyle status_style = {RENDER_COLOR_BLACK, RENDER_COLOR_CYAN, false, false};
+    int rows = 0;
+    int cols = 0;
+
+    renderer_get_screen_size(desktop->renderer, &rows, &cols);
+    renderer_clear(desktop->renderer);
+    wm_render(desktop->wm, desktop->renderer);
+
+    RenderContext *screen = renderer_begin_screen(desktop->renderer);
+    if (screen) {
+        statusbar_render(desktop->statusbar, screen, rows, cols, &status_style);
+        renderer_end(desktop->renderer, screen);
+    }
+
+    renderer_flush(desktop->renderer);
+    desktop->needs_redraw = false;
+}
+
+static void desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *key) {
+    if (!desktop || !key) return;
+
+    if (key->key_code == '\t') {
+        wm_cycle_focus(desktop->wm);
+        desktop_request_redraw(desktop);
+        return;
+    }
+
+    if (key->ascii == 'm' || key->ascii == 'M') {
+        if (desktop->launcher.open) {
+            desktop_launcher_close(desktop);
+        } else {
+            desktop_launcher_open(desktop);
+        }
+        return;
+    }
+
+    if (key->ascii == 'H' || key->ascii == 'J' || key->ascii == 'K' ||
+        key->ascii == 'L') {
+        int dy = 0;
+        int dx = 0;
+        if (key->ascii == 'H') dx = -1;
+        if (key->ascii == 'L') dx = 1;
+        if (key->ascii == 'K') dy = -1;
+        if (key->ascii == 'J') dy = 1;
+        if (wm_move_active_window(desktop->wm, dy, dx)) {
+            desktop_request_redraw(desktop);
+        }
+        return;
+    }
+
+    if (desktop->launcher.open && key->ascii != 'q') {
+        return;
+    }
+
+    switch (key->ascii) {
+    case 'q':
+        desktop->running = false;
+        break;
+    case '1':
+        app_launch(desktop, "filemanager");
+        break;
+    case '2':
+        app_launch(desktop, "notepad");
+        break;
+    case '3':
+        app_launch(desktop, "terminal");
+        break;
+    case 'w': {
+        WindowId active = wm_active_window(desktop->wm);
+        if (active > 0 && active != desktop->shell_window_id) {
+            wm_close_window(desktop->wm, active);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+int desktop_run(Desktop *desktop) {
+    if (!desktop) return EXIT_FAILURE;
+
+    if (desktop->config.bench_mode) {
+        desktop_update_status(desktop);
+        desktop_render_frame(desktop);
+        return EXIT_SUCCESS;
+    }
+
+    desktop->running = true;
+    while (desktop->running) {
+        RetroEvent event = {0};
+        bool has_event = platform_poll_event(desktop->platform, &event,
+                                             desktop->config.input_timeout_ms);
+
+        if (has_event) {
+            if (event.type == RETRO_EVENT_KEY) {
+                desktop_handle_key_command(desktop, &event.data.key);
+            }
+            wm_handle_event(desktop->wm, &event);
+            desktop_request_redraw(desktop);
+        }
+
+        desktop_cleanup_apps(desktop);
+        desktop_update_status(desktop);
+        if (desktop->needs_redraw) {
+            desktop_render_frame(desktop);
+        }
+    }
+
+    return EXIT_SUCCESS;
+}
+
+void desktop_shutdown(Desktop *desktop) {
+    if (!desktop) return;
+
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        app_destroy(desktop->apps[i].app);
+    }
+    free(desktop->apps);
+    desktop->apps = NULL;
+    desktop->app_count = 0;
+    desktop->app_capacity = 0;
+
+    app_registry_reset();
+    statusbar_destroy(desktop->statusbar);
+    wm_destroy(desktop->wm);
+    renderer_destroy(desktop->renderer);
+    free(desktop);
+}

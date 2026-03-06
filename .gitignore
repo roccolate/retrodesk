@@ -1,5 +1,7 @@
 build/
 vcpkg/
+cmake-build*/
+compile_commands.json
 *.exe
 *.dll
 *.o

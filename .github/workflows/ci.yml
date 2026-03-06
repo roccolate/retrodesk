@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libncurses-dev clang-tidy
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Static analysis: clang-tidy (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "Running clang-tidy across C sources (warnings treated as errors)"
+          for f in $(find src -name '*.c'); do
+            clang-tidy -p build -warnings-as-errors=* $f
+          done
+
+      - name: Build (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cmake --build build --config Release
+
+      - name: Configure & build (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git vcpkg
+          .\vcpkg\bootstrap-vcpkg.bat
+          .\vcpkg\vcpkg.exe install pdcurses:x64-windows
+          $toolchain = "$PWD\vcpkg\scripts\buildsystems\vcpkg.cmake"
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$toolchain" -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release

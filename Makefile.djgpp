@@ -1,33 +1,31 @@
-# Makefile.djgpp - build RetroDesk with DJGPP
-# Usage (inside DJGPP/DOS environment or DOSBox with DJGPP tools installed):
-#   edit PDC_DIR to point to your built PDCurses tree
-#   run: make -f Makefile.djgpp
+# Build RetroDesk DOS profile with DJGPP + PDCurses
 #
-# Notes:
-# - This Makefile expects DJGPP toolchain (djgpp-gcc) available in PATH.
-# - Build PDCurses for DJGPP first; set PDC_DIR accordingly.
-# - After building, copy the produced exe to a DOSBox-mounted folder and run there.
+# Usage:
+#   make -f Makefile.djgpp PDC_DIR=C:\PDCurses
 
-PDC_DIR = C:\PDCurses    # adjust to your PDCurses build/install path
-CC = djgpp-gcc
-CFLAGS = -O2 -std=gnu11 -D__DJGPP__ -I./src -I$(PDC_DIR)\include -Wall
+PDC_DIR ?= C:\PDCurses
+CC = gcc
+CFLAGS = -O2 -std=gnu11 -D__DJGPP__ -I.\src -I$(PDC_DIR)\include -Wall
 LDFLAGS = -s
 PDC_LIB = $(PDC_DIR)\lib\pdcurses.a
 
 SRCS = \
 	src\main.c \
-	src\desktop.c \
+	src\core\desktop.c \
 	src\platform\platform.c \
-	src\ui\dialog.c \
-	src\ui\menu.c \
-	src\ui\mouse.c \
+	src\render\render.c \
+	src\wm\window_manager.c \
+	src\app\app_runtime.c \
 	src\ui\statusbar.c \
-	src\ui\themes.c \
-	src\ui\window.c
+	src\apps\apps.c \
+	src\apps\filemanager_app.c \
+	src\apps\notepad_app.c \
+	src\apps\terminal_app.c
 
 OBJS = $(SRCS:.c=.o)
 TARGET = retrodesk.exe
 
+.PHONY: all clean
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
@@ -38,5 +36,3 @@ $(TARGET): $(OBJS)
 
 clean:
 	del /Q $(OBJS) $(TARGET) 2>nul || rm -f $(OBJS) $(TARGET)
-
-.PHONY: all clean

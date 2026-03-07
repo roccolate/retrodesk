@@ -42,13 +42,18 @@ static void notepad_event(RetroAppInstance *instance, const RetroEvent *event) {
     state->content[state->cursor] = '\0';
 }
 
-static void notepad_render(RetroAppInstance *instance, RenderContext *ctx) {
+static void notepad_render(RetroAppInstance *instance, DrawList *draw_list) {
     NotepadState *state = (NotepadState *)instance->state;
-    RenderStyle text = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
+    const RetroTheme *theme = instance && instance->ctx.theme
+                                  ? instance->ctx.theme
+                                  : retro_theme_get(RETRO_THEME_XP);
+    const RenderStyle *text = &theme->window_body;
+    const RenderStyle *accent = &theme->shell_accent;
 
-    render_draw_text(ctx, 1, 2, "Notepad (stub runtime app)", &text);
-    render_draw_text(ctx, 2, 2, "Type text, Backspace to erase, x to close.", &text);
-    render_draw_text(ctx, 4, 2, state ? state->content : "", &text);
+    draw_list_text(draw_list, 1, 2, "Notepad (stub runtime app)", accent);
+    draw_list_text(draw_list, 2, 2, "Type text, Backspace to erase, x to close.",
+                   text);
+    draw_list_text(draw_list, 4, 2, state ? state->content : "", text);
 }
 
 static void notepad_destroy(RetroAppInstance *instance) {

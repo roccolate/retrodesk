@@ -2,8 +2,11 @@
 #define RETRODESK_CORE_DESKTOP_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
+#include "render/render.h"
 #include "platform/platform.h"
+#include "ui/theme.h"
 
 typedef struct Desktop Desktop;
 
@@ -11,6 +14,8 @@ typedef struct DesktopConfig {
     PlatformBackend *platform;
     int input_timeout_ms;
     bool bench_mode;
+    RenderBackendKind render_backend;
+    RetroThemeKind theme_kind;
 } DesktopConfig;
 
 typedef struct DesktopCapabilities {
@@ -28,6 +33,8 @@ typedef struct DesktopCapabilities {
 
 typedef struct DesktopDiagnostics {
     const char *backend_name;
+    const char *render_backend_name;
+    const char *theme_name;
     bool mouse_enabled;
     bool drag_enabled;
     bool drag_degraded;
@@ -40,6 +47,8 @@ int desktop_run(Desktop *desktop);
 void desktop_request_redraw(Desktop *desktop);
 const DesktopCapabilities *desktop_capabilities(const Desktop *desktop);
 const DesktopDiagnostics *desktop_diagnostics(const Desktop *desktop);
+size_t desktop_app_count(const Desktop *desktop);
+size_t desktop_window_count(const Desktop *desktop);
 void desktop_shutdown(Desktop *desktop);
 
 #endif

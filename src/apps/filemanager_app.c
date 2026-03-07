@@ -28,20 +28,24 @@ static void fm_event(RetroAppInstance *instance, const RetroEvent *event) {
     }
 }
 
-static void fm_render(RetroAppInstance *instance, RenderContext *ctx) {
+static void fm_render(RetroAppInstance *instance, DrawList *draw_list) {
     FileManagerState *state = (FileManagerState *)instance->state;
     char line[96];
-    RenderStyle text = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
+    const RetroTheme *theme = instance && instance->ctx.theme
+                                  ? instance->ctx.theme
+                                  : retro_theme_get(RETRO_THEME_XP);
+    const RenderStyle *text = &theme->window_body;
+    const RenderStyle *accent = &theme->shell_accent;
+    const RenderStyle *selected = &theme->launcher_selected;
 
-    render_draw_text(ctx, 1, 2, "FileManager (stub runtime app)", &text);
-    render_draw_text(ctx, 2, 2, "Use w/s to move selection, x to close.", &text);
+    draw_list_text(draw_list, 1, 2, "FileManager (stub runtime app)", accent);
+    draw_list_text(draw_list, 2, 2, "Use w/s to move selection, x to close.", text);
 
     for (int i = 0; i < 3; ++i) {
-        RenderStyle row = text;
-        if (state && state->selection == i) row.reverse = true;
+        const RenderStyle *row = (state && state->selection == i) ? selected : text;
         snprintf(line, sizeof(line), "[%c] Item %d", state && state->selection == i ? '*' : ' ',
                  i + 1);
-        render_draw_text(ctx, 4 + i, 4, line, &row);
+        draw_list_text(draw_list, 4 + i, 4, line, row);
     }
 }
 

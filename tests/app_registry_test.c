@@ -14,9 +14,9 @@ static void dummy_event(RetroAppInstance *instance, const RetroEvent *event) {
     (void)event;
 }
 
-static void dummy_render(RetroAppInstance *instance, RenderContext *ctx) {
+static void dummy_render(RetroAppInstance *instance, DrawList *draw_list) {
     (void)instance;
-    (void)ctx;
+    (void)draw_list;
 }
 
 static void dummy_destroy(RetroAppInstance *instance) {
@@ -24,7 +24,8 @@ static void dummy_destroy(RetroAppInstance *instance) {
 }
 
 int main(void) {
-    app_registry_reset();
+    AppRegistry *registry = app_registry_create();
+    assert(registry != NULL);
 
     const RetroAppDescriptor app_a = {
         .app_id = "test-a",
@@ -56,20 +57,21 @@ int main(void) {
         .destroy = dummy_destroy,
     };
 
-    assert(app_register(&app_a));
-    assert(app_register(&app_b));
-    assert(!app_register(&app_a)); /* duplicate app_id should fail */
+    assert(app_registry_register(registry, &app_a));
+    assert(app_registry_register(registry, &app_b));
+    assert(!app_registry_register(registry, &app_a)); /* duplicate app_id should fail */
 
-    assert(app_registry_count() == 2);
-    assert(app_find("test-a") == &app_a);
-    assert(app_find("test-b") == &app_b);
-    assert(app_find("missing") == NULL);
+    assert(app_registry_count(registry) == 2);
+    assert(app_registry_find(registry, "test-a") == &app_a);
+    assert(app_registry_find(registry, "test-b") == &app_b);
+    assert(app_registry_find(registry, "missing") == NULL);
 
-    assert(app_descriptor_at(0) != NULL);
-    assert(app_descriptor_at(1) != NULL);
-    assert(app_descriptor_at(2) == NULL);
+    assert(app_registry_descriptor_at(registry, 0) != NULL);
+    assert(app_registry_descriptor_at(registry, 1) != NULL);
+    assert(app_registry_descriptor_at(registry, 2) == NULL);
 
-    app_registry_reset();
-    assert(app_registry_count() == 0);
+    app_registry_reset(registry);
+    assert(app_registry_count(registry) == 0);
+    app_registry_destroy(registry);
     return 0;
 }

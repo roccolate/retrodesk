@@ -21,12 +21,12 @@ void statusbar_set_text(StatusBar *sb, const char *fmt, ...) {
     va_end(args);
 }
 
-void statusbar_render(StatusBar *sb, RenderContext *ctx, int screen_rows, int screen_cols,
+void statusbar_render(StatusBar *sb, DrawList *draw_list, int screen_rows, int screen_cols,
                       const RenderStyle *style) {
-    if (!sb || !ctx || screen_rows <= 0 || screen_cols <= 0) return;
+    if (!sb || !draw_list || screen_rows <= 0 || screen_cols <= 0) return;
     int y = screen_rows - 1;
-    render_draw_hline(ctx, y, 0, screen_cols, ' ', style);
-    render_draw_text(ctx, y, 1, sb->text, style);
+    draw_list_hline(draw_list, y, 0, screen_cols, ' ', style);
+    draw_list_text(draw_list, y, 1, sb->text, style);
 }
 
 void statusbar_destroy(StatusBar *sb) {

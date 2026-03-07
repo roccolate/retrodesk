@@ -1,24 +1,28 @@
 #include <locale.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
+#include "core/cli.h"
 #include "core/desktop.h"
 #include "platform/platform.h"
 
 int main(int argc, char **argv) {
-    bool bench_mode = (argc > 1 && strcmp(argv[1], "--bench-startup") == 0);
+    RetroCliOptions options = {0};
+    if (!retro_cli_parse(argc, argv, &options, stderr)) {
+        return EXIT_FAILURE;
+    }
+
     setlocale(LC_ALL, "");
 
     PlatformConfig platform_cfg = {
-        .bench_mode = bench_mode,
+        .bench_mode = options.bench_mode,
         .input_timeout_ms = 120,
+        .requested_input_backend = options.input_backend,
     };
     PlatformBackend *platform = platform_create(&platform_cfg);
     if (!platform) {
         fprintf(stderr,
-                "platform initialization failed (terminal/console + curses backend required)\n");
+                "platform initialization failed (terminal/console + selected input backend required)\n");
 #if defined(_WIN32)
         fprintf(stderr,
                 "Windows tip: run from cmd/PowerShell and ensure PDCurses runtime is available.\n");
@@ -29,7 +33,9 @@ int main(int argc, char **argv) {
     DesktopConfig desktop_cfg = {
         .platform = platform,
         .input_timeout_ms = 120,
-        .bench_mode = bench_mode,
+        .bench_mode = options.bench_mode,
+        .render_backend = options.render_backend,
+        .theme_kind = options.theme_kind,
     };
     Desktop *desktop = desktop_create(&desktop_cfg);
     if (!desktop) {
@@ -38,10 +44,12 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    if (bench_mode) {
+    if (options.bench_mode) {
         const DesktopDiagnostics *diag = desktop_diagnostics(desktop);
         if (diag) {
-            printf("backend: %s\n", diag->backend_name);
+            printf("input_backend: %s\n", diag->backend_name);
+            printf("render_backend: %s\n", diag->render_backend_name);
+            printf("theme: %s\n", diag->theme_name);
             printf("mouse_enabled: %s\n", diag->mouse_enabled ? "true" : "false");
             printf("drag_enabled: %s\n", diag->drag_enabled ? "true" : "false");
             printf("resize_enabled: %s\n", diag->resize_enabled ? "true" : "false");

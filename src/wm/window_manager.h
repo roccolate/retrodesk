@@ -20,8 +20,9 @@ enum {
 
 typedef struct RetroWindow RetroWindow;
 typedef struct WindowManager WindowManager;
+typedef struct RetroTheme RetroTheme;
 
-typedef void (*WindowDrawCallback)(RetroWindow *window, RenderContext *ctx,
+typedef void (*WindowDrawCallback)(RetroWindow *window, DrawList *draw_list,
                                    void *user_data);
 typedef void (*WindowEventCallback)(RetroWindow *window, const RetroEvent *event,
                                     void *user_data);
@@ -58,7 +59,7 @@ bool wm_drag_is_degraded(const WindowManager *wm);
 int wm_drag_no_motion_sessions(const WindowManager *wm);
 
 bool wm_handle_event(WindowManager *wm, const RetroEvent *event);
-void wm_render(WindowManager *wm, Renderer *renderer);
+void wm_render(WindowManager *wm, Renderer *renderer, const RetroTheme *theme);
 
 RetroWindow *wm_window(WindowManager *wm, WindowId id);
 WindowId retro_window_id(const RetroWindow *window);

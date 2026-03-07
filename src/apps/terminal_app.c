@@ -15,27 +15,32 @@ static void terminal_event(RetroAppInstance *instance, const RetroEvent *event) 
     if (event->data.key.ascii == 'x') app_request_close(instance);
 }
 
-static void terminal_render(RetroAppInstance *instance, RenderContext *ctx) {
+static void terminal_render(RetroAppInstance *instance, DrawList *draw_list) {
     char line[96];
-    RenderStyle text = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
+    const RetroTheme *theme = instance && instance->ctx.theme
+                                  ? instance->ctx.theme
+                                  : retro_theme_get(RETRO_THEME_XP);
+    const RenderStyle *text = &theme->window_body;
+    const RenderStyle *accent = &theme->shell_accent;
     const DesktopCapabilities *cap = instance->ctx.capabilities;
 
-    render_draw_text(ctx, 1, 2, "Terminal (placeholder app)", &text);
-    render_draw_text(ctx, 2, 2, "This app shows detected runtime capabilities.", &text);
+    draw_list_text(draw_list, 1, 2, "Terminal (placeholder app)", accent);
+    draw_list_text(draw_list, 2, 2,
+                   "This app shows detected runtime capabilities.", text);
 
     if (cap) {
         snprintf(line, sizeof(line), "mouse=%s drag=%s resize=%s right_click=%s",
                  cap->mouse_basic ? "on" : "off", cap->drag_reliable ? "on" : "off",
                  cap->resize_events ? "on" : "off",
                  cap->right_click ? "on" : "off");
-        render_draw_text(ctx, 4, 2, line, &text);
+        draw_list_text(draw_list, 4, 2, line, text);
 
         snprintf(line, sizeof(line), "linux_tty_keyboard_only=%s",
                  cap->linux_tty_keyboard_only ? "yes" : "no");
-        render_draw_text(ctx, 5, 2, line, &text);
+        draw_list_text(draw_list, 5, 2, line, text);
     }
 
-    render_draw_text(ctx, 7, 2, "Press x to close.", &text);
+    draw_list_text(draw_list, 7, 2, "Press x to close.", text);
 }
 
 static void terminal_destroy(RetroAppInstance *instance) {

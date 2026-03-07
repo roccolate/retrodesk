@@ -1,0 +1,38 @@
+#include <assert.h>
+#include <stdio.h>
+
+#include "render/ansi_renderer.h"
+#include "render/render.h"
+
+int main(void) {
+    FILE *out = tmpfile();
+    assert(out != NULL);
+    AnsiRenderer *renderer = ansi_renderer_create();
+    assert(renderer != NULL);
+
+    DrawList *list = draw_list_create();
+    assert(list != NULL);
+    RenderStyle style = {RENDER_COLOR_WHITE, RENDER_COLOR_BLUE, false, false};
+    assert(draw_list_fill(list, ' ', &style));
+    assert(draw_list_text(list, 0, 0, "A", &style));
+
+    assert(ansi_renderer_begin_frame(renderer, 3, 8));
+    ansi_renderer_compose_draw_list(renderer, 0, 0, 3, 8, list);
+    ansi_renderer_flush(renderer, out);
+    long first_size = ftell(out);
+    assert(first_size > 0);
+
+    assert(ansi_renderer_begin_frame(renderer, 3, 8));
+    ansi_renderer_compose_draw_list(renderer, 0, 0, 3, 8, list);
+    ansi_renderer_flush(renderer, out);
+    long second_size = ftell(out);
+    assert(second_size > first_size);
+
+    long delta = second_size - first_size;
+    assert(delta < first_size);
+
+    ansi_renderer_destroy(renderer);
+    draw_list_destroy(list);
+    fclose(out);
+    return 0;
+}

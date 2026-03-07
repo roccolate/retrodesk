@@ -14,7 +14,9 @@
 - drag on supported capabilities and fallback when unsupported.
 - resize handling where available.
 - capability-based app launch rejection.
+- app close lifecycle releases window ownership cleanly.
 - single-flush-per-tick enforcement.
+- CLI/backend flag combination validation.
 
 ## Platform Smoke Matrix
 
@@ -22,12 +24,18 @@
 - Windows (Tier 1): keyboard + PDCurses mouse/resize where available.
 - macOS (Tier 2): compile and keyboard baseline.
 - DOS (Tier 2): compile and reduced feature baseline.
+- Interactive smoke gate: `make smoke` (PTY required).
+- Interactive Linux VC gate: `make smoke-linux-vc` (PTY required, expects
+  `linux_tty_keyboard_only: true` under `TERM=linux`).
+- Non-interactive fallback smoke: `make smoke-ci`.
 
 ## Regression Rules
 
 - Any interface-level change must update related docs.
 - Any bug fix around input/focus/resize must add a reproducible scenario.
 - CI strict job must remain warning-clean.
+- `wm` focus/z-order/drag/close behavior must be covered by event replay tests.
+- tty raw decoder changes must be covered by parser unit tests.
 
 ## Release Gate Reference
 

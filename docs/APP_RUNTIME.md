@@ -15,7 +15,7 @@ Each app is represented by a descriptor with:
 1. Register descriptor.
 2. Launch app instance if capabilities are satisfied.
 3. Receive normalized events from runtime.
-4. Render through `RenderContext`.
+4. Append draw commands into the provided `DrawList`.
 5. Destroy and release resources on close.
 
 ## Ownership Rules

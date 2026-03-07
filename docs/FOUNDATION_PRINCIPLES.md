@@ -13,6 +13,8 @@
 - `core` consumes `RetroEvent`, not backend-native events.
 - `wm` owns focus, z-order, hit testing, and drag policy.
 - `app` modules are hosted units; they never poll input directly.
+- `wm`, `app`, and `ui` produce draw lists; only `render` executes backend draw calls.
+- Visual styles must come from theme tokens, not ad-hoc hardcoded palettes in runtime loops.
 
 ## Lifecycle Rules
 

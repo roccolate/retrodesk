@@ -9,6 +9,7 @@ typedef enum InputBackendKind {
     INPUT_BACKEND_UNKNOWN = 0,
     INPUT_BACKEND_NCURSES,
     INPUT_BACKEND_PDCURSES,
+    INPUT_BACKEND_TTY_RAW,
 } InputBackendKind;
 
 enum {
@@ -39,6 +40,7 @@ typedef struct PlatformFeatures {
 typedef struct PlatformConfig {
     bool bench_mode;
     int input_timeout_ms;
+    InputBackendKind requested_input_backend;
 } PlatformConfig;
 
 typedef struct PlatformBackend PlatformBackend;

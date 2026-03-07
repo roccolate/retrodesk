@@ -8,7 +8,8 @@
 ## Backend Matrix
 
 - Windows: PDCurses backend.
-- Linux/macOS: ncurses-compatible backend.
+- Linux/macOS: `ncurses` input + curses renderer by default.
+- Linux/macOS (experimental): `tty-raw` input + ANSI renderer.
 - DOS: DJGPP + PDCurses profile (reduced capabilities).
 
 ## Required Capabilities

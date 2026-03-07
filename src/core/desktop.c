@@ -37,8 +37,11 @@ typedef struct LauncherState {
 struct Desktop {
     PlatformBackend *platform;
     Renderer *renderer;
+    AppRegistry *app_registry;
     WindowManager *wm;
     StatusBar *statusbar;
+    DrawList *overlay_draw_list;
+    const RetroTheme *theme;
     DesktopConfig config;
     DesktopCapabilities capabilities;
     DesktopDiagnostics diagnostics;
@@ -84,10 +87,10 @@ static void desktop_remove_app_at(Desktop *desktop, size_t index) {
     desktop->app_count--;
 }
 
-static void app_window_draw(RetroWindow *window, RenderContext *ctx, void *user_data) {
+static void app_window_draw(RetroWindow *window, DrawList *draw_list, void *user_data) {
     (void)window;
     RetroAppInstance *app = (RetroAppInstance *)user_data;
-    app_render(app, ctx);
+    app_render(app, draw_list);
 }
 
 static void app_window_event(RetroWindow *window, const RetroEvent *event, void *user_data) {
@@ -136,21 +139,22 @@ static void desktop_launcher_execute(Desktop *desktop, LauncherAction action) {
     desktop_request_redraw(desktop);
 }
 
-static void launcher_draw(RetroWindow *window, RenderContext *ctx, void *user_data) {
+static void launcher_draw(RetroWindow *window, DrawList *draw_list, void *user_data) {
     (void)window;
     Desktop *desktop = (Desktop *)user_data;
     if (!desktop) return;
 
-    RenderStyle text = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
-    RenderStyle selected = {RENDER_COLOR_BLACK, RENDER_COLOR_CYAN, false, true};
+    const RenderStyle *text = &desktop->theme->launcher_text;
+    const RenderStyle *selected = &desktop->theme->launcher_selected;
 
-    render_draw_text(ctx, 1, 2, "Launcher (non-blocking)", &text);
-    render_draw_text(ctx, 2, 2, "w/s or j/k to move, Enter to execute, Esc to close", &text);
+    draw_list_text(draw_list, 1, 2, "Launcher (non-blocking)", text);
+    draw_list_text(draw_list, 2, 2,
+                   "w/s or j/k to move, Enter to execute, Esc to close", text);
 
     size_t count = sizeof(k_launcher_items) / sizeof(k_launcher_items[0]);
     for (size_t i = 0; i < count; ++i) {
-        const RenderStyle *row = ((int)i == desktop->launcher.selected) ? &selected : &text;
-        render_draw_text(ctx, 4 + (int)i, 3, k_launcher_items[i].label, row);
+        const RenderStyle *row = ((int)i == desktop->launcher.selected) ? selected : text;
+        draw_list_text(draw_list, 4 + (int)i, 3, k_launcher_items[i].label, row);
     }
 }
 
@@ -223,36 +227,38 @@ static void desktop_launcher_open(Desktop *desktop) {
     desktop_request_redraw(desktop);
 }
 
-static void shell_draw(RetroWindow *window, RenderContext *ctx, void *user_data) {
+static void shell_draw(RetroWindow *window, DrawList *draw_list, void *user_data) {
     Desktop *desktop = (Desktop *)user_data;
-    RenderStyle text = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
-    RenderStyle accent = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, true};
+    const RenderStyle *text = &desktop->theme->shell_text;
+    const RenderStyle *accent = &desktop->theme->shell_accent;
     char line[128];
     int y = 0, x = 0, h = 0, w = 0;
 
     retro_window_get_geometry(window, &y, &x, &h, &w);
 
-    render_draw_text(ctx, 1, 2, "RetroDesk Foundation Runtime", &accent);
-    render_draw_text(ctx, 2, 2,
-                     "Hotkeys: q quit | Tab focus | m launcher | 1/2/3 apps | w close | HJKL move",
-                     &text);
+    draw_list_text(draw_list, 1, 2, "RetroDesk Foundation Runtime", accent);
+    draw_list_text(
+        draw_list, 2, 2,
+        "Hotkeys: q quit | Tab focus | m launcher | 1/2/3 apps | w close | HJKL move",
+        text);
 
     snprintf(line, sizeof(line), "Window: %dx%d @ %d,%d", w, h, x, y);
-    render_draw_text(ctx, 4, 2, line, &text);
+    draw_list_text(draw_list, 4, 2, line, text);
 
-    snprintf(line, sizeof(line), "Backend: %s | mouse=%s drag=%s resize=%s",
+    snprintf(line, sizeof(line), "Input: %s | Render: %s | mouse=%s drag=%s",
              desktop->diagnostics.backend_name,
+             desktop->diagnostics.render_backend_name,
              desktop->diagnostics.mouse_enabled ? "on" : "off",
-             desktop->diagnostics.drag_enabled ? "on" : "off",
-             desktop->diagnostics.resize_enabled ? "on" : "off");
-    render_draw_text(ctx, 5, 2, line, &text);
+             desktop->diagnostics.drag_enabled ? "on" : "off");
+    draw_list_text(draw_list, 5, 2, line, text);
 
-    snprintf(line, sizeof(line), "linux_tty_keyboard_only=%s",
+    snprintf(line, sizeof(line), "resize=%s linux_tty_keyboard_only=%s",
+             desktop->diagnostics.resize_enabled ? "on" : "off",
              desktop->diagnostics.linux_tty_keyboard_only ? "yes" : "no");
-    render_draw_text(ctx, 6, 2, line, &text);
+    draw_list_text(draw_list, 6, 2, line, text);
 
     if (desktop->diagnostics.drag_degraded) {
-        render_draw_text(ctx, 7, 2, "Drag degraded automatically: use H/J/K/L", &text);
+        draw_list_text(draw_list, 7, 2, "Drag degraded automatically: use H/J/K/L", text);
     }
 }
 
@@ -273,6 +279,10 @@ static void desktop_fill_capabilities(Desktop *desktop,
 
 static void desktop_fill_diagnostics(Desktop *desktop) {
     desktop->diagnostics.backend_name = platform_backend_name(desktop->platform);
+    desktop->diagnostics.render_backend_name =
+        desktop->renderer ? renderer_backend_name(desktop->renderer) : "unknown";
+    desktop->diagnostics.theme_name =
+        desktop->theme ? desktop->theme->name : retro_theme_name(RETRO_THEME_XP);
     desktop->diagnostics.mouse_enabled = desktop->capabilities.mouse_basic;
     if (desktop->wm) {
         desktop->diagnostics.drag_enabled = wm_drag_is_enabled(desktop->wm);
@@ -296,19 +306,31 @@ Desktop *desktop_create(const DesktopConfig *config) {
     desktop->platform = config->platform;
     desktop->config = *config;
     if (desktop->config.input_timeout_ms <= 0) desktop->config.input_timeout_ms = 100;
+    if (desktop->config.render_backend == RENDER_BACKEND_AUTO) {
+        desktop->config.render_backend = RENDER_BACKEND_CURSES;
+    }
+    desktop->theme = retro_theme_get(desktop->config.theme_kind);
     desktop->last_status_tick = -1;
     desktop->launcher.window_id = -1;
+    desktop->app_registry = app_registry_create();
+    if (!desktop->app_registry) {
+        free(desktop);
+        return NULL;
+    }
 
     const PlatformFeatures *features = platform_features(desktop->platform);
     if (!features) {
+        app_registry_destroy(desktop->app_registry);
         free(desktop);
         return NULL;
     }
     desktop_fill_capabilities(desktop, features);
     desktop_fill_diagnostics(desktop);
 
-    desktop->renderer = renderer_create(desktop->platform);
+    desktop->renderer =
+        renderer_create_with_backend(desktop->platform, desktop->config.render_backend);
     if (!desktop->renderer) {
+        app_registry_destroy(desktop->app_registry);
         free(desktop);
         return NULL;
     }
@@ -316,6 +338,7 @@ Desktop *desktop_create(const DesktopConfig *config) {
     desktop->wm = wm_create(desktop->renderer);
     if (!desktop->wm) {
         renderer_destroy(desktop->renderer);
+        app_registry_destroy(desktop->app_registry);
         free(desktop);
         return NULL;
     }
@@ -327,6 +350,16 @@ Desktop *desktop_create(const DesktopConfig *config) {
     if (!desktop->statusbar) {
         wm_destroy(desktop->wm);
         renderer_destroy(desktop->renderer);
+        app_registry_destroy(desktop->app_registry);
+        free(desktop);
+        return NULL;
+    }
+    desktop->overlay_draw_list = draw_list_create();
+    if (!desktop->overlay_draw_list) {
+        statusbar_destroy(desktop->statusbar);
+        wm_destroy(desktop->wm);
+        renderer_destroy(desktop->renderer);
+        app_registry_destroy(desktop->app_registry);
         free(desktop);
         return NULL;
     }
@@ -344,15 +377,17 @@ Desktop *desktop_create(const DesktopConfig *config) {
     };
     desktop->shell_window_id = wm_create_window(desktop->wm, &shell_spec);
     if (desktop->shell_window_id <= 0) {
+        draw_list_destroy(desktop->overlay_draw_list);
         statusbar_destroy(desktop->statusbar);
         wm_destroy(desktop->wm);
         renderer_destroy(desktop->renderer);
+        app_registry_destroy(desktop->app_registry);
         free(desktop);
         return NULL;
     }
 
-    app_registry_reset();
-    apps_register_builtin();
+    app_registry_reset(desktop->app_registry);
+    apps_register_builtin(desktop->app_registry);
     app_launch(desktop, "filemanager");
     app_launch(desktop, "notepad");
 
@@ -363,7 +398,7 @@ Desktop *desktop_create(const DesktopConfig *config) {
 RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
     if (!desktop || !app_id) return NULL;
 
-    const RetroAppDescriptor *desc = app_find(app_id);
+    const RetroAppDescriptor *desc = app_registry_find(desktop->app_registry, app_id);
     if (!desc) return NULL;
 
     if ((desc->required_capabilities & desktop->capabilities.capability_mask) !=
@@ -377,6 +412,7 @@ RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
     instance->descriptor = desc;
     instance->ctx.desktop = desktop;
     instance->ctx.capabilities = &desktop->capabilities;
+    instance->ctx.theme = desktop->theme;
 
     RetroWindowSpec spec = {
         .height = desc->default_height,
@@ -429,6 +465,16 @@ const DesktopDiagnostics *desktop_diagnostics(const Desktop *desktop) {
     return &desktop->diagnostics;
 }
 
+size_t desktop_app_count(const Desktop *desktop) {
+    if (!desktop) return 0;
+    return desktop->app_count;
+}
+
+size_t desktop_window_count(const Desktop *desktop) {
+    if (!desktop || !desktop->wm) return 0;
+    return wm_window_count(desktop->wm);
+}
+
 static void desktop_cleanup_apps(Desktop *desktop) {
     if (!desktop) return;
 
@@ -476,43 +522,49 @@ static void desktop_update_status(Desktop *desktop) {
     if (desktop->diagnostics.drag_degraded) {
         statusbar_set_text(
             desktop->statusbar,
-            "RetroDesk | windows=%zu apps=%zu | backend=%s | mouse=%s drag=auto-off(%d) use HJKL | %s",
+            "RetroDesk | windows=%zu apps=%zu | in=%s out=%s theme=%s | mouse=%s drag=auto-off(%d) use HJKL | %s",
             wm_window_count(desktop->wm), desktop->app_count,
-            desktop->diagnostics.backend_name,
+            desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
+            desktop->diagnostics.theme_name,
             desktop->diagnostics.mouse_enabled ? "on" : "off",
             wm_drag_no_motion_sessions(desktop->wm), timestr);
     } else if (dragging) {
         statusbar_set_text(
             desktop->statusbar,
-            "RetroDesk | windows=%zu apps=%zu | backend=%s | mouse=%s drag=%s #%d->%d,%d | %s",
+            "RetroDesk | windows=%zu apps=%zu | in=%s out=%s theme=%s | mouse=%s drag=%s #%d->%d,%d | %s",
             wm_window_count(desktop->wm), desktop->app_count,
-            desktop->diagnostics.backend_name,
+            desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
+            desktop->diagnostics.theme_name,
             desktop->diagnostics.mouse_enabled ? "on" : "off",
             desktop->diagnostics.drag_enabled ? "on" : "off", drag_id, drag_x, drag_y,
             timestr);
     } else {
         statusbar_set_text(
             desktop->statusbar,
-            "RetroDesk | windows=%zu apps=%zu | backend=%s | mouse=%s drag=%s | %s",
+            "RetroDesk | windows=%zu apps=%zu | in=%s out=%s theme=%s | mouse=%s drag=%s | %s",
             wm_window_count(desktop->wm), desktop->app_count,
-            desktop->diagnostics.backend_name,
+            desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
+            desktop->diagnostics.theme_name,
             desktop->diagnostics.mouse_enabled ? "on" : "off",
             desktop->diagnostics.drag_enabled ? "on" : "off", timestr);
     }
 }
 
 static void desktop_render_frame(Desktop *desktop) {
-    RenderStyle status_style = {RENDER_COLOR_BLACK, RENDER_COLOR_CYAN, false, false};
+    const RenderStyle *status_style = &desktop->theme->statusbar;
     int rows = 0;
     int cols = 0;
 
     renderer_get_screen_size(desktop->renderer, &rows, &cols);
     renderer_clear(desktop->renderer);
-    wm_render(desktop->wm, desktop->renderer);
+    wm_render(desktop->wm, desktop->renderer, desktop->theme);
 
     RenderContext *screen = renderer_begin_screen(desktop->renderer);
     if (screen) {
-        statusbar_render(desktop->statusbar, screen, rows, cols, &status_style);
+        draw_list_reset(desktop->overlay_draw_list);
+        statusbar_render(desktop->statusbar, desktop->overlay_draw_list, rows, cols,
+                         status_style);
+        renderer_draw_list(screen, desktop->overlay_draw_list);
         renderer_end(desktop->renderer, screen);
     }
 
@@ -625,7 +677,9 @@ void desktop_shutdown(Desktop *desktop) {
     desktop->app_count = 0;
     desktop->app_capacity = 0;
 
-    app_registry_reset();
+    app_registry_destroy(desktop->app_registry);
+    desktop->app_registry = NULL;
+    draw_list_destroy(desktop->overlay_draw_list);
     statusbar_destroy(desktop->statusbar);
     wm_destroy(desktop->wm);
     renderer_destroy(desktop->renderer);

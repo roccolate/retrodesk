@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ui/theme.h"
+
 struct RetroWindow {
     WindowId id;
     int y;
@@ -14,7 +16,7 @@ struct RetroWindow {
     WindowFlags flags;
     bool is_active;
     bool close_requested;
-    RenderTarget *target;
+    DrawList *draw_list;
     WindowDrawCallback draw_cb;
     WindowEventCallback event_cb;
     void *user_data;
@@ -82,7 +84,6 @@ static void wm_clamp_window(WindowManager *wm, RetroWindow *window) {
     if (window->x < 0) window->x = 0;
     if (window->y > max_y) window->y = max_y;
     if (window->x > max_x) window->x = max_x;
-    renderer_move_target(window->target, window->y, window->x);
 }
 
 static void wm_cleanup_closed(WindowManager *wm) {
@@ -101,7 +102,7 @@ static void wm_cleanup_closed(WindowManager *wm) {
             wm->drag_window_id = -1;
         }
 
-        renderer_destroy_target(window->target);
+        draw_list_destroy(window->draw_list);
         free(window);
 
         for (size_t j = i + 1; j < wm->count; ++j) {
@@ -153,7 +154,7 @@ WindowManager *wm_create(Renderer *renderer) {
 void wm_destroy(WindowManager *wm) {
     if (!wm) return;
     for (size_t i = 0; i < wm->count; ++i) {
-        renderer_destroy_target(wm->windows[i]->target);
+        draw_list_destroy(wm->windows[i]->draw_list);
         free(wm->windows[i]);
     }
     free(wm->windows);
@@ -225,9 +226,8 @@ WindowId wm_create_window(WindowManager *wm, const RetroWindowSpec *spec) {
         window->x = 2 + cascade * 3;
     }
 
-    window->target =
-        renderer_create_target(wm->renderer, window->h, window->w, window->y, window->x);
-    if (!window->target) {
+    window->draw_list = draw_list_create();
+    if (!window->draw_list) {
         free(window);
         return -1;
     }
@@ -412,39 +412,39 @@ bool wm_handle_event(WindowManager *wm, const RetroEvent *event) {
     return false;
 }
 
-void wm_render(WindowManager *wm, Renderer *renderer) {
+void wm_render(WindowManager *wm, Renderer *renderer, const RetroTheme *theme) {
     if (!wm || !renderer) return;
 
-    RenderStyle frame_style = {RENDER_COLOR_WHITE, RENDER_COLOR_BLUE, false, false};
-    RenderStyle frame_active = {RENDER_COLOR_YELLOW, RENDER_COLOR_BLUE, false, true};
-    RenderStyle frame_drag = {RENDER_COLOR_BLACK, RENDER_COLOR_YELLOW, false, true};
-    RenderStyle title_style = {RENDER_COLOR_WHITE, RENDER_COLOR_BLUE, false, true};
-    RenderStyle body_style = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
+    const RetroTheme *active_theme = theme ? theme : retro_theme_get(RETRO_THEME_XP);
 
     wm_cleanup_closed(wm);
 
     for (size_t i = 0; i < wm->count; ++i) {
         RetroWindow *window = wm->windows[i];
-        if (!window || !window->target) continue;
+        if (!window || !window->draw_list) continue;
 
-        RenderContext *ctx = renderer_begin(renderer, window->target);
-        if (!ctx) continue;
-
-        const RenderStyle *frame = &frame_style;
+        const RenderStyle *frame = &active_theme->window_frame_inactive;
         if (wm->dragging && window->id == wm->drag_window_id) {
-            frame = &frame_drag;
+            frame = &active_theme->window_frame_drag;
         } else if (window->is_active) {
-            frame = &frame_active;
+            frame = &active_theme->window_frame_active;
         }
 
-        render_fill(ctx, ' ', &body_style);
-        render_draw_box(ctx, window->title, frame, &title_style);
+        draw_list_reset(window->draw_list);
+        draw_list_fill(window->draw_list, ' ', &active_theme->window_body);
+        draw_list_box(window->draw_list, window->title, frame, &active_theme->window_title);
         if (wm->dragging && window->id == wm->drag_window_id) {
-            render_draw_text(ctx, 1, 2, "Dragging...", &body_style);
+            draw_list_text(window->draw_list, 1, 2, "Dragging...",
+                           &active_theme->window_body);
         }
         if (window->draw_cb) {
-            window->draw_cb(window, ctx, window->user_data);
+            window->draw_cb(window, window->draw_list, window->user_data);
         }
+
+        RenderContext *ctx = renderer_begin_region(renderer, window->h, window->w,
+                                                   window->y, window->x);
+        if (!ctx) continue;
+        renderer_draw_list(ctx, window->draw_list);
         renderer_end(renderer, ctx);
     }
 }
@@ -471,7 +471,6 @@ void retro_window_move(RetroWindow *window, int y, int x) {
     if (!window) return;
     window->y = y;
     window->x = x;
-    renderer_move_target(window->target, y, x);
 }
 
 void retro_window_set_title(RetroWindow *window, const char *title) {

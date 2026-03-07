@@ -8,7 +8,10 @@ CMake is the canonical build system for modern targets.
 
 - `Makefile`: wrapper for CMake configure/build/clean.
 - `Makefile.djgpp`: specialized DOS build only.
-- `make smoke`: interactive startup smoke gate using `--bench-startup`.
+- `make smoke`: interactive startup smoke gate using `--bench-startup` (requires PTY).
+- `make smoke-ci`: non-interactive fallback smoke profile for CI/sandbox environments.
+- `make smoke-linux-vc`: interactive Linux virtual-console policy check (`TERM=linux`,
+  requires PTY, expects `linux_tty_keyboard_only: true`).
 
 ## Dependency Policy
 
@@ -26,7 +29,9 @@ CMake is the canonical build system for modern targets.
 - `strict`: warnings enabled + Werror.
 - `release`: optimized production build.
 - `dos`: DJGPP profile via `Makefile.djgpp`.
-- `smoke`: runtime startup sanity check in terminal context.
+- `smoke`: runtime startup sanity check in interactive terminal context.
+- `smoke-ci`: smoke-compatible checks when interactive PTY is unavailable.
+- `smoke-linux-vc`: Linux VC keyboard-first sanity check in interactive PTY context.
 
 ## CI Policy
 

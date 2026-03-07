@@ -32,3 +32,12 @@ Windows users can either rely on a configured toolchain (for example vcpkg toolc
 or pass `-DPDCURSES_ROOT=/path/to/pdcurses`.
 
 The repository `Makefile` is a CMake wrapper. DOS is handled by `Makefile.djgpp`.
+Use `make smoke` for interactive PTY smoke, `make smoke-linux-vc` for Linux
+`TERM=linux` keyboard-first validation, and `make smoke-ci` for non-interactive
+fallback checks.
+
+Runtime flags:
+- `--bench-startup`
+- `--render-backend=curses|ansi`
+- `--input-backend=curses|tty`
+- `--theme=xp|hacker|amiga|win31`

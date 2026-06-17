@@ -28,7 +28,7 @@ All items below must be satisfied before tagging `v0.1.0`.
 
 - [x] `make strict` passes on Linux.
 - [x] `make test` passes on Linux.
-- [ ] `make smoke` passes in an interactive terminal.
+- [x] `make smoke` passes in an interactive terminal.
 - [x] `make smoke-ci` passes in non-interactive CI/sandbox environments.
 - [ ] Windows Tier 1 build succeeds with documented toolchain.
 - [x] `Makefile` remains a CMake wrapper (no divergent source lists).
@@ -50,7 +50,7 @@ All items below must be satisfied before tagging `v0.1.0`.
 
 ### 4. Portability Gate
 
-- [ ] Linux profile validated (keyboard baseline always works).
+- [x] Linux profile validated (keyboard baseline always works).
 - [ ] Windows profile validated (keyboard baseline; mouse/resize by capability).
 - [x] macOS and DOS status documented as Tier 2 compile/reduced profile.
 - [x] Linux `TERM=linux` keyboard-first policy remains documented and intact.
@@ -87,17 +87,24 @@ make smoke-linux-vc
   - platform profile status,
   - known limits for post-0.1 milestones.
 
-## Validation Snapshot (2026-03-07)
+## Validation Snapshot (2026-06-16)
 
-- Verified in this environment:
+- Verified in WSL/Linux:
   - `make strict`
   - `make test`
+  - `make smoke`
   - `make smoke-ci`
+  - `make smoke-linux-vc`
 - Integration/runtime evidence:
   - `desktop_runtime_test` covers capability rejection, two app launches, clean close,
     and repeated create/run/shutdown cycles.
-- `make smoke` and `make smoke-linux-vc` remain pending here because interactive PTY
-  capture is unavailable.
+- Linux virtual-console policy evidence:
+  - `make smoke-linux-vc` verifies `TERM=linux` reports
+    `linux_tty_keyboard_only: true`.
+- Remaining release blocker:
+  - Windows Tier 1 native build/profile validation is pending because the Windows
+    host does not yet have CMake/CTest and a documented PDCurses toolchain
+    available.
 
 ## Post-Release Immediate Priorities
 

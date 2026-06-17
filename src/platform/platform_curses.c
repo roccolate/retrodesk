@@ -70,6 +70,10 @@ bool platform_init_curses_backend(PlatformBackend *platform,
     mouse_request |= REPORT_MOUSE_POSITION;
 #endif
     mmask_t available_mask = mousemask(mouse_request, NULL);
+    if (term_is_linux_vc) {
+        mousemask(0, NULL);
+        available_mask = 0;
+    }
     platform->features.mouse_basic = (available_mask != 0);
     /* Drag starts optimistic whenever mouse exists and is downgraded at runtime. */
     platform->features.drag_reliable = platform->features.mouse_basic;
@@ -101,8 +105,7 @@ bool platform_init_curses_backend(PlatformBackend *platform,
     platform->features.right_click = false;
 #endif
 
-    platform->features.linux_tty_keyboard_only =
-        term_is_linux_vc && !platform->features.mouse_basic;
+    platform->features.linux_tty_keyboard_only = term_is_linux_vc;
 
     platform_update_mask(&platform->features);
     platform->last_mouse_y = -1;

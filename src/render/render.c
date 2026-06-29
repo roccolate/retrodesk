@@ -1,6 +1,7 @@
 #include "render/render.h"
 
 #include <curses.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -58,15 +59,18 @@ typedef struct ColorPairEntry {
 
 /* curses color pairs are global to the screen; one cache is enough across
    renderer instances. Defaults fall back to pair 0 (terminal default). */
-static ColorPairEntry g_color_pair_cache[64];
+enum { COLOR_PAIR_CACHE_CAP = 64 };
+static ColorPairEntry g_color_pair_cache[COLOR_PAIR_CACHE_CAP];
 static int g_color_pair_count = 0;
 
 static short style_to_pair(Renderer *renderer, const RenderStyle *style) {
     (void)renderer;
     if (!style) return 0;
-    if (style->fg == RENDER_COLOR_DEFAULT || style->bg == RENDER_COLOR_DEFAULT) {
+    if (style->fg == RENDER_COLOR_DEFAULT && style->bg == RENDER_COLOR_DEFAULT) {
         return 0;
     }
+    /* RENDER_COLOR_DEFAULT maps to -1, which ncurses accepts after
+       use_default_colors() has been called (see renderer_create_with_backend). */
     short fg = (short)style->fg;
     short bg = (short)style->bg;
 
@@ -76,12 +80,7 @@ static short style_to_pair(Renderer *renderer, const RenderStyle *style) {
         }
     }
 
-#if defined(COLOR_PAIR_MAX)
-    enum { MAX_PAIRS = COLOR_PAIR_MAX };
-#else
-    enum { MAX_PAIRS = 64 };
-#endif
-    if (g_color_pair_count >= MAX_PAIRS - 1) return 0;
+    if (g_color_pair_count >= COLOR_PAIR_CACHE_CAP) return 0;
 
     short pair = (short)(g_color_pair_count + 1);
     if (init_pair(pair, fg, bg) != OK) return 0;
@@ -112,11 +111,11 @@ static RenderStyle style_or_default(const RenderStyle *style) {
 
 static void draw_copy_text(char dst[DRAW_TEXT_CAP], const char *src) {
     if (!dst) return;
-    dst[0] = '\0';
-    if (!src) return;
-    size_t i = 0;
-    for (; i < DRAW_TEXT_CAP - 1 && src[i]; ++i) dst[i] = src[i];
-    dst[i] = '\0';
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+    snprintf(dst, DRAW_TEXT_CAP, "%s", src);
 }
 
 static bool draw_list_reserve(DrawList *list, size_t want) {
@@ -204,6 +203,9 @@ Renderer *renderer_create_with_backend(const PlatformBackend *backend,
 
     if (renderer->backend_kind == RENDER_BACKEND_CURSES && renderer->has_colors) {
         start_color();
+        /* Allow -1 (RENDER_COLOR_DEFAULT) as fg/bg in init_pair, mapping
+           to the terminal's native foreground/background color. */
+        use_default_colors();
     }
     return renderer;
 }
@@ -216,6 +218,8 @@ void renderer_destroy(Renderer *renderer) {
     if (!renderer) return;
     ansi_renderer_destroy(renderer->ansi);
     renderer->ansi = NULL;
+    /* Reset the global color pair cache so a new renderer starts fresh. */
+    g_color_pair_count = 0;
     free(renderer);
 }
 
@@ -303,7 +307,19 @@ void renderer_end(Renderer *renderer, RenderContext *ctx) {
 }
 
 void render_fill(RenderContext *ctx, char ch, const RenderStyle *style) {
-    if (!ctx || !ctx->win) return;
+    if (!ctx) return;
+    if (!ctx->win) {
+        /* ANSI backend: compose directly into the cell grid. */
+        if (ctx->renderer && ctx->renderer->ansi) {
+            DrawList *tmp = draw_list_create();
+            if (!tmp) return;
+            draw_list_fill(tmp, ch, style);
+            ansi_renderer_compose_draw_list(ctx->renderer->ansi, ctx->y, ctx->x,
+                                            ctx->h, ctx->w, tmp);
+            draw_list_destroy(tmp);
+        }
+        return;
+    }
     apply_style(ctx, style);
     for (int y = 0; y < ctx->h; ++y) {
         mvwhline(ctx->win, y, 0, ch, ctx->w);
@@ -312,7 +328,18 @@ void render_fill(RenderContext *ctx, char ch, const RenderStyle *style) {
 
 void render_draw_box(RenderContext *ctx, const char *title, const RenderStyle *frame_style,
                      const RenderStyle *title_style) {
-    if (!ctx || !ctx->win) return;
+    if (!ctx) return;
+    if (!ctx->win) {
+        if (ctx->renderer && ctx->renderer->ansi) {
+            DrawList *tmp = draw_list_create();
+            if (!tmp) return;
+            draw_list_box(tmp, title, frame_style, title_style);
+            ansi_renderer_compose_draw_list(ctx->renderer->ansi, ctx->y, ctx->x,
+                                            ctx->h, ctx->w, tmp);
+            draw_list_destroy(tmp);
+        }
+        return;
+    }
     apply_style(ctx, frame_style);
     box(ctx->win, 0, 0);
     if (title && title[0]) {
@@ -332,12 +359,23 @@ void render_draw_box(RenderContext *ctx, const char *title, const RenderStyle *f
 
 void render_draw_text(RenderContext *ctx, int y, int x, const char *text,
                       const RenderStyle *style) {
-    if (!ctx || !ctx->win || !text) return;
+    if (!ctx || !text) return;
+    if (!ctx->win) {
+        if (ctx->renderer && ctx->renderer->ansi) {
+            DrawList *tmp = draw_list_create();
+            if (!tmp) return;
+            draw_list_text(tmp, y, x, text, style);
+            ansi_renderer_compose_draw_list(ctx->renderer->ansi, ctx->y, ctx->x,
+                                            ctx->h, ctx->w, tmp);
+            draw_list_destroy(tmp);
+        }
+        return;
+    }
     if (y < 0 || y >= ctx->h || x < 0 || x >= ctx->w) return;
     int max_chars = ctx->w - x;
     if (max_chars <= 0) return;
     /* Avoid writing into the final column, which can wrap/scroll in curses. */
-    if (max_chars > 1) max_chars--;
+    if (x + max_chars >= ctx->w) max_chars--;
     apply_style(ctx, style);
     wmove(ctx->win, y, x);
     waddnstr(ctx->win, text, max_chars);
@@ -345,7 +383,18 @@ void render_draw_text(RenderContext *ctx, int y, int x, const char *text,
 
 void render_draw_hline(RenderContext *ctx, int y, int x, int len, char ch,
                        const RenderStyle *style) {
-    if (!ctx || !ctx->win || len <= 0) return;
+    if (!ctx || len <= 0) return;
+    if (!ctx->win) {
+        if (ctx->renderer && ctx->renderer->ansi) {
+            DrawList *tmp = draw_list_create();
+            if (!tmp) return;
+            draw_list_hline(tmp, y, x, len, ch, style);
+            ansi_renderer_compose_draw_list(ctx->renderer->ansi, ctx->y, ctx->x,
+                                            ctx->h, ctx->w, tmp);
+            draw_list_destroy(tmp);
+        }
+        return;
+    }
     apply_style(ctx, style);
     mvwhline(ctx->win, y, x, ch, len);
 }

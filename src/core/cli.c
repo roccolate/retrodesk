@@ -36,6 +36,14 @@ static bool retro_cli_apply_backend_defaults(RetroCliOptions *opt, FILE *err) {
         }
         return false;
     }
+    if (opt->input_backend == INPUT_BACKEND_NCURSES &&
+        opt->render_backend == RENDER_BACKEND_ANSI) {
+        if (err) {
+            fputs("invalid backend combination: --input-backend=curses requires --render-backend=curses\n",
+                  err);
+        }
+        return false;
+    }
     return true;
 }
 
@@ -44,6 +52,10 @@ bool retro_cli_parse(int argc, char **argv, RetroCliOptions *out, FILE *err) {
     retro_cli_default(out);
 
     for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            retro_cli_print_usage(err, argv[0]);
+            return false;
+        }
         if (strcmp(argv[i], "--bench-startup") == 0) {
             out->bench_mode = true;
             continue;

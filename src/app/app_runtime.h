@@ -14,7 +14,9 @@
    launched by the desktop; they never poll input directly. */
 
 typedef struct Desktop Desktop;
-typedef struct DesktopCapabilities DesktopCapabilities;
+/* DesktopCapabilities is a typedef alias for PlatformFeatures; forward
+   declare the underlying struct instead. */
+typedef struct PlatformFeatures DesktopCapabilities;
 
 typedef struct RetroAppInstance RetroAppInstance;
 typedef struct AppRegistry AppRegistry;

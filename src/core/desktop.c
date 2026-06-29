@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include "app/app_runtime.h"
@@ -62,6 +63,18 @@ static const LauncherItem k_launcher_items[] = {
     {"Close Launcher", LAUNCHER_ACTION_CLOSE_MENU},
 };
 
+static bool desktop_app_is_running(const Desktop *desktop, const char *app_id) {
+    if (!desktop || !app_id) return false;
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        const RetroAppInstance *inst = desktop->apps[i].app;
+        if (inst && inst->descriptor && inst->descriptor->app_id &&
+            strcmp(inst->descriptor->app_id, app_id) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool desktop_add_app(Desktop *desktop, RetroAppInstance *app, WindowId window_id) {
     if (!desktop || !app) return false;
     if (desktop->app_count == desktop->app_capacity) {
@@ -102,12 +115,12 @@ static void app_window_event(RetroWindow *window, const RetroEvent *event, void 
 
 static void desktop_launcher_close(Desktop *desktop) {
     if (!desktop || !desktop->launcher.open) return;
-    if (desktop->launcher.window_id > 0 &&
+    if (desktop->launcher.window_id != WINDOW_ID_INVALID &&
         wm_window_exists(desktop->wm, desktop->launcher.window_id)) {
         wm_close_window(desktop->wm, desktop->launcher.window_id);
     }
     desktop->launcher.open = false;
-    desktop->launcher.window_id = -1;
+    desktop->launcher.window_id = WINDOW_ID_INVALID;
 }
 
 static void desktop_launcher_execute(Desktop *desktop, LauncherAction action) {
@@ -127,7 +140,7 @@ static void desktop_launcher_execute(Desktop *desktop, LauncherAction action) {
            focus; then close whichever window is active now (excluding shell). */
         desktop_launcher_close(desktop);
         WindowId active = wm_active_window(desktop->wm);
-        if (active > 0 && active != desktop->shell_window_id) {
+        if (active != WINDOW_ID_INVALID && active != desktop->shell_window_id) {
             wm_close_window(desktop->wm, active);
         }
         desktop_request_redraw(desktop);
@@ -218,7 +231,7 @@ static void desktop_launcher_open(Desktop *desktop) {
     };
 
     WindowId wid = wm_create_window(desktop->wm, &spec);
-    if (wid <= 0) return;
+    if (wid == WINDOW_ID_INVALID) return;
 
     desktop->launcher.open = true;
     desktop->launcher.selected = 0;
@@ -240,7 +253,7 @@ static void shell_draw(RetroWindow *window, DrawList *draw_list, void *user_data
     draw_list_text(draw_list, 1, 2, "RetroDesk Foundation Runtime", accent);
     draw_list_text(
         draw_list, 2, 2,
-        "Hotkeys: q quit | Tab focus | m launcher | 1/2/3 apps | w close | HJKL move",
+        "Hotkeys: q quit | Tab focus | m launcher | 1/2/3 apps | w close | HJKL move | Esc close app",
         text);
 
     snprintf(line, sizeof(line), "Window: %dx%d @ %d,%d", w, h, x, y);
@@ -265,17 +278,7 @@ static void shell_draw(RetroWindow *window, DrawList *draw_list, void *user_data
 
 static void desktop_fill_capabilities(Desktop *desktop,
                                       const PlatformFeatures *platform_features) {
-    desktop->capabilities.capability_mask = platform_features->capability_mask;
-    desktop->capabilities.keyboard_basic = platform_features->keyboard_basic;
-    desktop->capabilities.mouse_basic = platform_features->mouse_basic;
-    desktop->capabilities.drag_reliable = platform_features->drag_reliable;
-    desktop->capabilities.resize_events = platform_features->resize_events;
-    desktop->capabilities.color = platform_features->color;
-    desktop->capabilities.unicode_basic = platform_features->unicode_basic;
-    desktop->capabilities.double_click = platform_features->double_click;
-    desktop->capabilities.right_click = platform_features->right_click;
-    desktop->capabilities.linux_tty_keyboard_only =
-        platform_features->linux_tty_keyboard_only;
+    desktop->capabilities = *platform_features;
 }
 
 static void desktop_fill_diagnostics(Desktop *desktop) {
@@ -311,8 +314,8 @@ Desktop *desktop_create(const DesktopConfig *config) {
         desktop->config.render_backend = RENDER_BACKEND_CURSES;
     }
     desktop->theme = retro_theme_get(desktop->config.theme_kind);
-    desktop->last_status_tick = -1;
-    desktop->launcher.window_id = -1;
+    desktop->last_status_tick = (time_t)-1;
+    desktop->launcher.window_id = WINDOW_ID_INVALID;
 
     desktop->app_registry = app_registry_create();
     if (!desktop->app_registry) goto fail;
@@ -350,7 +353,7 @@ Desktop *desktop_create(const DesktopConfig *config) {
         .user_data = desktop,
     };
     desktop->shell_window_id = wm_create_window(desktop->wm, &shell_spec);
-    if (desktop->shell_window_id <= 0) goto fail;
+    if (desktop->shell_window_id == WINDOW_ID_INVALID) goto fail;
 
     desktop_fill_diagnostics(desktop);
 
@@ -368,6 +371,20 @@ fail:
 
 RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
     if (!desktop || !app_id) return NULL;
+
+    /* If an instance of this app is already running, focus it instead. */
+    if (desktop_app_is_running(desktop, app_id)) {
+        for (size_t i = 0; i < desktop->app_count; ++i) {
+            const RetroAppInstance *inst = desktop->apps[i].app;
+            if (inst && inst->descriptor && inst->descriptor->app_id &&
+                strcmp(inst->descriptor->app_id, app_id) == 0) {
+                wm_focus_window(desktop->wm, desktop->apps[i].window_id);
+                wm_bring_to_front(desktop->wm, desktop->apps[i].window_id);
+                desktop->needs_redraw = true;
+                return NULL;
+            }
+        }
+    }
 
     const RetroAppDescriptor *desc = app_registry_find(desktop->app_registry, app_id);
     if (!desc) return NULL;
@@ -398,7 +415,7 @@ RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
     };
 
     WindowId wid = wm_create_window(desktop->wm, &spec);
-    if (wid <= 0) {
+    if (wid == WINDOW_ID_INVALID) {
         free(instance);
         return NULL;
     }
@@ -444,10 +461,10 @@ size_t desktop_window_count(const Desktop *desktop) {
 static void desktop_cleanup_apps(Desktop *desktop) {
     if (!desktop) return;
 
-    if (desktop->launcher.open && desktop->launcher.window_id > 0 &&
+    if (desktop->launcher.open && desktop->launcher.window_id != WINDOW_ID_INVALID &&
         !wm_window_exists(desktop->wm, desktop->launcher.window_id)) {
         desktop->launcher.open = false;
-        desktop->launcher.window_id = -1;
+        desktop->launcher.window_id = WINDOW_ID_INVALID;
     }
 
     for (size_t i = 0; i < desktop->app_count;) {
@@ -476,11 +493,12 @@ static void desktop_update_status(Desktop *desktop) {
     desktop->diagnostics.drag_enabled = wm_drag_is_enabled(desktop->wm);
     desktop->diagnostics.drag_degraded = wm_drag_is_degraded(desktop->wm);
 
-    struct tm *tm_now = localtime(&now);
+    struct tm tm_buf;
+    struct tm *tm_now = localtime_r(&now, &tm_buf);
     char timestr[32] = "--:--:--";
     if (tm_now) strftime(timestr, sizeof(timestr), "%H:%M:%S", tm_now);
 
-    WindowId drag_id = -1;
+    WindowId drag_id = WINDOW_ID_INVALID;
     int drag_y = 0;
     int drag_x = 0;
     bool dragging = wm_get_drag_preview(desktop->wm, &drag_id, &drag_y, &drag_x);
@@ -532,23 +550,29 @@ static void desktop_render_frame(Desktop *desktop) {
 static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *key) {
     if (!desktop || !key) return false;
 
-    /* 'q' is always honored, even when the modal launcher is open. */
+    /* While the launcher (modal) is open, only 'q' (quit) and 'm' (toggle)
+       are handled at desktop level; everything else goes to the modal. */
+    if (desktop->launcher.open) {
+        if (key->ascii == 'q') {
+            desktop->running = false;
+            return true;
+        }
+        if (key->ascii == 'm' || key->ascii == 'M') {
+            desktop_launcher_close(desktop);
+            return true;
+        }
+        return false;
+    }
+
     if (key->ascii == 'q') {
         desktop->running = false;
         return true;
     }
 
     if (key->ascii == 'm' || key->ascii == 'M') {
-        if (desktop->launcher.open) {
-            desktop_launcher_close(desktop);
-        } else {
-            desktop_launcher_open(desktop);
-        }
+        desktop_launcher_open(desktop);
         return true;
     }
-
-    /* While the launcher is modal, defer all other desktop shortcuts to it. */
-    if (desktop->launcher.open) return false;
 
     if (key->key_code == '\t') {
         wm_cycle_focus(desktop->wm);
@@ -578,7 +602,7 @@ static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
         return true;
     case 'w': {
         WindowId active = wm_active_window(desktop->wm);
-        if (active > 0 && active != desktop->shell_window_id) {
+        if (active != WINDOW_ID_INVALID && active != desktop->shell_window_id) {
             wm_close_window(desktop->wm, active);
         }
         return true;

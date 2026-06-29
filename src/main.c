@@ -6,6 +6,8 @@
 #include "core/desktop.h"
 #include "platform/platform.h"
 
+enum { DEFAULT_INPUT_TIMEOUT_MS = 120 };
+
 int main(int argc, char **argv) {
     RetroCliOptions options = {0};
     if (!retro_cli_parse(argc, argv, &options, stderr)) {
@@ -16,7 +18,7 @@ int main(int argc, char **argv) {
 
     PlatformConfig platform_cfg = {
         .bench_mode = options.bench_mode,
-        .input_timeout_ms = 120,
+        .input_timeout_ms = DEFAULT_INPUT_TIMEOUT_MS,
         .requested_input_backend = options.input_backend,
     };
     PlatformBackend *platform = platform_create(&platform_cfg);
@@ -32,7 +34,7 @@ int main(int argc, char **argv) {
 
     DesktopConfig desktop_cfg = {
         .platform = platform,
-        .input_timeout_ms = 120,
+        .input_timeout_ms = DEFAULT_INPUT_TIMEOUT_MS,
         .bench_mode = options.bench_mode,
         .render_backend = options.render_backend,
         .theme_kind = options.theme_kind,

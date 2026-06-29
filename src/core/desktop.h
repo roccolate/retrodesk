@@ -23,18 +23,9 @@ typedef struct DesktopConfig {
     RetroThemeKind theme_kind;
 } DesktopConfig;
 
-typedef struct DesktopCapabilities {
-    unsigned int capability_mask;
-    bool keyboard_basic;
-    bool mouse_basic;
-    bool drag_reliable;
-    bool resize_events;
-    bool color;
-    bool unicode_basic;
-    bool double_click;
-    bool right_click;
-    bool linux_tty_keyboard_only;
-} DesktopCapabilities;
+/* DesktopCapabilities is now an alias for PlatformFeatures to avoid
+   maintaining two identical structs. */
+typedef PlatformFeatures DesktopCapabilities;
 
 typedef struct DesktopDiagnostics {
     const char *backend_name;

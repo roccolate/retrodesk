@@ -19,51 +19,13 @@ struct AnsiRenderer {
 };
 
 static int ansi_fg_code(RenderColor color) {
-    switch (color) {
-    case RENDER_COLOR_BLACK:
-        return 30;
-    case RENDER_COLOR_RED:
-        return 31;
-    case RENDER_COLOR_GREEN:
-        return 32;
-    case RENDER_COLOR_YELLOW:
-        return 33;
-    case RENDER_COLOR_BLUE:
-        return 34;
-    case RENDER_COLOR_MAGENTA:
-        return 35;
-    case RENDER_COLOR_CYAN:
-        return 36;
-    case RENDER_COLOR_WHITE:
-        return 37;
-    case RENDER_COLOR_DEFAULT:
-    default:
-        return 39;
-    }
+    if (color >= RENDER_COLOR_BLACK && color <= RENDER_COLOR_WHITE) return 30 + color;
+    return 39; /* default */
 }
 
 static int ansi_bg_code(RenderColor color) {
-    switch (color) {
-    case RENDER_COLOR_BLACK:
-        return 40;
-    case RENDER_COLOR_RED:
-        return 41;
-    case RENDER_COLOR_GREEN:
-        return 42;
-    case RENDER_COLOR_YELLOW:
-        return 43;
-    case RENDER_COLOR_BLUE:
-        return 44;
-    case RENDER_COLOR_MAGENTA:
-        return 45;
-    case RENDER_COLOR_CYAN:
-        return 46;
-    case RENDER_COLOR_WHITE:
-        return 47;
-    case RENDER_COLOR_DEFAULT:
-    default:
-        return 49;
-    }
+    if (color >= RENDER_COLOR_BLACK && color <= RENDER_COLOR_WHITE) return 40 + color;
+    return 49; /* default */
 }
 
 static void ansi_move(FILE *out, int y, int x) {
@@ -189,11 +151,19 @@ static void ansi_set_cell(AnsiRenderer *renderer, int y, int x, char ch,
 
 static void ansi_compose_fill(AnsiRenderer *renderer, int origin_y, int origin_x, int h,
                               int w, const DrawCommandView *cmd) {
-    if (!renderer || !cmd || h <= 0 || w <= 0) return;
+    if (!renderer || !renderer->curr || !cmd || h <= 0 || w <= 0) return;
+    char fill_ch = (cmd->ch == '\0') ? ' ' : cmd->ch;
+    RenderStyle fill_style = cmd->style;
     for (int yy = 0; yy < h; ++yy) {
         int y = origin_y + yy;
-        for (int xx = 0; xx < w; ++xx) {
-            ansi_set_cell(renderer, y, origin_x + xx, cmd->ch, &cmd->style);
+        if (y < 0 || y >= renderer->rows) continue;
+        int x_start = origin_x < 0 ? 0 : origin_x;
+        int x_end = origin_x + w;
+        if (x_end > renderer->cols) x_end = renderer->cols;
+        for (int xx = x_start; xx < x_end; ++xx) {
+            size_t idx = (size_t)y * (size_t)renderer->cols + (size_t)xx;
+            renderer->curr[idx].ch = fill_ch;
+            renderer->curr[idx].style = fill_style;
         }
     }
 }
@@ -340,21 +310,44 @@ void ansi_renderer_flush(AnsiRenderer *renderer, FILE *out) {
         int y = (int)(idx / (size_t)cols);
         int x = (int)(idx % (size_t)cols);
 
-        /* Find the longest run starting at idx that:
-           - stays within the same row,
-           - contains only cells that differ from prev,
-           - shares a single style. */
+        /* Find the longest run starting at idx that stays within the same
+           row and shares a single style. Small gaps of unchanged cells
+           (up to BRIDGE_GAP) are included in the run rather than emitting
+           a separate cursor-move sequence (a move costs ~6-8 bytes while
+           bridging costs 1 byte per gap cell). */
+        enum { BRIDGE_GAP = 4 };
         size_t run_end = idx + 1;
         size_t row_limit = (idx / (size_t)cols + 1) * (size_t)cols;
         if (run_end > row_limit) run_end = row_limit;
         if (run_end > total) run_end = total;
         const RenderStyle *style = &renderer->curr[idx].style;
         while (run_end < total && run_end < row_limit) {
-            if (renderer->prev_valid &&
-                ansi_cell_equal(&renderer->prev[run_end], &renderer->curr[run_end])) {
+            if (!ansi_style_equal(style, &renderer->curr[run_end].style)) {
                 break;
             }
-            if (!ansi_style_equal(style, &renderer->curr[run_end].style)) {
+            if (renderer->prev_valid &&
+                ansi_cell_equal(&renderer->prev[run_end], &renderer->curr[run_end])) {
+                /* Peek ahead: if a changed cell with the same style appears
+                   within BRIDGE_GAP, include the unchanged cells. */
+                size_t gap = 0;
+                size_t peek = run_end;
+                while (peek < total && peek < row_limit && gap < BRIDGE_GAP) {
+                    if (!ansi_style_equal(style, &renderer->curr[peek].style)) break;
+                    if (!(renderer->prev_valid &&
+                          ansi_cell_equal(&renderer->prev[peek], &renderer->curr[peek]))) {
+                        break;
+                    }
+                    ++peek;
+                    ++gap;
+                }
+                /* If we found a dirty cell within the gap, bridge it. */
+                if (peek < total && peek < row_limit &&
+                    ansi_style_equal(style, &renderer->curr[peek].style) &&
+                    !(renderer->prev_valid &&
+                      ansi_cell_equal(&renderer->prev[peek], &renderer->curr[peek]))) {
+                    run_end = peek + 1;
+                    continue;
+                }
                 break;
             }
             ++run_end;

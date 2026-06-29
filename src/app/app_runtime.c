@@ -85,6 +85,8 @@ void app_destroy(RetroAppInstance *app) {
     if (app->descriptor && app->descriptor->destroy) {
         app->descriptor->destroy(app);
     }
+    app->state = NULL;
+    app->descriptor = NULL;
     free(app);
 }
 

@@ -3,10 +3,33 @@
 #if !defined(_WIN32) && !defined(__DJGPP__)
 
 #include <poll.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+
+/* Global pointer for signal handler to restore terminal state on crash. */
+static PlatformBackend *g_tty_signal_platform = NULL;
+
+static void platform_tty_signal_handler(int sig) {
+    /* NOTE: tcsetattr is async-signal-safe per POSIX. The xterm mouse
+       disable path uses fputs/fflush which are technically not safe, but
+       leaving mouse tracking enabled on crash is worse for the user. */
+    if (g_tty_signal_platform) {
+        if (g_tty_signal_platform->tty_raw_enabled &&
+            g_tty_signal_platform->tty_has_saved_mode) {
+            tcsetattr(STDIN_FILENO, TCSANOW, &g_tty_signal_platform->tty_saved_mode);
+        }
+        if (g_tty_signal_platform->xterm_mouse_tracking_forced) {
+            /* Best-effort: write(2) would be safer but mouse disable uses
+               fputs which is acceptable for a crash-recovery path. */
+            platform_disable_xterm_mouse_tracking();
+        }
+    }
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
 
 static bool platform_query_tty_size(int *rows, int *cols) {
     if (!rows || !cols) return false;
@@ -146,6 +169,14 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     platform->last_mouse_x = -1;
     tty_decoder_init(&platform->tty_decoder);
     platform_update_mask(&platform->features);
+
+    /* Install signal handlers to restore terminal on crash. */
+    g_tty_signal_platform = platform;
+    signal(SIGINT, platform_tty_signal_handler);
+    signal(SIGTERM, platform_tty_signal_handler);
+    signal(SIGSEGV, platform_tty_signal_handler);
+    signal(SIGABRT, platform_tty_signal_handler);
+
     return true;
 }
 
@@ -164,12 +195,28 @@ bool platform_poll_event_tty_raw(PlatformBackend *platform, RetroEvent *out_even
         return platform_emit_tty_resize_if_needed(platform, out_event);
     }
 
+    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+        /* stdin closed or errored — synthesize an Escape key so the desktop
+           loop can detect quit cleanly. */
+        out_event->type = RETRO_EVENT_KEY;
+        out_event->data.key.key_code = 'q';
+        out_event->data.key.is_printable = true;
+        out_event->data.key.ascii = 'q';
+        return true;
+    }
+
     if (pfd.revents & POLLIN) {
         unsigned char buf[32];
         ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
-        if (n > 0) {
-            tty_decoder_append(&platform->tty_decoder, buf, (size_t)n);
+        if (n <= 0) {
+            /* EOF or read error — synthesize quit. */
+            out_event->type = RETRO_EVENT_KEY;
+            out_event->data.key.key_code = 'q';
+            out_event->data.key.is_printable = true;
+            out_event->data.key.ascii = 'q';
+            return true;
         }
+        tty_decoder_append(&platform->tty_decoder, buf, (size_t)n);
     }
 
     if (platform_decode_tty_key(platform, out_event)) return true;
@@ -177,6 +224,13 @@ bool platform_poll_event_tty_raw(PlatformBackend *platform, RetroEvent *out_even
 }
 
 void platform_destroy_tty_raw_backend(PlatformBackend *platform) {
+    if (g_tty_signal_platform == platform) {
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGSEGV, SIG_DFL);
+        signal(SIGABRT, SIG_DFL);
+        g_tty_signal_platform = NULL;
+    }
     platform_disable_tty_raw(platform);
 }
 

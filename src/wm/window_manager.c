@@ -40,11 +40,11 @@ struct WindowManager {
 };
 
 static int wm_find_index(const WindowManager *wm, WindowId id) {
-    if (!wm || id <= 0) return -1;
+    if (!wm || id == WINDOW_ID_INVALID) return WINDOW_ID_INVALID;
     for (size_t i = 0; i < wm->count; ++i) {
         if (wm->windows[i] && wm->windows[i]->id == id) return (int)i;
     }
-    return -1;
+    return WINDOW_ID_INVALID;
 }
 
 static RetroWindow *wm_find_window(const WindowManager *wm, WindowId id) {
@@ -95,10 +95,10 @@ static void wm_cleanup_closed(WindowManager *wm) {
             continue;
         }
 
-        if (window->id == wm->active_id) wm->active_id = -1;
+        if (window->id == wm->active_id) wm->active_id = WINDOW_ID_INVALID;
         if (window->id == wm->drag_window_id) {
             wm->dragging = false;
-            wm->drag_window_id = -1;
+            wm->drag_window_id = WINDOW_ID_INVALID;
         }
 
         draw_list_destroy(window->draw_list);
@@ -110,7 +110,7 @@ static void wm_cleanup_closed(WindowManager *wm) {
         wm->count--;
     }
 
-    if (wm->active_id <= 0 && wm->count > 0) {
+    if (wm->active_id == WINDOW_ID_INVALID && wm->count > 0) {
         wm->active_id = wm->windows[wm->count - 1]->id;
     }
     wm_update_active_flags(wm);
@@ -155,8 +155,8 @@ WindowManager *wm_create(Renderer *renderer) {
 
     wm->renderer = renderer;
     wm->next_id = 1;
-    wm->active_id = -1;
-    wm->drag_window_id = -1;
+    wm->active_id = WINDOW_ID_INVALID;
+    wm->drag_window_id = WINDOW_ID_INVALID;
     wm->drag_enabled = true;
     return wm;
 }
@@ -176,7 +176,7 @@ void wm_set_drag_enabled(WindowManager *wm, bool enabled) {
     wm->drag_enabled = enabled;
     if (!enabled) {
         wm->dragging = false;
-        wm->drag_window_id = -1;
+        wm->drag_window_id = WINDOW_ID_INVALID;
         wm->drag_session_moved = false;
     } else {
         wm->drag_degraded = false;
@@ -195,12 +195,12 @@ void wm_set_drag_auto_degrade(WindowManager *wm, bool enabled) {
 }
 
 WindowId wm_create_window(WindowManager *wm, const RetroWindowSpec *spec) {
-    if (!wm || !spec) return -1;
+    if (!wm || !spec) return WINDOW_ID_INVALID;
 
-    if (!wm_reserve(wm, wm->count + 1)) return -1;
+    if (!wm_reserve(wm, wm->count + 1)) return WINDOW_ID_INVALID;
 
     RetroWindow *window = calloc(1, sizeof(*window));
-    if (!window) return -1;
+    if (!window) return WINDOW_ID_INVALID;
 
     window->id = wm->next_id++;
     int rows = 0;
@@ -209,7 +209,7 @@ WindowId wm_create_window(WindowManager *wm, const RetroWindowSpec *spec) {
 
     if (rows < 4 || cols < 8) {
         free(window);
-        return -1;
+        return WINDOW_ID_INVALID;
     }
 
     int max_h = rows - 1; /* reserve bottom row for status bar */
@@ -239,7 +239,7 @@ WindowId wm_create_window(WindowManager *wm, const RetroWindowSpec *spec) {
     window->draw_list = draw_list_create();
     if (!window->draw_list) {
         free(window);
-        return -1;
+        return WINDOW_ID_INVALID;
     }
 
     wm_clamp_window(wm, window);
@@ -250,7 +250,7 @@ WindowId wm_create_window(WindowManager *wm, const RetroWindowSpec *spec) {
 }
 
 void wm_close_window(WindowManager *wm, WindowId id) {
-    if (!wm || id <= 0) return;
+    if (!wm || id == WINDOW_ID_INVALID) return;
     RetroWindow *window = wm_find_window(wm, id);
     if (!window) return;
     window->close_requested = true;
@@ -277,6 +277,8 @@ void wm_bring_to_front(WindowManager *wm, WindowId id) {
 
 bool wm_cycle_focus(WindowManager *wm) {
     if (!wm || wm->count < 2) return false;
+    /* Do not cycle focus while a modal window is active. */
+    if (wm_topmost_modal(wm)) return false;
     int idx = wm_find_index(wm, wm->active_id);
     if (idx < 0) idx = (int)wm->count - 1;
     size_t next = ((size_t)idx + 1) % wm->count;
@@ -287,7 +289,7 @@ bool wm_cycle_focus(WindowManager *wm) {
 }
 
 WindowId wm_active_window(const WindowManager *wm) {
-    if (!wm) return -1;
+    if (!wm) return WINDOW_ID_INVALID;
     return wm->active_id;
 }
 
@@ -312,7 +314,7 @@ bool wm_move_active_window(WindowManager *wm, int dy, int dx) {
 }
 
 bool wm_get_drag_preview(const WindowManager *wm, WindowId *id, int *y, int *x) {
-    if (!wm || !wm->dragging || wm->drag_window_id <= 0) return false;
+    if (!wm || !wm->dragging || wm->drag_window_id == WINDOW_ID_INVALID) return false;
     RetroWindow *drag = wm_find_window(wm, wm->drag_window_id);
     if (!drag) return false;
     if (id) *id = drag->id;
@@ -359,8 +361,8 @@ static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
         wm_bring_to_front(wm, hit->id);
     }
 
-    if (wm->drag_enabled && mouse->button1_pressed && hit &&
-        !(hit->flags & WINDOW_FLAG_FIXED) &&
+    if (wm->drag_enabled && mouse->button1_pressed && !mouse->button1_clicked &&
+        hit && !(hit->flags & WINDOW_FLAG_FIXED) &&
         window_title_hit(hit, mouse->y, mouse->x)) {
         wm->dragging = true;
         wm->drag_window_id = hit->id;
@@ -369,7 +371,7 @@ static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
         wm->drag_session_moved = false;
     }
 
-    if (wm->dragging && wm->drag_window_id > 0 && mouse->moved) {
+    if (wm->dragging && wm->drag_window_id != WINDOW_ID_INVALID && mouse->moved) {
         RetroWindow *drag = wm_find_window(wm, wm->drag_window_id);
         if (drag) {
             drag->y = mouse->y - wm->drag_off_y;
@@ -396,7 +398,7 @@ static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
             }
         }
         wm->dragging = false;
-        wm->drag_window_id = -1;
+        wm->drag_window_id = WINDOW_ID_INVALID;
         wm->drag_session_moved = false;
     }
 
@@ -445,8 +447,6 @@ void wm_render(WindowManager *wm, Renderer *renderer, const RetroTheme *theme) {
 
     const RetroTheme *active_theme = theme ? theme : retro_theme_get(RETRO_THEME_XP);
 
-    wm_cleanup_closed(wm);
-
     for (size_t i = 0; i < wm->count; ++i) {
         RetroWindow *window = wm->windows[i];
         if (!window || !window->draw_list) continue;
@@ -461,12 +461,12 @@ void wm_render(WindowManager *wm, Renderer *renderer, const RetroTheme *theme) {
         draw_list_reset(window->draw_list);
         draw_list_fill(window->draw_list, ' ', &active_theme->window_body);
         draw_list_box(window->draw_list, window->title, frame, &active_theme->window_title);
+        if (window->draw_cb) {
+            window->draw_cb(window, window->draw_list, window->user_data);
+        }
         if (wm->dragging && window->id == wm->drag_window_id) {
             draw_list_text(window->draw_list, 1, 2, "Dragging...",
                            &active_theme->window_body);
-        }
-        if (window->draw_cb) {
-            window->draw_cb(window, window->draw_list, window->user_data);
         }
 
         RenderContext *ctx = renderer_begin_region(renderer, window->h, window->w,

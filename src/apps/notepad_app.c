@@ -23,7 +23,9 @@ static void notepad_event(RetroAppInstance *instance, const RetroEvent *event) {
     if (!state || event->type != RETRO_EVENT_KEY) return;
 
     int key = event->data.key.key_code;
-    if (key == 'x' || key == 'X') {
+
+    /* Escape closes the notepad (avoids conflicting with printable chars). */
+    if (key == 27) {
         app_request_close(instance);
         return;
     }
@@ -37,6 +39,7 @@ static void notepad_event(RetroAppInstance *instance, const RetroEvent *event) {
     }
 
     if (!event->data.key.is_printable) return;
+    if (event->data.key.ascii <= 0) return;
     if (state->cursor >= sizeof(state->content) - 1) return;
     state->content[state->cursor++] = event->data.key.ascii;
     state->content[state->cursor] = '\0';
@@ -49,7 +52,7 @@ static void notepad_render(RetroAppInstance *instance, DrawList *draw_list) {
     const RenderStyle *accent = &theme->shell_accent;
 
     draw_list_text(draw_list, 1, 2, "Notepad (stub runtime app)", accent);
-    draw_list_text(draw_list, 2, 2, "Type text, Backspace to erase, x to close.",
+    draw_list_text(draw_list, 2, 2, "Type text, Backspace to erase, Esc to close.",
                    text);
     draw_list_text(draw_list, 4, 2, state->content, text);
 }

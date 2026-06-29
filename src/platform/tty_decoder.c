@@ -1,5 +1,6 @@
 #include "platform/tty_decoder.h"
 
+#include <stdint.h>
 #include <string.h>
 
 void tty_decoder_init(TtyDecoder *decoder) {
@@ -36,7 +37,15 @@ static bool tty_parse_uint(const unsigned char *buf, size_t len, size_t *idx,
     bool has_digit = false;
     while (i < len && buf[i] >= '0' && buf[i] <= '9') {
         has_digit = true;
-        value = (value * 10) + (int)(buf[i] - '0');
+        int digit = (int)(buf[i] - '0');
+        if (value > (INT32_MAX - digit) / 10) {
+            /* Overflow — consume remaining digits and clamp. */
+            while (i < len && buf[i] >= '0' && buf[i] <= '9') ++i;
+            *idx = i;
+            *out_value = INT32_MAX;
+            return true;
+        }
+        value = (value * 10) + digit;
         ++i;
     }
     if (!has_digit) return false;
@@ -192,7 +201,23 @@ bool tty_decoder_decode(TtyDecoder *decoder, const TtyDecoderKeyMap *keys,
                 out_event->data.key.ascii = '\0';
                 return true;
             }
+            /* Unknown CSI sequence — find the terminating byte (0x40-0x7E)
+               and consume the entire sequence to avoid leaving garbage. */
+            size_t end = 3;
+            while (end < decoder->pending_len) {
+                unsigned char c = decoder->pending[end];
+                if (c >= 0x40 && c <= 0x7E) {
+                    tty_decoder_consume(decoder, end + 1);
+                    return false; /* sequence consumed, no event emitted */
+                }
+                ++end;
+            }
+            /* Incomplete CSI — wait for more data unless buffer is full. */
+            if (decoder->pending_len < sizeof(decoder->pending)) return false;
+            tty_decoder_consume(decoder, decoder->pending_len);
+            return false;
         }
+        /* Lone ESC or ESC followed by non-'[' — emit Escape key. */
         tty_decoder_consume(decoder, 1);
         out_event->type = RETRO_EVENT_KEY;
         out_event->data.key.key_code = 27;

@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "platform/platform.h"
 

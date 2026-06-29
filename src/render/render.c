@@ -1,7 +1,6 @@
 #include "render/render.h"
 
 #include <curses.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -60,6 +59,9 @@ static short style_to_pair(Renderer *renderer, const RenderStyle *style) {
     if (style->fg == RENDER_COLOR_YELLOW && style->bg == RENDER_COLOR_BLUE) return 4;
     if (style->fg == RENDER_COLOR_WHITE && style->bg == RENDER_COLOR_BLACK) return 5;
     if (style->fg == RENDER_COLOR_BLACK && style->bg == RENDER_COLOR_YELLOW) return 6;
+    if (style->fg == RENDER_COLOR_GREEN && style->bg == RENDER_COLOR_BLACK) return 7;
+    if (style->fg == RENDER_COLOR_WHITE && style->bg == RENDER_COLOR_CYAN) return 8;
+    if (style->fg == RENDER_COLOR_BLACK && style->bg == RENDER_COLOR_GREEN) return 9;
     return 0;
 }
 
@@ -85,8 +87,9 @@ static void draw_copy_text(char dst[DRAW_TEXT_CAP], const char *src) {
     if (!dst) return;
     dst[0] = '\0';
     if (!src) return;
-    strncpy(dst, src, DRAW_TEXT_CAP - 1);
-    dst[DRAW_TEXT_CAP - 1] = '\0';
+    size_t i = 0;
+    for (; i < DRAW_TEXT_CAP - 1 && src[i]; ++i) dst[i] = src[i];
+    dst[i] = '\0';
 }
 
 static bool draw_list_reserve(DrawList *list, size_t want) {
@@ -180,6 +183,9 @@ Renderer *renderer_create_with_backend(const PlatformBackend *backend,
         init_pair(4, COLOR_YELLOW, COLOR_BLUE);
         init_pair(5, COLOR_WHITE, COLOR_BLACK);
         init_pair(6, COLOR_BLACK, COLOR_YELLOW);
+        init_pair(7, COLOR_GREEN, COLOR_BLACK);
+        init_pair(8, COLOR_WHITE, COLOR_CYAN);
+        init_pair(9, COLOR_BLACK, COLOR_GREEN);
     }
     return renderer;
 }
@@ -280,12 +286,9 @@ void renderer_end(Renderer *renderer, RenderContext *ctx) {
 
 void render_fill(RenderContext *ctx, char ch, const RenderStyle *style) {
     if (!ctx || !ctx->win) return;
-    int rows = 0;
-    int cols = 0;
-    getmaxyx(ctx->win, rows, cols);
     apply_style(ctx, style);
-    for (int y = 0; y < rows; ++y) {
-        mvwhline(ctx->win, y, 0, ch, cols);
+    for (int y = 0; y < ctx->h; ++y) {
+        mvwhline(ctx->win, y, 0, ch, ctx->w);
     }
 }
 
@@ -295,18 +298,15 @@ void render_draw_box(RenderContext *ctx, const char *title, const RenderStyle *f
     apply_style(ctx, frame_style);
     box(ctx->win, 0, 0);
     if (title && title[0]) {
-        int rows = 0;
-        int cols = 0;
-        getmaxyx(ctx->win, rows, cols);
-        if (rows <= 0 || cols <= 0) return;
-        int max_title = cols - 4;
+        if (ctx->h <= 0 || ctx->w <= 0) return;
+        int max_title = ctx->w - 4;
         if (max_title < 0) max_title = 0;
         apply_style(ctx, title_style);
         mvwaddch(ctx->win, 0, 2, ' ');
         if (max_title > 0) {
             waddnstr(ctx->win, title, max_title);
         }
-        if (2 + max_title < cols - 1) {
+        if (2 + max_title < ctx->w - 1) {
             waddch(ctx->win, ' ');
         }
     }
@@ -315,11 +315,8 @@ void render_draw_box(RenderContext *ctx, const char *title, const RenderStyle *f
 void render_draw_text(RenderContext *ctx, int y, int x, const char *text,
                       const RenderStyle *style) {
     if (!ctx || !ctx->win || !text) return;
-    int rows = 0;
-    int cols = 0;
-    getmaxyx(ctx->win, rows, cols);
-    if (y < 0 || y >= rows || x < 0 || x >= cols) return;
-    int max_chars = cols - x;
+    if (y < 0 || y >= ctx->h || x < 0 || x >= ctx->w) return;
+    int max_chars = ctx->w - x;
     if (max_chars <= 0) return;
     /* Avoid writing into the final column, which can wrap/scroll in curses. */
     if (max_chars > 1) max_chars--;

@@ -2,7 +2,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
 #include "app/app_runtime.h"
@@ -124,12 +123,15 @@ static void desktop_launcher_execute(Desktop *desktop, LauncherAction action) {
         app_launch(desktop, "terminal");
         break;
     case LAUNCHER_ACTION_CLOSE_ACTIVE: {
+        /* Close the launcher first so the previously-active window regains
+           focus; then close whichever window is active now (excluding shell). */
+        desktop_launcher_close(desktop);
         WindowId active = wm_active_window(desktop->wm);
-        if (active > 0 && active != desktop->shell_window_id &&
-            active != desktop->launcher.window_id) {
+        if (active > 0 && active != desktop->shell_window_id) {
             wm_close_window(desktop->wm, active);
         }
-        break;
+        desktop_request_redraw(desktop);
+        return;
     }
     case LAUNCHER_ACTION_CLOSE_MENU:
     default:
@@ -159,6 +161,7 @@ static void launcher_draw(RetroWindow *window, DrawList *draw_list, void *user_d
 }
 
 static void launcher_event(RetroWindow *window, const RetroEvent *event, void *user_data) {
+    (void)window;
     Desktop *desktop = (Desktop *)user_data;
     if (!desktop || !event || event->type != RETRO_EVENT_KEY) return;
 
@@ -168,9 +171,7 @@ static void launcher_event(RetroWindow *window, const RetroEvent *event, void *u
     if (count == 0) return;
 
     if (key == 27 || ch == 'q') {
-        retro_window_request_close(window);
-        desktop->launcher.open = false;
-        desktop->launcher.window_id = -1;
+        desktop_launcher_close(desktop);
         return;
     }
 
@@ -312,57 +313,30 @@ Desktop *desktop_create(const DesktopConfig *config) {
     desktop->theme = retro_theme_get(desktop->config.theme_kind);
     desktop->last_status_tick = -1;
     desktop->launcher.window_id = -1;
+
     desktop->app_registry = app_registry_create();
-    if (!desktop->app_registry) {
-        free(desktop);
-        return NULL;
-    }
+    if (!desktop->app_registry) goto fail;
 
     const PlatformFeatures *features = platform_features(desktop->platform);
-    if (!features) {
-        app_registry_destroy(desktop->app_registry);
-        free(desktop);
-        return NULL;
-    }
+    if (!features) goto fail;
+
     desktop_fill_capabilities(desktop, features);
-    desktop_fill_diagnostics(desktop);
 
     desktop->renderer =
         renderer_create_with_backend(desktop->platform, desktop->config.render_backend);
-    if (!desktop->renderer) {
-        app_registry_destroy(desktop->app_registry);
-        free(desktop);
-        return NULL;
-    }
+    if (!desktop->renderer) goto fail;
 
     desktop->wm = wm_create(desktop->renderer);
-    if (!desktop->wm) {
-        renderer_destroy(desktop->renderer);
-        app_registry_destroy(desktop->app_registry);
-        free(desktop);
-        return NULL;
-    }
+    if (!desktop->wm) goto fail;
+
     wm_set_drag_enabled(desktop->wm, desktop->capabilities.drag_reliable);
     wm_set_drag_auto_degrade(desktop->wm, desktop->capabilities.linux_tty_keyboard_only);
-    desktop_fill_diagnostics(desktop);
 
     desktop->statusbar = statusbar_create();
-    if (!desktop->statusbar) {
-        wm_destroy(desktop->wm);
-        renderer_destroy(desktop->renderer);
-        app_registry_destroy(desktop->app_registry);
-        free(desktop);
-        return NULL;
-    }
+    if (!desktop->statusbar) goto fail;
+
     desktop->overlay_draw_list = draw_list_create();
-    if (!desktop->overlay_draw_list) {
-        statusbar_destroy(desktop->statusbar);
-        wm_destroy(desktop->wm);
-        renderer_destroy(desktop->renderer);
-        app_registry_destroy(desktop->app_registry);
-        free(desktop);
-        return NULL;
-    }
+    if (!desktop->overlay_draw_list) goto fail;
 
     RetroWindowSpec shell_spec = {
         .height = 10,
@@ -376,23 +350,20 @@ Desktop *desktop_create(const DesktopConfig *config) {
         .user_data = desktop,
     };
     desktop->shell_window_id = wm_create_window(desktop->wm, &shell_spec);
-    if (desktop->shell_window_id <= 0) {
-        draw_list_destroy(desktop->overlay_draw_list);
-        statusbar_destroy(desktop->statusbar);
-        wm_destroy(desktop->wm);
-        renderer_destroy(desktop->renderer);
-        app_registry_destroy(desktop->app_registry);
-        free(desktop);
-        return NULL;
-    }
+    if (desktop->shell_window_id <= 0) goto fail;
 
-    app_registry_reset(desktop->app_registry);
+    desktop_fill_diagnostics(desktop);
+
     apps_register_builtin(desktop->app_registry);
     app_launch(desktop, "filemanager");
     app_launch(desktop, "notepad");
 
     desktop->needs_redraw = true;
     return desktop;
+
+fail:
+    desktop_shutdown(desktop);
+    return NULL;
 }
 
 RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
@@ -455,11 +426,6 @@ void desktop_request_redraw(Desktop *desktop) {
     desktop->needs_redraw = true;
 }
 
-const DesktopCapabilities *desktop_capabilities(const Desktop *desktop) {
-    if (!desktop) return NULL;
-    return &desktop->capabilities;
-}
-
 const DesktopDiagnostics *desktop_diagnostics(const Desktop *desktop) {
     if (!desktop) return NULL;
     return &desktop->diagnostics;
@@ -519,35 +485,26 @@ static void desktop_update_status(Desktop *desktop) {
     int drag_x = 0;
     bool dragging = wm_get_drag_preview(desktop->wm, &drag_id, &drag_y, &drag_x);
 
+    const char *mouse = desktop->diagnostics.mouse_enabled ? "on" : "off";
+    const char *drag = desktop->diagnostics.drag_enabled ? "on" : "off";
+    char middle[96];
+
     if (desktop->diagnostics.drag_degraded) {
-        statusbar_set_text(
-            desktop->statusbar,
-            "RetroDesk | windows=%zu apps=%zu | in=%s out=%s theme=%s | mouse=%s drag=auto-off(%d) use HJKL | %s",
-            wm_window_count(desktop->wm), desktop->app_count,
-            desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
-            desktop->diagnostics.theme_name,
-            desktop->diagnostics.mouse_enabled ? "on" : "off",
-            wm_drag_no_motion_sessions(desktop->wm), timestr);
+        snprintf(middle, sizeof(middle), "mouse=%s drag=auto-off(%d) use HJKL", mouse,
+                 wm_drag_no_motion_sessions(desktop->wm));
     } else if (dragging) {
-        statusbar_set_text(
-            desktop->statusbar,
-            "RetroDesk | windows=%zu apps=%zu | in=%s out=%s theme=%s | mouse=%s drag=%s #%d->%d,%d | %s",
-            wm_window_count(desktop->wm), desktop->app_count,
-            desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
-            desktop->diagnostics.theme_name,
-            desktop->diagnostics.mouse_enabled ? "on" : "off",
-            desktop->diagnostics.drag_enabled ? "on" : "off", drag_id, drag_x, drag_y,
-            timestr);
+        snprintf(middle, sizeof(middle), "mouse=%s drag=%s #%d->%d,%d", mouse, drag, drag_id,
+                 drag_x, drag_y);
     } else {
-        statusbar_set_text(
-            desktop->statusbar,
-            "RetroDesk | windows=%zu apps=%zu | in=%s out=%s theme=%s | mouse=%s drag=%s | %s",
-            wm_window_count(desktop->wm), desktop->app_count,
-            desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
-            desktop->diagnostics.theme_name,
-            desktop->diagnostics.mouse_enabled ? "on" : "off",
-            desktop->diagnostics.drag_enabled ? "on" : "off", timestr);
+        snprintf(middle, sizeof(middle), "mouse=%s drag=%s", mouse, drag);
     }
+
+    statusbar_set_text(
+        desktop->statusbar,
+        "RetroDesk | windows=%zu apps=%zu | in=%s out=%s theme=%s | %s | %s",
+        wm_window_count(desktop->wm), desktop->app_count,
+        desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
+        desktop->diagnostics.theme_name, middle, timestr);
 }
 
 static void desktop_render_frame(Desktop *desktop) {
@@ -575,9 +532,9 @@ static void desktop_render_frame(Desktop *desktop) {
 static void desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *key) {
     if (!desktop || !key) return;
 
-    if (key->key_code == '\t') {
-        wm_cycle_focus(desktop->wm);
-        desktop_request_redraw(desktop);
+    /* 'q' is always honored, even when the modal launcher is open. */
+    if (key->ascii == 'q') {
+        desktop->running = false;
         return;
     }
 
@@ -590,28 +547,26 @@ static void desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
         return;
     }
 
+    /* While the launcher is modal, defer all other desktop shortcuts to it. */
+    if (desktop->launcher.open) return;
+
+    if (key->key_code == '\t') {
+        wm_cycle_focus(desktop->wm);
+        desktop_request_redraw(desktop);
+        return;
+    }
+
     if (key->ascii == 'H' || key->ascii == 'J' || key->ascii == 'K' ||
         key->ascii == 'L') {
-        int dy = 0;
-        int dx = 0;
-        if (key->ascii == 'H') dx = -1;
-        if (key->ascii == 'L') dx = 1;
-        if (key->ascii == 'K') dy = -1;
-        if (key->ascii == 'J') dy = 1;
+        int dy = (key->ascii == 'J') - (key->ascii == 'K');
+        int dx = (key->ascii == 'L') - (key->ascii == 'H');
         if (wm_move_active_window(desktop->wm, dy, dx)) {
             desktop_request_redraw(desktop);
         }
         return;
     }
 
-    if (desktop->launcher.open && key->ascii != 'q') {
-        return;
-    }
-
     switch (key->ascii) {
-    case 'q':
-        desktop->running = false;
-        break;
     case '1':
         app_launch(desktop, "filemanager");
         break;
@@ -653,10 +608,10 @@ int desktop_run(Desktop *desktop) {
                 desktop_handle_key_command(desktop, &event.data.key);
             }
             wm_handle_event(desktop->wm, &event);
+            desktop_cleanup_apps(desktop);
             desktop_request_redraw(desktop);
         }
 
-        desktop_cleanup_apps(desktop);
         desktop_update_status(desktop);
         if (desktop->needs_redraw) {
             desktop_render_frame(desktop);

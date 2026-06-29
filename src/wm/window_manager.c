@@ -2,7 +2,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "ui/theme.h"
 
@@ -453,11 +452,6 @@ RetroWindow *wm_window(WindowManager *wm, WindowId id) {
     return wm_find_window(wm, id);
 }
 
-WindowId retro_window_id(const RetroWindow *window) {
-    if (!window) return -1;
-    return window->id;
-}
-
 void retro_window_get_geometry(const RetroWindow *window, int *y, int *x, int *h,
                                int *w) {
     if (!window) return;
@@ -465,21 +459,6 @@ void retro_window_get_geometry(const RetroWindow *window, int *y, int *x, int *h
     if (x) *x = window->x;
     if (h) *h = window->h;
     if (w) *w = window->w;
-}
-
-void retro_window_move(RetroWindow *window, int y, int x) {
-    if (!window) return;
-    window->y = y;
-    window->x = x;
-}
-
-void retro_window_set_title(RetroWindow *window, const char *title) {
-    if (!window) return;
-    snprintf(window->title, sizeof(window->title), "%s", title ? title : "Window");
-}
-
-bool retro_window_is_active(const RetroWindow *window) {
-    return window && window->is_active;
 }
 
 void retro_window_request_close(RetroWindow *window) {

@@ -2,6 +2,7 @@ build/
 vcpkg/
 cmake-build*/
 compile_commands.json
+Testing/
 *.exe
 *.dll
 *.o

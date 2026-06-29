@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 
+/* Backend-neutral event types delivered by the platform layer. */
+
 typedef enum RetroEventType {
     RETRO_EVENT_NONE = 0,
     RETRO_EVENT_KEY,

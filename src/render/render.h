@@ -6,6 +6,10 @@
 
 #include "platform/platform.h"
 
+/* Render contract: `wm`/`app`/`ui` produce DrawLists; only this module
+   executes backend draw calls (curses or ANSI). Per-frame state is owned
+   by the Renderer; callers must not touch WINDOW* or FILE* directly. */
+
 typedef struct Renderer Renderer;
 typedef struct RenderContext RenderContext;
 typedef struct DrawList DrawList;

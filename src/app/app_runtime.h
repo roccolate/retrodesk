@@ -10,6 +10,9 @@
 #include "ui/theme.h"
 #include "wm/window_manager.h"
 
+/* App registry + descriptor lifecycle. Apps are registered by id and
+   launched by the desktop; they never poll input directly. */
+
 typedef struct Desktop Desktop;
 typedef struct DesktopCapabilities DesktopCapabilities;
 
@@ -55,7 +58,6 @@ size_t app_registry_count(const AppRegistry *registry);
 const RetroAppDescriptor *app_registry_descriptor_at(const AppRegistry *registry,
                                                      size_t index);
 
-RetroAppInstance *app_launch(Desktop *desktop, const char *app_id);
 void app_handle_event(RetroAppInstance *app, const RetroEvent *event);
 void app_render(RetroAppInstance *app, DrawList *draw_list);
 void app_destroy(RetroAppInstance *app);

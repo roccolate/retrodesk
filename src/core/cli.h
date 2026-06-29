@@ -8,6 +8,9 @@
 #include "render/render.h"
 #include "ui/theme.h"
 
+/* Command-line option parser. Returns RetroCliOptions filled from argv;
+   rejects invalid backend combinations (e.g. tty-input with curses-render). */
+
 typedef struct RetroCliOptions {
     bool bench_mode;
     RenderBackendKind render_backend;

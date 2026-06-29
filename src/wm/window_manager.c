@@ -137,6 +137,17 @@ static RetroWindow *wm_top_window_at(WindowManager *wm, int y, int x) {
     return NULL;
 }
 
+/* Returns the topmost modal window, or NULL if none. The topmost modal
+   receives exclusive input until dismissed. */
+static RetroWindow *wm_topmost_modal(const WindowManager *wm) {
+    if (!wm) return NULL;
+    for (size_t i = wm->count; i > 0; --i) {
+        RetroWindow *window = wm->windows[i - 1];
+        if (window->flags & WINDOW_FLAG_MODAL) return window;
+    }
+    return NULL;
+}
+
 WindowManager *wm_create(Renderer *renderer) {
     if (!renderer) return NULL;
     WindowManager *wm = calloc(1, sizeof(*wm));
@@ -326,7 +337,23 @@ int wm_drag_no_motion_sessions(const WindowManager *wm) {
 static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
     if (!wm || !mouse) return;
 
+    RetroWindow *modal = wm_topmost_modal(wm);
     RetroWindow *hit = wm_top_window_at(wm, mouse->y, mouse->x);
+
+    /* While a modal window is open, hits outside it are ignored. The modal
+       window itself receives the event regardless of cursor position so it
+       can dim or react to clicks anywhere. */
+    if (modal) {
+        if (modal->event_cb) {
+            RetroEvent evt = {0};
+            evt.type = RETRO_EVENT_MOUSE;
+            evt.data.mouse = *mouse;
+            modal->event_cb(modal, &evt, modal->user_data);
+        }
+        wm_cleanup_closed(wm);
+        return;
+    }
+
     if (hit && (mouse->button1_pressed || mouse->button1_clicked)) {
         wm_focus_window(wm, hit->id);
         wm_bring_to_front(wm, hit->id);
@@ -400,9 +427,11 @@ bool wm_handle_event(WindowManager *wm, const RetroEvent *event) {
     }
 
     if (event->type == RETRO_EVENT_KEY) {
-        RetroWindow *active = wm_find_window(wm, wm->active_id);
-        if (active && active->event_cb) {
-            active->event_cb(active, event, active->user_data);
+        RetroWindow *target = wm_find_window(wm, wm->active_id);
+        RetroWindow *modal = wm_topmost_modal(wm);
+        if (modal) target = modal;
+        if (target && target->event_cb) {
+            target->event_cb(target, event, target->user_data);
         }
         wm_cleanup_closed(wm);
         return true;

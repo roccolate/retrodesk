@@ -13,6 +13,8 @@
 typedef int WindowId;
 typedef unsigned int WindowFlags;
 
+enum { WINDOW_ID_INVALID = -1 };
+
 enum {
     WINDOW_FLAG_NORMAL = 0,
     /* Window is fixed in place: ignores HJKL moves and title-bar drag. */

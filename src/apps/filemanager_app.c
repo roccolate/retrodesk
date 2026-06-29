@@ -23,7 +23,7 @@ static void fm_event(RetroAppInstance *instance, const RetroEvent *event) {
         if (state->selection > 0) state->selection--;
     } else if (key == 'j' || key == 'J') {
         if (state->selection < 2) state->selection++;
-    } else if (key == 'x' || key == 'X') {
+    } else if (key == 27) {
         app_request_close(instance);
     }
 }
@@ -37,7 +37,7 @@ static void fm_render(RetroAppInstance *instance, DrawList *draw_list) {
     const RenderStyle *selected = &theme->launcher_selected;
 
     draw_list_text(draw_list, 1, 2, "FileManager (stub runtime app)", accent);
-    draw_list_text(draw_list, 2, 2, "Use j/k to move selection, x to close.", text);
+    draw_list_text(draw_list, 2, 2, "Use j/k to move selection, Esc to close.", text);
 
     for (int i = 0; i < 3; ++i) {
         bool is_selected = state->selection == i;

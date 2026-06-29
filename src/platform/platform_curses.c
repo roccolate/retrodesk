@@ -107,7 +107,7 @@ platform->features.right_click = false;
     platform->last_mouse_y = -1;
     platform->last_mouse_x = -1;
 
-    if (config && config->input_timeout_ms >= 0) {
+    if (config && config->input_timeout_ms > 0) {
         timeout(config->input_timeout_ms);
     } else {
         timeout(100);

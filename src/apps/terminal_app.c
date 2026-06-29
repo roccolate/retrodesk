@@ -13,7 +13,7 @@ static bool terminal_create(RetroAppInstance *instance, const RetroAppContext *c
 static void terminal_event(RetroAppInstance *instance, const RetroEvent *event) {
     if (!instance || !event || event->type != RETRO_EVENT_KEY) return;
     int key = event->data.key.key_code;
-    if (key == 'x' || key == 'X') app_request_close(instance);
+    if (key == 27) app_request_close(instance);
 }
 
 static void terminal_render(RetroAppInstance *instance, DrawList *draw_list) {
@@ -27,17 +27,21 @@ static void terminal_render(RetroAppInstance *instance, DrawList *draw_list) {
     draw_list_text(draw_list, 2, 2,
                    "This app shows detected runtime capabilities.", text);
 
-    snprintf(line, sizeof(line), "mouse=%s drag=%s resize=%s right_click=%s",
-             cap->mouse_basic ? "on" : "off", cap->drag_reliable ? "on" : "off",
-             cap->resize_events ? "on" : "off",
-             cap->right_click ? "on" : "off");
-    draw_list_text(draw_list, 4, 2, line, text);
+    if (!cap) {
+        draw_list_text(draw_list, 4, 2, "(capabilities unavailable)", text);
+    } else {
+        snprintf(line, sizeof(line), "mouse=%s drag=%s resize=%s right_click=%s",
+                 cap->mouse_basic ? "on" : "off", cap->drag_reliable ? "on" : "off",
+                 cap->resize_events ? "on" : "off",
+                 cap->right_click ? "on" : "off");
+        draw_list_text(draw_list, 4, 2, line, text);
 
-    snprintf(line, sizeof(line), "linux_tty_keyboard_only=%s",
-             cap->linux_tty_keyboard_only ? "yes" : "no");
-    draw_list_text(draw_list, 5, 2, line, text);
+        snprintf(line, sizeof(line), "linux_tty_keyboard_only=%s",
+                 cap->linux_tty_keyboard_only ? "yes" : "no");
+        draw_list_text(draw_list, 5, 2, line, text);
+    }
 
-    draw_list_text(draw_list, 7, 2, "Press x to close.", text);
+    draw_list_text(draw_list, 7, 2, "Press Esc to close.", text);
 }
 
 static void terminal_destroy(RetroAppInstance *instance) {

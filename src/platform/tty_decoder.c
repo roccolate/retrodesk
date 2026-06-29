@@ -45,6 +45,11 @@ static bool tty_parse_uint(const unsigned char *buf, size_t len, size_t *idx,
     return true;
 }
 
+static bool tty_decoder_starts_mouse(const TtyDecoder *decoder) {
+    return decoder->pending_len >= 3 && decoder->pending[0] == 0x1b &&
+           decoder->pending[1] == '[' && decoder->pending[2] == '<';
+}
+
 static bool tty_decoder_decode_mouse(TtyDecoder *decoder, RetroEvent *out_event) {
     if (!decoder || !out_event) return false;
     if (decoder->pending_len < 6) return false;
@@ -154,6 +159,10 @@ bool tty_decoder_decode(TtyDecoder *decoder, const TtyDecoderKeyMap *keys,
 
     if (tty_decoder_decode_mouse(decoder, out_event)) return true;
     if (decoder->pending_len == 0) return false;
+
+    /* A pending "ESC [ <" prefix must be a (still-incomplete) mouse sequence;
+       never reinterpret it as an Escape key. */
+    if (tty_decoder_starts_mouse(decoder)) return false;
 
     unsigned char b0 = decoder->pending[0];
     if (b0 == 0x1b) {

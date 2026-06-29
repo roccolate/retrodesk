@@ -62,12 +62,8 @@ bool wm_handle_event(WindowManager *wm, const RetroEvent *event);
 void wm_render(WindowManager *wm, Renderer *renderer, const RetroTheme *theme);
 
 RetroWindow *wm_window(WindowManager *wm, WindowId id);
-WindowId retro_window_id(const RetroWindow *window);
 void retro_window_get_geometry(const RetroWindow *window, int *y, int *x, int *h,
                                int *w);
-void retro_window_move(RetroWindow *window, int y, int x);
-void retro_window_set_title(RetroWindow *window, const char *title);
-bool retro_window_is_active(const RetroWindow *window);
 void retro_window_request_close(RetroWindow *window);
 
 #endif

@@ -19,11 +19,11 @@ static void fm_event(RetroAppInstance *instance, const RetroEvent *event) {
     FileManagerState *state = (FileManagerState *)instance->state;
     if (!state || event->type != RETRO_EVENT_KEY) return;
     int key = event->data.key.key_code;
-    if (key == 'w' || key == 'W') {
+    if (key == 'k' || key == 'K') {
         if (state->selection > 0) state->selection--;
-    } else if (key == 's' || key == 'S') {
+    } else if (key == 'j' || key == 'J') {
         if (state->selection < 2) state->selection++;
-    } else if (event->data.key.ascii == 'x') {
+    } else if (key == 'x' || key == 'X') {
         app_request_close(instance);
     }
 }
@@ -31,20 +31,18 @@ static void fm_event(RetroAppInstance *instance, const RetroEvent *event) {
 static void fm_render(RetroAppInstance *instance, DrawList *draw_list) {
     FileManagerState *state = (FileManagerState *)instance->state;
     char line[96];
-    const RetroTheme *theme = instance && instance->ctx.theme
-                                  ? instance->ctx.theme
-                                  : retro_theme_get(RETRO_THEME_XP);
+    const RetroTheme *theme = instance->ctx.theme;
     const RenderStyle *text = &theme->window_body;
     const RenderStyle *accent = &theme->shell_accent;
     const RenderStyle *selected = &theme->launcher_selected;
 
     draw_list_text(draw_list, 1, 2, "FileManager (stub runtime app)", accent);
-    draw_list_text(draw_list, 2, 2, "Use w/s to move selection, x to close.", text);
+    draw_list_text(draw_list, 2, 2, "Use j/k to move selection, x to close.", text);
 
     for (int i = 0; i < 3; ++i) {
-        const RenderStyle *row = (state && state->selection == i) ? selected : text;
-        snprintf(line, sizeof(line), "[%c] Item %d", state && state->selection == i ? '*' : ' ',
-                 i + 1);
+        bool is_selected = state->selection == i;
+        const RenderStyle *row = is_selected ? selected : text;
+        snprintf(line, sizeof(line), "[%c] Item %d", is_selected ? '*' : ' ', i + 1);
         draw_list_text(draw_list, 4 + i, 4, line, row);
     }
 }

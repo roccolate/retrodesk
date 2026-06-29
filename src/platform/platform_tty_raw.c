@@ -128,10 +128,6 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     platform->uses_curses = false;
     platform->features.input_backend = INPUT_BACKEND_TTY_RAW;
     platform->features.keyboard_basic = true;
-    platform->features.mouse_basic = false;
-    platform->features.drag_reliable = false;
-    platform->features.double_click = false;
-    platform->features.right_click = false;
     platform->features.unicode_basic = true;
     platform->features.color = (term && strcmp(term, "dumb") != 0);
     platform->features.resize_events =

@@ -2,10 +2,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 typedef struct NotepadState {
-    int cursor;
+    size_t cursor;
     char content[96];
 } NotepadState;
 
@@ -23,12 +22,13 @@ static void notepad_event(RetroAppInstance *instance, const RetroEvent *event) {
     NotepadState *state = (NotepadState *)instance->state;
     if (!state || event->type != RETRO_EVENT_KEY) return;
 
-    if (event->data.key.ascii == 'x') {
+    int key = event->data.key.key_code;
+    if (key == 'x' || key == 'X') {
         app_request_close(instance);
         return;
     }
 
-    if (event->data.key.key_code == 8 || event->data.key.key_code == 127) {
+    if (key == 8 || key == 127) {
         if (state->cursor > 0) {
             state->cursor--;
             state->content[state->cursor] = '\0';
@@ -37,23 +37,21 @@ static void notepad_event(RetroAppInstance *instance, const RetroEvent *event) {
     }
 
     if (!event->data.key.is_printable) return;
-    if (state->cursor >= (int)sizeof(state->content) - 1) return;
+    if (state->cursor >= sizeof(state->content) - 1) return;
     state->content[state->cursor++] = event->data.key.ascii;
     state->content[state->cursor] = '\0';
 }
 
 static void notepad_render(RetroAppInstance *instance, DrawList *draw_list) {
     NotepadState *state = (NotepadState *)instance->state;
-    const RetroTheme *theme = instance && instance->ctx.theme
-                                  ? instance->ctx.theme
-                                  : retro_theme_get(RETRO_THEME_XP);
+    const RetroTheme *theme = instance->ctx.theme;
     const RenderStyle *text = &theme->window_body;
     const RenderStyle *accent = &theme->shell_accent;
 
     draw_list_text(draw_list, 1, 2, "Notepad (stub runtime app)", accent);
     draw_list_text(draw_list, 2, 2, "Type text, Backspace to erase, x to close.",
                    text);
-    draw_list_text(draw_list, 4, 2, state ? state->content : "", text);
+    draw_list_text(draw_list, 4, 2, state->content, text);
 }
 
 static void notepad_destroy(RetroAppInstance *instance) {

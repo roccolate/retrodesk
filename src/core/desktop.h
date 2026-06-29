@@ -45,7 +45,6 @@ typedef struct DesktopDiagnostics {
 Desktop *desktop_create(const DesktopConfig *config);
 int desktop_run(Desktop *desktop);
 void desktop_request_redraw(Desktop *desktop);
-const DesktopCapabilities *desktop_capabilities(const Desktop *desktop);
 const DesktopDiagnostics *desktop_diagnostics(const Desktop *desktop);
 size_t desktop_app_count(const Desktop *desktop);
 size_t desktop_window_count(const Desktop *desktop);

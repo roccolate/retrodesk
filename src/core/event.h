@@ -8,18 +8,7 @@ typedef enum RetroEventType {
     RETRO_EVENT_KEY,
     RETRO_EVENT_MOUSE,
     RETRO_EVENT_RESIZE,
-    RETRO_EVENT_COMMAND,
 } RetroEventType;
-
-typedef enum RetroCommand {
-    RETRO_COMMAND_NONE = 0,
-    RETRO_COMMAND_QUIT,
-    RETRO_COMMAND_CYCLE_FOCUS,
-    RETRO_COMMAND_LAUNCH_FILEMANAGER,
-    RETRO_COMMAND_LAUNCH_NOTEPAD,
-    RETRO_COMMAND_LAUNCH_TERMINAL,
-    RETRO_COMMAND_CLOSE_ACTIVE,
-} RetroCommand;
 
 typedef struct RetroKeyEvent {
     int key_code;
@@ -52,7 +41,6 @@ typedef struct RetroEvent {
         RetroKeyEvent key;
         RetroMouseEvent mouse;
         RetroResizeEvent resize;
-        RetroCommand command;
     } data;
 } RetroEvent;
 

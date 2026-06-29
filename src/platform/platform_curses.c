@@ -93,16 +93,12 @@ bool platform_init_curses_backend(PlatformBackend *platform,
     platform->features.double_click = false;
 #endif
 
-#if defined(BUTTON3_PRESSED) || defined(BUTTON3_CLICKED)
-    platform->features.right_click = false;
-#ifdef BUTTON3_PRESSED
+platform->features.right_click = false;
+#if defined(BUTTON3_PRESSED)
     if (available_mask & BUTTON3_PRESSED) platform->features.right_click = true;
 #endif
-#ifdef BUTTON3_CLICKED
+#if defined(BUTTON3_CLICKED)
     if (available_mask & BUTTON3_CLICKED) platform->features.right_click = true;
-#endif
-#else
-    platform->features.right_click = false;
 #endif
 
     platform->features.linux_tty_keyboard_only = term_is_linux_vc;

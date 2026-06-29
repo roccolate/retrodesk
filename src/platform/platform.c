@@ -119,9 +119,6 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
 #endif
 
     if (!platform_init_curses_backend(platform, config)) {
-#if !defined(_WIN32) && !defined(__DJGPP__)
-        platform_destroy_tty_raw_backend(platform);
-#endif
         free(platform);
         return NULL;
     }

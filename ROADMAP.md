@@ -35,12 +35,6 @@ Every automated session MUST follow these rules:
 - Push after every successful commit
 - Update ROADMAP.md marking items [DONE]
 
-### Git push command
-```
-git remote set-url origin https://roccolate:$GITHUB_TOKEN@github.com/roccolate/retrodesk.git && git push origin main && git remote set-url origin https://github.com/roccolate/retrodesk.git
-```
-The $GITHUB_TOKEN is injected by the cron job — do not hardcode tokens in files.
-
 ---
 
 ## Phase 1 — UI Toolkit

@@ -43,7 +43,7 @@ Foundation widgets that all apps will use.
 
 - [DONE] 1.01 Text input widget (single-line, cursor, viewport scroll, shortcuts)
 - [DONE] 1.02 Scrollable list widget (selection, scroll, item count display)
-- [TODO] 1.03 Multi-line text buffer (line array, insert/delete, cursor row+col)
+- [DONE] 1.03 Multi-line text buffer (line array, insert/delete, cursor row+col)
 - [TODO] 1.04 Button widget ([OK] [Cancel], clickeable, keyboard focusable)
 - [TODO] 1.05 Dialog system (message box, confirm, input prompt, file open/save)
 - [TODO] 1.06 Menu bar widget (File|Edit|View|Help with dropdown items)
@@ -117,9 +117,9 @@ Ship it.
 
 | Phase | Total | Done | Remaining |
 |-------|-------|------|-----------|
-| 1 — UI Toolkit | 8 | 2 | 6 |
+| 1 — UI Toolkit | 8 | 3 | 5 |
 | 2 — Core Runtime | 7 | 0 | 7 |
 | 3 — Apps | 12 | 0 | 12 |
 | 4 — Desktop Chrome | 6 | 0 | 6 |
 | 5 — Polish & Release | 8 | 0 | 8 |
-| **Total** | **41** | **2** | **39** |
+| **Total** | **41** | **3** | **38** |

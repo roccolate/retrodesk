@@ -6,6 +6,9 @@
 
 #include "core/event.h"
 
+/* Stateful decoder for ANSI/VT escape sequences and SGR mouse reports on
+   the raw-TTY input backend. One instance per PlatformBackend. */
+
 typedef struct TtyDecoder {
     int last_mouse_y;
     int last_mouse_x;

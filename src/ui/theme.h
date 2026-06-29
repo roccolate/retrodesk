@@ -5,6 +5,9 @@
 
 #include "render/render.h"
 
+/* Theme tokens consumed by wm/ui. Runtime code must use these constants,
+   not hardcoded palettes (see docs/FOUNDATION_PRINCIPLES.md). */
+
 typedef enum RetroThemeKind {
     RETRO_THEME_XP = 0,
     RETRO_THEME_HACKER,

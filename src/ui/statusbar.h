@@ -3,6 +3,9 @@
 
 #include "render/render.h"
 
+/* Bottom-row status bar widget. Appends hline + text commands to the
+   supplied DrawList; does not call backend draw APIs directly. */
+
 typedef struct StatusBar StatusBar;
 
 StatusBar *statusbar_create(void);

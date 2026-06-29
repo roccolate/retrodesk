@@ -4,9 +4,14 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "app/app_runtime.h"
 #include "render/render.h"
 #include "platform/platform.h"
 #include "ui/theme.h"
+
+/* Top-level desktop lifecycle: owns WM, renderer, app registry, and the
+   global event loop. Consumes RetroEvent values and dispatches them to
+   global hotkeys or to the WM for window-local handling. */
 
 typedef struct Desktop Desktop;
 
@@ -44,6 +49,7 @@ typedef struct DesktopDiagnostics {
 
 Desktop *desktop_create(const DesktopConfig *config);
 int desktop_run(Desktop *desktop);
+RetroAppInstance *app_launch(Desktop *desktop, const char *app_id);
 void desktop_request_redraw(Desktop *desktop);
 const DesktopDiagnostics *desktop_diagnostics(const Desktop *desktop);
 size_t desktop_app_count(const Desktop *desktop);

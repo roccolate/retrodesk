@@ -6,6 +6,9 @@
 
 #include "render/render.h"
 
+/* ANSI escape-sequence renderer with frame diff: keeps a previous-frame
+   cell grid and emits only changed regions as move + SGR + chars. */
+
 typedef struct AnsiRenderer AnsiRenderer;
 
 AnsiRenderer *ansi_renderer_create(void);

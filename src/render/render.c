@@ -50,19 +50,46 @@ struct DrawList {
     size_t capacity;
 };
 
-static short style_to_pair(Renderer *renderer, const RenderStyle *style) {
-    if (!renderer || !style || !renderer->has_colors) return 0;
+typedef struct ColorPairEntry {
+    short fg;
+    short bg;
+    short pair;
+} ColorPairEntry;
 
-    if (style->fg == RENDER_COLOR_WHITE && style->bg == RENDER_COLOR_BLUE) return 1;
-    if (style->fg == RENDER_COLOR_BLACK && style->bg == RENDER_COLOR_WHITE) return 2;
-    if (style->fg == RENDER_COLOR_BLACK && style->bg == RENDER_COLOR_CYAN) return 3;
-    if (style->fg == RENDER_COLOR_YELLOW && style->bg == RENDER_COLOR_BLUE) return 4;
-    if (style->fg == RENDER_COLOR_WHITE && style->bg == RENDER_COLOR_BLACK) return 5;
-    if (style->fg == RENDER_COLOR_BLACK && style->bg == RENDER_COLOR_YELLOW) return 6;
-    if (style->fg == RENDER_COLOR_GREEN && style->bg == RENDER_COLOR_BLACK) return 7;
-    if (style->fg == RENDER_COLOR_WHITE && style->bg == RENDER_COLOR_CYAN) return 8;
-    if (style->fg == RENDER_COLOR_BLACK && style->bg == RENDER_COLOR_GREEN) return 9;
-    return 0;
+/* curses color pairs are global to the screen; one cache is enough across
+   renderer instances. Defaults fall back to pair 0 (terminal default). */
+static ColorPairEntry g_color_pair_cache[64];
+static int g_color_pair_count = 0;
+
+static short style_to_pair(Renderer *renderer, const RenderStyle *style) {
+    (void)renderer;
+    if (!style) return 0;
+    if (style->fg == RENDER_COLOR_DEFAULT || style->bg == RENDER_COLOR_DEFAULT) {
+        return 0;
+    }
+    short fg = (short)style->fg;
+    short bg = (short)style->bg;
+
+    for (int i = 0; i < g_color_pair_count; ++i) {
+        if (g_color_pair_cache[i].fg == fg && g_color_pair_cache[i].bg == bg) {
+            return g_color_pair_cache[i].pair;
+        }
+    }
+
+#if defined(COLOR_PAIR_MAX)
+    enum { MAX_PAIRS = COLOR_PAIR_MAX };
+#else
+    enum { MAX_PAIRS = 64 };
+#endif
+    if (g_color_pair_count >= MAX_PAIRS - 1) return 0;
+
+    short pair = (short)(g_color_pair_count + 1);
+    if (init_pair(pair, fg, bg) != OK) return 0;
+    g_color_pair_cache[g_color_pair_count].fg = fg;
+    g_color_pair_cache[g_color_pair_count].bg = bg;
+    g_color_pair_cache[g_color_pair_count].pair = pair;
+    g_color_pair_count++;
+    return pair;
 }
 
 static void apply_style(RenderContext *ctx, const RenderStyle *style) {
@@ -177,15 +204,6 @@ Renderer *renderer_create_with_backend(const PlatformBackend *backend,
 
     if (renderer->backend_kind == RENDER_BACKEND_CURSES && renderer->has_colors) {
         start_color();
-        init_pair(1, COLOR_WHITE, COLOR_BLUE);
-        init_pair(2, COLOR_BLACK, COLOR_WHITE);
-        init_pair(3, COLOR_BLACK, COLOR_CYAN);
-        init_pair(4, COLOR_YELLOW, COLOR_BLUE);
-        init_pair(5, COLOR_WHITE, COLOR_BLACK);
-        init_pair(6, COLOR_BLACK, COLOR_YELLOW);
-        init_pair(7, COLOR_GREEN, COLOR_BLACK);
-        init_pair(8, COLOR_WHITE, COLOR_CYAN);
-        init_pair(9, COLOR_BLACK, COLOR_GREEN);
     }
     return renderer;
 }

@@ -7,14 +7,25 @@
 #include "core/event.h"
 #include "render/render.h"
 
+/* Window collection + z-order + focus + drag + modal policy.
+   Produces draw lists for windows/apps; never touches backend draw APIs. */
+
 typedef int WindowId;
 typedef unsigned int WindowFlags;
 
 enum {
     WINDOW_FLAG_NORMAL = 0,
-    WINDOW_FLAG_MODAL = 1u << 0,
-    WINDOW_FLAG_POPUP = 1u << 1,
-    WINDOW_FLAG_FIXED = 1u << 2,
+    /* Window is fixed in place: ignores HJKL moves and title-bar drag. */
+    WINDOW_FLAG_FIXED = 1u << 0,
+    /* Window receives exclusive input (mouse + keyboard) until dismissed.
+       The WM ignores hits and key events targeted at any other window while
+       a modal is on top. */
+    WINDOW_FLAG_MODAL = 1u << 1,
+    /* Visual hint: window is a transient popup (centered, no title-bar drag).
+       Currently no runtime effect beyond a marker; reserved for v0.2. */
+    WINDOW_FLAG_POPUP = 1u << 2,
+    /* Marker: window is owned by an app instance. The desktop uses it only to
+       skip the window when closing the shell via 'w'. No other side effect. */
     WINDOW_FLAG_APP_OWNED = 1u << 3,
 };
 

@@ -529,13 +529,13 @@ static void desktop_render_frame(Desktop *desktop) {
     desktop->needs_redraw = false;
 }
 
-static void desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *key) {
-    if (!desktop || !key) return;
+static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *key) {
+    if (!desktop || !key) return false;
 
     /* 'q' is always honored, even when the modal launcher is open. */
     if (key->ascii == 'q') {
         desktop->running = false;
-        return;
+        return true;
     }
 
     if (key->ascii == 'm' || key->ascii == 'M') {
@@ -544,16 +544,16 @@ static void desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
         } else {
             desktop_launcher_open(desktop);
         }
-        return;
+        return true;
     }
 
     /* While the launcher is modal, defer all other desktop shortcuts to it. */
-    if (desktop->launcher.open) return;
+    if (desktop->launcher.open) return false;
 
     if (key->key_code == '\t') {
         wm_cycle_focus(desktop->wm);
         desktop_request_redraw(desktop);
-        return;
+        return true;
     }
 
     if (key->ascii == 'H' || key->ascii == 'J' || key->ascii == 'K' ||
@@ -563,28 +563,28 @@ static void desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
         if (wm_move_active_window(desktop->wm, dy, dx)) {
             desktop_request_redraw(desktop);
         }
-        return;
+        return true;
     }
 
     switch (key->ascii) {
     case '1':
         app_launch(desktop, "filemanager");
-        break;
+        return true;
     case '2':
         app_launch(desktop, "notepad");
-        break;
+        return true;
     case '3':
         app_launch(desktop, "terminal");
-        break;
+        return true;
     case 'w': {
         WindowId active = wm_active_window(desktop->wm);
         if (active > 0 && active != desktop->shell_window_id) {
             wm_close_window(desktop->wm, active);
         }
-        break;
+        return true;
     }
     default:
-        break;
+        return false;
     }
 }
 
@@ -604,10 +604,13 @@ int desktop_run(Desktop *desktop) {
                                              desktop->config.input_timeout_ms);
 
         if (has_event) {
+            bool consumed = false;
             if (event.type == RETRO_EVENT_KEY) {
-                desktop_handle_key_command(desktop, &event.data.key);
+                consumed = desktop_handle_key_command(desktop, &event.data.key);
             }
-            wm_handle_event(desktop->wm, &event);
+            if (!consumed) {
+                wm_handle_event(desktop->wm, &event);
+            }
             desktop_cleanup_apps(desktop);
             desktop_request_redraw(desktop);
         }

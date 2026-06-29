@@ -5,6 +5,9 @@
 
 #include "core/event.h"
 
+/* Platform abstraction façade. Owns input backends (curses / tty-raw) and
+   capability detection. Returns normalized RetroEvent values to core/wm. */
+
 typedef enum InputBackendKind {
     INPUT_BACKEND_UNKNOWN = 0,
     INPUT_BACKEND_NCURSES,

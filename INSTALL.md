@@ -203,7 +203,7 @@ docker run -it retrodesk
 ## Next Steps
 
 1. **Explore the apps:** Launch notepad, file manager, terminal
-2. **Read the docs:** Check `ROADMAP.md` for development roadmap
+2. **Read the docs:** Check `docs/ROADMAP.md` for the v1.0 roadmap
 3. **Contribute:** Find an item in Phase 1-2 and send a PR
 4. **Customize:** Modify themes in `src/ui/theme.c`
 

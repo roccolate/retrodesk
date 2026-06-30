@@ -154,7 +154,7 @@ All 14+ tests must pass. Tests run without a terminal (no initscr).
 - [ ] Config file (~/.retrodeskrc)
 - [ ] v1.0 release
 
-See `ROADMAP.md` for full details.
+See `docs/ROADMAP.md` for the v1.0 roadmap and `docs/CODE_STANDARDS.md` for the coding standards.
 
 ## Contributing
 
@@ -197,7 +197,7 @@ make clean && make
 
 ## License
 
-MIT (assumed — add to repo)
+MIT — see [LICENSE](LICENSE).
 
 ## Authors
 

@@ -30,7 +30,7 @@ apps with predictable behavior across platforms.
 5. [APP_RUNTIME.md](APP_RUNTIME.md)
 6. [RETROTUI_GAP.md](RETROTUI_GAP.md)
 7. [TESTING.md](TESTING.md)
-8. [ROADMAP.md](ROADMAP.md)
+8. [CODE_STANDARDS.md](CODE_STANDARDS.md)
 9. [RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md)
 10. [TECH_DEBT_POLICY.md](TECH_DEBT_POLICY.md)
 11. [adr/ADR-0001-cmake-is-canonical.md](adr/ADR-0001-cmake-is-canonical.md)

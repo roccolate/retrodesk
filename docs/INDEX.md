@@ -28,14 +28,15 @@ apps with predictable behavior across platforms.
 3. [PORTABILITY.md](PORTABILITY.md)
 4. [BUILD_SYSTEM.md](BUILD_SYSTEM.md)
 5. [APP_RUNTIME.md](APP_RUNTIME.md)
-6. [RETROTUI_GAP.md](RETROTUI_GAP.md)
-7. [TESTING.md](TESTING.md)
-8. [CODE_STANDARDS.md](CODE_STANDARDS.md)
-9. [RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md)
-10. [TECH_DEBT_POLICY.md](TECH_DEBT_POLICY.md)
-11. [adr/ADR-0001-cmake-is-canonical.md](adr/ADR-0001-cmake-is-canonical.md)
-12. [adr/ADR-0002-tiered-platform-support.md](adr/ADR-0002-tiered-platform-support.md)
-13. [adr/ADR-0003-core-does-not-expose-curses.md](adr/ADR-0003-core-does-not-expose-curses.md)
+6. [RETROCORE_SPEC.md](RETROCORE_SPEC.md)
+7. [RETROTUI_GAP.md](RETROTUI_GAP.md)
+8. [TESTING.md](TESTING.md)
+9. [CODE_STANDARDS.md](CODE_STANDARDS.md)
+10. [RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md)
+11. [TECH_DEBT_POLICY.md](TECH_DEBT_POLICY.md)
+12. [adr/ADR-0001-cmake-is-canonical.md](adr/ADR-0001-cmake-is-canonical.md)
+13. [adr/ADR-0002-tiered-platform-support.md](adr/ADR-0002-tiered-platform-support.md)
+14. [adr/ADR-0003-core-does-not-expose-curses.md](adr/ADR-0003-core-does-not-expose-curses.md)
 
 ## Platform Support Tiers
 

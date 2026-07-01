@@ -9,6 +9,8 @@ option(ENABLE_STRICT_WARNINGS "Enable strict compiler warnings" ON)
 option(ENABLE_WERROR "Treat warnings as errors" ON)
 option(ENABLE_TESTS "Build lightweight unit tests" ON)
 set(PDCURSES_ROOT "" CACHE PATH "Path to PDCurses root")
+set(RETROCORE_SPEC_DIR "${CMAKE_SOURCE_DIR}/../retrocore-spec" CACHE PATH
+    "Path to a retrocore-spec checkout for shared contract fixture tests")
 
 set(RETRODESK_SOURCES
     src/main.c
@@ -231,6 +233,29 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     )
     target_include_directories(desktop_runtime_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
     add_test(NAME desktop_runtime_test COMMAND desktop_runtime_test)
+
+    if (EXISTS "${RETROCORE_SPEC_DIR}/fixtures/events/open-files-and-focus.json")
+        add_executable(retrocore_event_fixture_test
+            tests/retrocore_event_fixture_test.c
+            tests/wm_render_stub.c
+            src/core/desktop.c
+            src/app/app_runtime.c
+            src/apps/apps.c
+            src/apps/filemanager_app.c
+            src/apps/notepad_app.c
+            src/apps/terminal_app.c
+            src/wm/window_manager.c
+            src/ui/statusbar.c
+            src/ui/theme.c
+        )
+        target_include_directories(retrocore_event_fixture_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_compile_definitions(retrocore_event_fixture_test PRIVATE
+            RETROCORE_SPEC_DIR="${RETROCORE_SPEC_DIR}"
+        )
+        add_test(NAME retrocore_event_fixture_test COMMAND retrocore_event_fixture_test)
+    else()
+        message(STATUS "retrocore-spec fixtures not found at ${RETROCORE_SPEC_DIR}; skipping retrocore_event_fixture_test")
+    endif()
 
     if (PDCURSES_ROOT)
         target_include_directories(draw_list_contract_test PRIVATE "${_curses_include}")

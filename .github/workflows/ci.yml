@@ -16,14 +16,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout retrocore-spec fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: roccolate/retrocore-spec
+          path: retrocore-spec
+
       - name: Configure (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libncurses-dev clang-tidy
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRETROCORE_SPEC_DIR="$PWD/retrocore-spec"
 
-      - name: Static analysis: clang-tidy (Linux)
+      - name: "Static analysis: clang-tidy (Linux)"
         if: matrix.os == 'ubuntu-latest'
         run: |
           echo "Running clang-tidy across C sources (warnings treated as errors)"
@@ -31,12 +37,13 @@ jobs:
             clang-tidy -p build -warnings-as-errors=* $f
           done
 
-      - name: Build (Linux)
+      - name: Build and test (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           cmake --build build --config Release
+          ctest --test-dir build --output-on-failure
 
-      - name: Configure & build (Windows)
+      - name: Configure, build, and test (Windows)
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
@@ -44,5 +51,6 @@ jobs:
           .\vcpkg\bootstrap-vcpkg.bat
           .\vcpkg\vcpkg.exe install pdcurses:x64-windows
           $toolchain = "$PWD\vcpkg\scripts\buildsystems\vcpkg.cmake"
-          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$toolchain" -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$toolchain" -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_BUILD_TYPE=Release -DRETROCORE_SPEC_DIR="$PWD\retrocore-spec"
           cmake --build build --config Release
+          ctest --test-dir build --output-on-failure -C Release

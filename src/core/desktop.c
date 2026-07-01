@@ -458,6 +458,25 @@ size_t desktop_window_count(const Desktop *desktop) {
     return wm_window_count(desktop->wm);
 }
 
+WindowId desktop_active_window(const Desktop *desktop) {
+    if (!desktop || !desktop->wm) return WINDOW_ID_INVALID;
+    return wm_active_window(desktop->wm);
+}
+
+WindowId desktop_app_window_id(const Desktop *desktop, const char *app_id) {
+    if (!desktop || !app_id) return WINDOW_ID_INVALID;
+
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        const RetroAppInstance *inst = desktop->apps[i].app;
+        if (inst && inst->descriptor && inst->descriptor->app_id &&
+            strcmp(inst->descriptor->app_id, app_id) == 0) {
+            return desktop->apps[i].window_id;
+        }
+    }
+
+    return WINDOW_ID_INVALID;
+}
+
 static void desktop_cleanup_apps(Desktop *desktop) {
     if (!desktop) return;
 

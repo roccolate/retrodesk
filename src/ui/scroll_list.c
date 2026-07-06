@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/key_chord.h"
+
 enum {
     SCROLL_LIST_INIT_CAP = 16,
     SCROLL_LIST_ITEM_BUF = 256,
@@ -144,24 +146,23 @@ bool scroll_list_handle_key(ScrollList *list, const RetroKeyEvent *key) {
 
     int code = key->key_code;
 
-#ifdef KEY_UP
-    if (code == KEY_UP) {
+    if (code == RETRO_KEY_UP) {
         if (list->selected > 0) list->selected--;
         return true;
     }
-    if (code == KEY_DOWN) {
+    if (code == RETRO_KEY_DOWN) {
         if (list->selected < list->count - 1) list->selected++;
         return true;
     }
-    if (code == KEY_HOME) {
+    if (code == RETRO_KEY_HOME) {
         list->selected = 0;
         return true;
     }
-    if (code == KEY_END) {
+    if (code == RETRO_KEY_END) {
         list->selected = list->count - 1;
         return true;
     }
-    if (code == KEY_PPAGE) {
+    if (code == RETRO_KEY_PPAGE) {
         if (list->selected >= SCROLL_LIST_PAGE_SIZE) {
             list->selected -= SCROLL_LIST_PAGE_SIZE;
         } else {
@@ -169,23 +170,22 @@ bool scroll_list_handle_key(ScrollList *list, const RetroKeyEvent *key) {
         }
         return true;
     }
-    if (code == KEY_NPAGE) {
+    if (code == RETRO_KEY_NPAGE) {
         list->selected += SCROLL_LIST_PAGE_SIZE;
         if (list->selected >= list->count) {
             list->selected = list->count - 1;
         }
         return true;
     }
-#endif
 
     /* Ctrl+N — move down */
-    if (code == 14) {
+    if (code == RETRO_KEY_CTRL_N) {
         if (list->selected < list->count - 1) list->selected++;
         return true;
     }
 
     /* Ctrl+P — move up */
-    if (code == 16) {
+    if (code == RETRO_KEY_CTRL_P) {
         if (list->selected > 0) list->selected--;
         return true;
     }

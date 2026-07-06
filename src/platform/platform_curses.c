@@ -2,6 +2,86 @@
 
 #include <string.h>
 
+#include "core/key_chord.h"
+
+/* Translate backend-specific key codes (curses KEY_* macros, whose values
+   vary across ncurses and PDCurses) into portable RETRO_KEY_* chords.
+   Raw bytes (ASCII and extended ASCII) pass through unchanged. */
+static int translate_key_chord(int raw) {
+    switch (raw) {
+#ifdef KEY_UP
+    case KEY_UP:    return RETRO_KEY_UP;
+#endif
+#ifdef KEY_DOWN
+    case KEY_DOWN:  return RETRO_KEY_DOWN;
+#endif
+#ifdef KEY_LEFT
+    case KEY_LEFT:  return RETRO_KEY_LEFT;
+#endif
+#ifdef KEY_RIGHT
+    case KEY_RIGHT: return RETRO_KEY_RIGHT;
+#endif
+#ifdef KEY_HOME
+    case KEY_HOME:  return RETRO_KEY_HOME;
+#endif
+#ifdef KEY_END
+    case KEY_END:   return RETRO_KEY_END;
+#endif
+#ifdef KEY_PPAGE
+    case KEY_PPAGE: return RETRO_KEY_PPAGE;
+#endif
+#ifdef KEY_NPAGE
+    case KEY_NPAGE: return RETRO_KEY_NPAGE;
+#endif
+#ifdef KEY_DC
+    case KEY_DC:    return RETRO_KEY_DC;
+#endif
+#ifdef KEY_IC
+    case KEY_IC:    return RETRO_KEY_IC;
+#endif
+#ifdef KEY_BTAB
+    case KEY_BTAB:  return RETRO_KEY_BTAB;
+#endif
+#ifdef KEY_F1
+    case KEY_F1:    return RETRO_KEY_F1;
+#endif
+#ifdef KEY_F2
+    case KEY_F2:    return RETRO_KEY_F2;
+#endif
+#ifdef KEY_F3
+    case KEY_F3:    return RETRO_KEY_F3;
+#endif
+#ifdef KEY_F4
+    case KEY_F4:    return RETRO_KEY_F4;
+#endif
+#ifdef KEY_F5
+    case KEY_F5:    return RETRO_KEY_F5;
+#endif
+#ifdef KEY_F6
+    case KEY_F6:    return RETRO_KEY_F6;
+#endif
+#ifdef KEY_F7
+    case KEY_F7:    return RETRO_KEY_F7;
+#endif
+#ifdef KEY_F8
+    case KEY_F8:    return RETRO_KEY_F8;
+#endif
+#ifdef KEY_F9
+    case KEY_F9:    return RETRO_KEY_F9;
+#endif
+#ifdef KEY_F10
+    case KEY_F10:   return RETRO_KEY_F10;
+#endif
+#ifdef KEY_F11
+    case KEY_F11:   return RETRO_KEY_F11;
+#endif
+#ifdef KEY_F12
+    case KEY_F12:   return RETRO_KEY_F12;
+#endif
+    default:        return raw;
+    }
+}
+
 static bool normalize_mouse(const MEVENT *raw, PlatformBackend *platform,
                             RetroMouseEvent *out) {
     memset(out, 0, sizeof(*out));
@@ -145,8 +225,8 @@ bool platform_poll_event_curses(PlatformBackend *platform, RetroEvent *out_event
 #endif
 
     out_event->type = RETRO_EVENT_KEY;
-    out_event->data.key.key_code = ch;
-    out_event->data.key.is_printable = (ch >= 32 && ch <= 126);
+    out_event->data.key.key_code = translate_key_chord(ch);
+    out_event->data.key.is_printable = retro_key_is_printable(ch);
     out_event->data.key.ascii = out_event->data.key.is_printable ? (char)ch : '\0';
     return true;
 }

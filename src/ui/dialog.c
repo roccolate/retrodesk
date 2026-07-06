@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "core/key_chord.h"
 #include "ui/button.h"
 #include "ui/text_input.h"
 
@@ -377,7 +378,7 @@ bool dialog_handle_key(Dialog *dlg, const RetroKeyEvent *key) {
     bool has_cancel = (dlg->type != DIALOG_MESSAGE);
 
     /* Esc cancels (or OK for MESSAGE). */
-    if (code == 27 /* Escape */) {
+    if (code == RETRO_KEY_ESC) {
         if (dlg->type == DIALOG_MESSAGE) {
             dialog_activate_ok(dlg);
         } else {
@@ -387,21 +388,18 @@ bool dialog_handle_key(Dialog *dlg, const RetroKeyEvent *key) {
     }
 
     /* Tab cycles focus. */
-    if (code == '\t') {
-        int delta = 1;
-        dialog_focus_cycle(dlg, delta);
+    if (code == RETRO_KEY_TAB) {
+        dialog_focus_cycle(dlg, 1);
         return true;
     }
-#ifdef KEY_BTAB
-    if (code == KEY_BTAB) {
+    if (code == RETRO_KEY_BTAB) {
         dialog_focus_cycle(dlg, -1);
         return true;
     }
-#endif
 
     /* Enter activates the currently focused button (or, when input is
        focused, just lets the input consume it via fallback). */
-    if (code == '\n' || code == '\r' || code == 13 || code == 10) {
+    if (code == RETRO_KEY_LF || code == RETRO_KEY_CR) {
         if (has_input && dlg->input_focus == DIALOG_FOCUS_INPUT) {
             /* Let input handle it indirectly: consume the event so the
                parent does not also process Enter. The input field will

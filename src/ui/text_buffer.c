@@ -398,101 +398,115 @@ bool text_buffer_delete_forward(TextBuffer *buf) {
 /* Key handling                                                        */
 /* ------------------------------------------------------------------ */
 
+/* Cursor / line-editing helpers, factored out so the dispatch table
+   below stays small and each branch is independently understandable. */
+
+static bool text_buffer_kv_home(TextBuffer *buf) {
+    if (buf->cursor_col == 0) return true;
+    buf->cursor_col = 0;
+    return true;
+}
+
+static bool text_buffer_kv_end(TextBuffer *buf) {
+    size_t line_len = buf->lines[buf->cursor_row].len;
+    if (buf->cursor_col == line_len) return true;
+    buf->cursor_col = line_len;
+    return true;
+}
+
+static bool text_buffer_kv_kill_to_end(TextBuffer *buf) {
+    TextLine *line = &buf->lines[buf->cursor_row];
+    if (buf->cursor_col < line->len) {
+        line->data[buf->cursor_col] = '\0';
+        line->len = buf->cursor_col;
+    }
+    return true;
+}
+
+static bool text_buffer_kv_left(TextBuffer *buf) {
+    if (buf->cursor_col > 0) {
+        buf->cursor_col--;
+    } else if (buf->cursor_row > 0) {
+        buf->cursor_row--;
+        buf->cursor_col = buf->lines[buf->cursor_row].len;
+    }
+    return true;
+}
+
+static bool text_buffer_kv_right(TextBuffer *buf) {
+    if (buf->cursor_col < buf->lines[buf->cursor_row].len) {
+        buf->cursor_col++;
+    } else if (buf->cursor_row + 1 < buf->line_count) {
+        buf->cursor_row++;
+        buf->cursor_col = 0;
+    }
+    return true;
+}
+
+static bool text_buffer_kv_up(TextBuffer *buf) {
+    if (buf->cursor_row > 0) {
+        buf->cursor_row--;
+        text_buffer_clamp_col(buf);
+    }
+    return true;
+}
+
+static bool text_buffer_kv_down(TextBuffer *buf) {
+    if (buf->cursor_row + 1 < buf->line_count) {
+        buf->cursor_row++;
+        text_buffer_clamp_col(buf);
+    }
+    return true;
+}
+
+static bool text_buffer_kv_home_col(TextBuffer *buf) {
+    buf->cursor_col = 0;
+    return true;
+}
+
+static bool text_buffer_kv_end_col(TextBuffer *buf) {
+    buf->cursor_col = buf->lines[buf->cursor_row].len;
+    return true;
+}
+
+typedef bool (*TextBufferKeyFn)(TextBuffer *buf);
+
+static const struct {
+    int code;
+    TextBufferKeyFn fn;
+} text_buffer_key_bindings[] = {
+    {RETRO_KEY_LF,       text_buffer_insert_newline},
+    {RETRO_KEY_CR,       text_buffer_insert_newline},
+    {RETRO_KEY_BS,       text_buffer_delete_backward},
+    {RETRO_KEY_DEL,      text_buffer_delete_backward},
+    {RETRO_KEY_CTRL_A,   text_buffer_kv_home},
+    {RETRO_KEY_CTRL_E,   text_buffer_kv_end},
+    {RETRO_KEY_CTRL_K,   text_buffer_kv_kill_to_end},
+    {RETRO_KEY_CTRL_D,   text_buffer_delete_forward},
+    {RETRO_KEY_LEFT,     text_buffer_kv_left},
+    {RETRO_KEY_RIGHT,    text_buffer_kv_right},
+    {RETRO_KEY_UP,       text_buffer_kv_up},
+    {RETRO_KEY_DOWN,     text_buffer_kv_down},
+    {RETRO_KEY_HOME,     text_buffer_kv_home_col},
+    {RETRO_KEY_END,      text_buffer_kv_end_col},
+    {RETRO_KEY_DC,       text_buffer_delete_forward},
+};
+
 bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key) {
     if (!buf || !key) return false;
 
     int code = key->key_code;
-
-    /* Enter / newline */
-    if (code == RETRO_KEY_LF || code == RETRO_KEY_CR) {
-        return text_buffer_insert_newline(buf);
-    }
-
-    /* Backspace */
-    if (code == RETRO_KEY_BS || code == RETRO_KEY_DEL) {
-        return text_buffer_delete_backward(buf);
-    }
-
-    /* Ctrl+A — home (beginning of line) */
-    if (code == RETRO_KEY_CTRL_A) {
-        if (buf->cursor_col == 0) return true;
-        buf->cursor_col = 0;
-        return true;
-    }
-
-    /* Ctrl+E — end of line */
-    if (code == RETRO_KEY_CTRL_E) {
-        size_t line_len = buf->lines[buf->cursor_row].len;
-        if (buf->cursor_col == line_len) return true;
-        buf->cursor_col = line_len;
-        return true;
-    }
-
-    /* Ctrl+K — kill to end of line */
-    if (code == RETRO_KEY_CTRL_K) {
-        TextLine *line = &buf->lines[buf->cursor_row];
-        if (buf->cursor_col < line->len) {
-            line->data[buf->cursor_col] = '\0';
-            line->len = buf->cursor_col;
+    size_t n = sizeof(text_buffer_key_bindings) / sizeof(text_buffer_key_bindings[0]);
+    for (size_t i = 0; i < n; i++) {
+        if (text_buffer_key_bindings[i].code == code) {
+            return text_buffer_key_bindings[i].fn(buf);
         }
-        return true;
     }
 
-    /* Ctrl+D — delete forward */
-    if (code == RETRO_KEY_CTRL_D) {
-        return text_buffer_delete_forward(buf);
-    }
-
-    /* Arrow keys (portable chords translated by the platform layer). */
-    if (code == RETRO_KEY_LEFT) {
-        if (buf->cursor_col > 0) {
-            buf->cursor_col--;
-        } else if (buf->cursor_row > 0) {
-            buf->cursor_row--;
-            buf->cursor_col = buf->lines[buf->cursor_row].len;
-        }
-        return true;
-    }
-    if (code == RETRO_KEY_RIGHT) {
-        if (buf->cursor_col < buf->lines[buf->cursor_row].len) {
-            buf->cursor_col++;
-        } else if (buf->cursor_row + 1 < buf->line_count) {
-            buf->cursor_row++;
-            buf->cursor_col = 0;
-        }
-        return true;
-    }
-    if (code == RETRO_KEY_UP) {
-        if (buf->cursor_row > 0) {
-            buf->cursor_row--;
-            text_buffer_clamp_col(buf);
-        }
-        return true;
-    }
-    if (code == RETRO_KEY_DOWN) {
-        if (buf->cursor_row + 1 < buf->line_count) {
-            buf->cursor_row++;
-            text_buffer_clamp_col(buf);
-        }
-        return true;
-    }
-    if (code == RETRO_KEY_HOME) {
-        buf->cursor_col = 0;
-        return true;
-    }
-    if (code == RETRO_KEY_END) {
-        buf->cursor_col = buf->lines[buf->cursor_row].len;
-        return true;
-    }
-    if (code == RETRO_KEY_DC) {
-        return text_buffer_delete_forward(buf);
-    }
-
-    /* Printable character */
+    /* Fallthrough: printable ASCII characters are inserted verbatim. */
     if (key->is_printable && key->ascii > 0) {
         return text_buffer_insert_char(buf, key->ascii);
     }
-
     return false;
 }
 

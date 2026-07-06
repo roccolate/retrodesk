@@ -127,77 +127,80 @@ static bool text_input_delete_forward(TextInput *input) {
 
 /* --- key handling ----------------------------------------------------- */
 
+/* Handlers are kept short and self-contained so the dispatcher below
+   remains a single linear table lookup. Each returns true if the
+   event was consumed. */
+
+static bool text_input_handle_home(TextInput *input) {
+    if (input->cursor == 0) return true;
+    input->cursor = 0;
+    return true;
+}
+
+static bool text_input_handle_end(TextInput *input) {
+    if (input->cursor == input->len) return true;
+    input->cursor = input->len;
+    return true;
+}
+
+static bool text_input_handle_left(TextInput *input) {
+    if (input->cursor > 0) input->cursor--;
+    return true;
+}
+
+static bool text_input_handle_right(TextInput *input) {
+    if (input->cursor < input->len) input->cursor++;
+    return true;
+}
+
+static bool text_input_handle_kill_to_end(TextInput *input) {
+    if (input->cursor < input->len) {
+        input->buffer[input->cursor] = '\0';
+        input->len = input->cursor;
+    }
+    return true;
+}
+
+static bool text_input_handle_clear(TextInput *input) {
+    text_input_clear(input);
+    return true;
+}
+
+typedef bool (*TextInputKeyFn)(TextInput *input);
+
+static const struct {
+    int code;
+    TextInputKeyFn fn;
+} text_input_key_bindings[] = {
+    {RETRO_KEY_BS,       text_input_delete_backward},
+    {RETRO_KEY_DEL,      text_input_delete_backward},
+    {RETRO_KEY_CTRL_A,   text_input_handle_home},
+    {RETRO_KEY_CTRL_E,   text_input_handle_end},
+    {RETRO_KEY_CTRL_U,   text_input_handle_clear},
+    {RETRO_KEY_CTRL_K,   text_input_handle_kill_to_end},
+    {RETRO_KEY_CTRL_D,   text_input_delete_forward},
+    {RETRO_KEY_LEFT,     text_input_handle_left},
+    {RETRO_KEY_RIGHT,    text_input_handle_right},
+    {RETRO_KEY_HOME,     text_input_handle_home},
+    {RETRO_KEY_END,      text_input_handle_end},
+    {RETRO_KEY_DC,       text_input_delete_forward},
+};
+
 bool text_input_handle_key(TextInput *input, const RetroKeyEvent *key) {
     if (!input || !key) return false;
 
     int code = key->key_code;
-
-    /* Backspace */
-    if (code == RETRO_KEY_BS || code == RETRO_KEY_DEL) {
-        return text_input_delete_backward(input);
-    }
-
-    /* Ctrl+A — home */
-    if (code == RETRO_KEY_CTRL_A) {
-        if (input->cursor == 0) return true;
-        input->cursor = 0;
-        return true;
-    }
-
-    /* Ctrl+E — end */
-    if (code == RETRO_KEY_CTRL_E) {
-        if (input->cursor == input->len) return true;
-        input->cursor = input->len;
-        return true;
-    }
-
-    /* Ctrl+U — clear */
-    if (code == RETRO_KEY_CTRL_U) {
-        text_input_clear(input);
-        return true;
-    }
-
-    /* Ctrl+K — kill to end of line */
-    if (code == RETRO_KEY_CTRL_K) {
-        if (input->cursor < input->len) {
-            input->buffer[input->cursor] = '\0';
-            input->len = input->cursor;
+    size_t n = sizeof(text_input_key_bindings) / sizeof(text_input_key_bindings[0]);
+    for (size_t i = 0; i < n; i++) {
+        if (text_input_key_bindings[i].code == code) {
+            return text_input_key_bindings[i].fn(input);
         }
-        return true;
     }
 
-    /* Ctrl+D — delete forward (like Delete key) */
-    if (code == RETRO_KEY_CTRL_D) {
-        return text_input_delete_forward(input);
-    }
-
-    /* Portable navigation chords (translated from curses KEY_*
-       or raw-TTY escape sequences by the platform layer). */
-    if (code == RETRO_KEY_LEFT) {
-        if (input->cursor > 0) input->cursor--;
-        return true;
-    }
-    if (code == RETRO_KEY_RIGHT) {
-        if (input->cursor < input->len) input->cursor++;
-        return true;
-    }
-    if (code == RETRO_KEY_HOME) {
-        input->cursor = 0;
-        return true;
-    }
-    if (code == RETRO_KEY_END) {
-        input->cursor = input->len;
-        return true;
-    }
-    if (code == RETRO_KEY_DC) {
-        return text_input_delete_forward(input);
-    }
-
-    /* Printable character */
+    /* Fallthrough: printable ASCII characters are inserted verbatim. */
     if (key->is_printable && key->ascii > 0) {
         return text_input_insert_char(input, key->ascii);
     }
-
     return false;
 }
 

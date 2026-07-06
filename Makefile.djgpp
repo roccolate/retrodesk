@@ -2,6 +2,11 @@
 #
 # Usage:
 #   make -f Makefile.djgpp PDC_DIR=C:\PDCurses
+#
+# IMPORTANT: This SRCS list must stay in sync with RETRODESK_DJGPP_SOURCES
+# in CMakeLists.txt. The script scripts/check_djgpp_sources.py verifies
+# the invariant (and is wired into `make check-build-sources`). If you add
+# or remove a source file, update both places — CMake is canonical.
 
 PDC_DIR ?= C:\PDCurses
 CC = gcc
@@ -11,12 +16,26 @@ PDC_LIB = $(PDC_DIR)\lib\pdcurses.a
 
 SRCS = \
 	src\main.c \
+	src\core\cli.c \
 	src\core\desktop.c \
+	src\core\key_chord.c \
 	src\platform\platform.c \
+	src\platform\platform_curses.c \
+	src\platform\tty_decoder.c \
 	src\render\render.c \
+	src\render\ansi_renderer.c \
 	src\wm\window_manager.c \
 	src\app\app_runtime.c \
 	src\ui\statusbar.c \
+	src\ui\text_input.c \
+	src\ui\scroll_list.c \
+	src\ui\text_buffer.c \
+	src\ui\button.c \
+	src\ui\dialog.c \
+	src\ui\menu_bar.c \
+	src\ui\progress_bar.c \
+	src\ui\tab.c \
+	src\ui\theme.c \
 	src\apps\apps.c \
 	src\apps\filemanager_app.c \
 	src\apps\notepad_app.c \
@@ -25,7 +44,7 @@ SRCS = \
 OBJS = $(SRCS:.c=.o)
 TARGET = retrodesk.exe
 
-.PHONY: all clean
+.PHONY: all clean check-sources
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
@@ -33,6 +52,9 @@ $(TARGET): $(OBJS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+check-sources:
+	@python3 scripts/check_djgpp_sources.py
 
 clean:
 	del /Q $(OBJS) $(TARGET) 2>nul || rm -f $(OBJS) $(TARGET)

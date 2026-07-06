@@ -45,10 +45,10 @@ Foundation widgets that all apps will use.
 - [DONE] 1.02 Scrollable list widget (selection, scroll, item count display)
 - [DONE] 1.03 Multi-line text buffer (line array, insert/delete, cursor row+col)
 - [DONE] 1.04 Button widget ([OK] [Cancel], clickeable, keyboard focusable)
-- [TODO] 1.05 Dialog system (message box, confirm, input prompt, file open/save)
-- [TODO] 1.06 Menu bar widget (File|Edit|View|Help with dropdown items)
-- [TODO] 1.07 Progress bar widget (percentage, determinate/indeterminate)
-- [TODO] 1.08 Tab widget (switchable views within a window)
+- [DONE] 1.05 Dialog system (message box, confirm, input prompt, file open/save)
+- [DONE] 1.06 Menu bar widget (File|Edit|View|Help with dropdown items)
+- [DONE] 1.07 Progress bar widget (percentage, determinate/indeterminate)
+- [DONE] 1.08 Tab widget (switchable views within a window)
 
 ## Phase 2 — Core Runtime Upgrades
 
@@ -117,9 +117,9 @@ Ship it.
 
 | Phase | Total | Done | Remaining |
 |-------|-------|------|-----------|
-| 1 — UI Toolkit | 8 | 4 | 4 |
+| 1 — UI Toolkit | 8 | 8 | 0 |
 | 2 — Core Runtime | 7 | 0 | 7 |
 | 3 — Apps | 12 | 0 | 12 |
 | 4 — Desktop Chrome | 6 | 0 | 6 |
 | 5 — Polish & Release | 8 | 0 | 8 |
-| **Total** | **41** | **4** | **37** |
+| **Total** | **41** | **8** | **33** |

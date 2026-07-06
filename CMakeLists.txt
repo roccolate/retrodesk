@@ -16,6 +16,7 @@ set(RETRODESK_SOURCES
     src/main.c
     src/core/cli.c
     src/core/desktop.c
+    src/core/key_chord.c
     src/platform/platform.c
     src/platform/platform_curses.c
     src/platform/platform_tty_raw.c
@@ -60,6 +61,13 @@ if (ENABLE_TESTS)
         )
         target_include_directories(cli_parse_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
         add_test(NAME cli_parse_test COMMAND cli_parse_test)
+
+        add_executable(key_chord_test
+            tests/key_chord_test.c
+            src/core/key_chord.c
+        )
+        target_include_directories(key_chord_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        add_test(NAME key_chord_test COMMAND key_chord_test)
 
         add_executable(app_registry_test
             tests/app_registry_test.c
@@ -127,11 +135,8 @@ else()
     # When Curses was supplied by vcpkg's pdcurses port (or any other
     # PDCurses provider), activate HAVE_PDCURSES + PDC_NCMOUSE so the
     # platform layer enables extended mouse and resize behavior.
-    set(_curses_lib_list "${CURSES_LIBRARIES}")
-    list(TRANSFORM _curses_lib_list APPEND)
-    string(JOIN "" _curses_lib_concat ${_curses_lib_list})
-    string(TOLOWER "${_curses_lib_concat}" _curses_lib_concat_lower)
-    string(FIND "${_curses_lib_concat_lower}" "pdcurses" _pdcurses_idx)
+    string(TOLOWER "${CURSES_LIBRARIES}" _curses_lib_lower)
+    string(FIND "${_curses_lib_lower}" "pdcurses" _pdcurses_idx)
     if (NOT _pdcurses_idx EQUAL -1)
         target_compile_definitions(retrodesk PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
     endif()
@@ -140,6 +145,7 @@ endif()
 if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(draw_list_contract_test
         tests/draw_list_contract_test.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -152,6 +158,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(statusbar_drawlist_test
         tests/statusbar_drawlist_test.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -165,6 +172,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(ansi_renderer_diff_test
         tests/ansi_renderer_diff_test.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -185,6 +193,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(text_input_test
         tests/text_input_test.c
         src/ui/text_input.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -198,6 +207,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(scroll_list_test
         tests/scroll_list_test.c
         src/ui/scroll_list.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -211,6 +221,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(text_buffer_test
         tests/text_buffer_test.c
         src/ui/text_buffer.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -224,6 +235,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(button_test
         tests/button_test.c
         src/ui/button.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -239,6 +251,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         src/ui/dialog.c
         src/ui/button.c
         src/ui/text_input.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -252,6 +265,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(menu_bar_test
         tests/menu_bar_test.c
         src/ui/menu_bar.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -265,6 +279,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(progress_bar_test
         tests/progress_bar_test.c
         src/ui/progress_bar.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -278,6 +293,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(tab_test
         tests/tab_test.c
         src/ui/tab.c
+        src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c

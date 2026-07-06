@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/key_chord.h"
+
 enum { TEXT_INPUT_INIT_CAP = 64 };
 
 struct TextInput {
@@ -131,32 +133,32 @@ bool text_input_handle_key(TextInput *input, const RetroKeyEvent *key) {
     int code = key->key_code;
 
     /* Backspace */
-    if (code == 8 || code == 127) {
+    if (code == RETRO_KEY_BS || code == RETRO_KEY_DEL) {
         return text_input_delete_backward(input);
     }
 
     /* Ctrl+A — home */
-    if (code == 1) {
+    if (code == RETRO_KEY_CTRL_A) {
         if (input->cursor == 0) return true;
         input->cursor = 0;
         return true;
     }
 
     /* Ctrl+E — end */
-    if (code == 5) {
+    if (code == RETRO_KEY_CTRL_E) {
         if (input->cursor == input->len) return true;
         input->cursor = input->len;
         return true;
     }
 
     /* Ctrl+U — clear */
-    if (code == 21) {
+    if (code == RETRO_KEY_CTRL_U) {
         text_input_clear(input);
         return true;
     }
 
     /* Ctrl+K — kill to end of line */
-    if (code == 11) {
+    if (code == RETRO_KEY_CTRL_K) {
         if (input->cursor < input->len) {
             input->buffer[input->cursor] = '\0';
             input->len = input->cursor;
@@ -165,32 +167,31 @@ bool text_input_handle_key(TextInput *input, const RetroKeyEvent *key) {
     }
 
     /* Ctrl+D — delete forward (like Delete key) */
-    if (code == 4) {
+    if (code == RETRO_KEY_CTRL_D) {
         return text_input_delete_forward(input);
     }
 
-    /* Arrow keys (curses KEY_LEFT/KEY_RIGHT or fallback codes) */
-#ifdef KEY_LEFT
-    if (code == KEY_LEFT) {
+    /* Portable navigation chords (translated from curses KEY_*
+       or raw-TTY escape sequences by the platform layer). */
+    if (code == RETRO_KEY_LEFT) {
         if (input->cursor > 0) input->cursor--;
         return true;
     }
-    if (code == KEY_RIGHT) {
+    if (code == RETRO_KEY_RIGHT) {
         if (input->cursor < input->len) input->cursor++;
         return true;
     }
-    if (code == KEY_HOME) {
+    if (code == RETRO_KEY_HOME) {
         input->cursor = 0;
         return true;
     }
-    if (code == KEY_END) {
+    if (code == RETRO_KEY_END) {
         input->cursor = input->len;
         return true;
     }
-    if (code == KEY_DC) {
+    if (code == RETRO_KEY_DC) {
         return text_input_delete_forward(input);
     }
-#endif
 
     /* Printable character */
     if (key->is_printable && key->ascii > 0) {

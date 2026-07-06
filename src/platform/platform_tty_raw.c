@@ -9,6 +9,8 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include "core/key_chord.h"
+
 /* Global pointer for signal handler to restore terminal state on crash. */
 static PlatformBackend *g_tty_signal_platform = NULL;
 
@@ -75,44 +77,15 @@ static void platform_disable_tty_raw(PlatformBackend *platform) {
     platform->tty_raw_enabled = false;
 }
 
-static int platform_key_up_code(void) {
-#ifdef KEY_UP
-    return KEY_UP;
-#else
-    return 1001;
-#endif
-}
-
-static int platform_key_down_code(void) {
-#ifdef KEY_DOWN
-    return KEY_DOWN;
-#else
-    return 1002;
-#endif
-}
-
-static int platform_key_left_code(void) {
-#ifdef KEY_LEFT
-    return KEY_LEFT;
-#else
-    return 1003;
-#endif
-}
-
-static int platform_key_right_code(void) {
-#ifdef KEY_RIGHT
-    return KEY_RIGHT;
-#else
-    return 1004;
-#endif
-}
-
+/* The tty-raw backend never touches curses; it emits portable RETRO_KEY_*
+   chords directly so consumers can dispatch without backend-specific
+   magic numbers. */
 static TtyDecoderKeyMap platform_tty_key_map(void) {
     TtyDecoderKeyMap map = {
-        .up = platform_key_up_code(),
-        .down = platform_key_down_code(),
-        .left = platform_key_left_code(),
-        .right = platform_key_right_code(),
+        .up = RETRO_KEY_UP,
+        .down = RETRO_KEY_DOWN,
+        .left = RETRO_KEY_LEFT,
+        .right = RETRO_KEY_RIGHT,
     };
     return map;
 }

@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "core/key_chord.h"
+
 enum {
     TAB_INIT_CAP = 4,
     TAB_BRACKET_OVERHEAD = 3,   /* "[ " + "]" */
@@ -155,9 +157,8 @@ bool tab_handle_key(Tab *tab, const RetroKeyEvent *key) {
         return false;
     }
 
-#ifdef KEY_LEFT
     int code = key->key_code;
-    if (code == KEY_LEFT) {
+    if (code == RETRO_KEY_LEFT) {
         size_t old = tab->active;
         if (tab->active == 0) {
             tab->active = tab->count - 1;
@@ -167,21 +168,20 @@ bool tab_handle_key(Tab *tab, const RetroKeyEvent *key) {
         tab_fire_change(tab, old, tab->active);
         return true;
     }
-    if (code == KEY_RIGHT) {
+    if (code == RETRO_KEY_RIGHT) {
         size_t old = tab->active;
         tab->active = (tab->active + 1) % tab->count;
         tab_fire_change(tab, old, tab->active);
         return true;
     }
-    if (code == KEY_HOME) {
+    if (code == RETRO_KEY_HOME) {
         tab_set_active(tab, 0);
         return true;
     }
-    if (code == KEY_END) {
+    if (code == RETRO_KEY_END) {
         tab_set_active(tab, tab->count - 1);
         return true;
     }
-#endif
 
     /* Ctrl+Tab / Ctrl+Shift+Tab could be added once we track modifiers. */
     return false;

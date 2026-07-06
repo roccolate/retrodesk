@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/key_chord.h"
+
 enum {
     TEXT_BUFFER_INIT_LINES = 16,
     TEXT_BUFFER_LINE_INIT_CAP = 64,
@@ -402,24 +404,24 @@ bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key) {
     int code = key->key_code;
 
     /* Enter / newline */
-    if (code == '\n' || code == '\r' || code == 10 || code == 13) {
+    if (code == RETRO_KEY_LF || code == RETRO_KEY_CR) {
         return text_buffer_insert_newline(buf);
     }
 
     /* Backspace */
-    if (code == 8 || code == 127) {
+    if (code == RETRO_KEY_BS || code == RETRO_KEY_DEL) {
         return text_buffer_delete_backward(buf);
     }
 
     /* Ctrl+A — home (beginning of line) */
-    if (code == 1) {
+    if (code == RETRO_KEY_CTRL_A) {
         if (buf->cursor_col == 0) return true;
         buf->cursor_col = 0;
         return true;
     }
 
     /* Ctrl+E — end of line */
-    if (code == 5) {
+    if (code == RETRO_KEY_CTRL_E) {
         size_t line_len = buf->lines[buf->cursor_row].len;
         if (buf->cursor_col == line_len) return true;
         buf->cursor_col = line_len;
@@ -427,7 +429,7 @@ bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key) {
     }
 
     /* Ctrl+K — kill to end of line */
-    if (code == 11) {
+    if (code == RETRO_KEY_CTRL_K) {
         TextLine *line = &buf->lines[buf->cursor_row];
         if (buf->cursor_col < line->len) {
             line->data[buf->cursor_col] = '\0';
@@ -437,13 +439,12 @@ bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key) {
     }
 
     /* Ctrl+D — delete forward */
-    if (code == 4) {
+    if (code == RETRO_KEY_CTRL_D) {
         return text_buffer_delete_forward(buf);
     }
 
-#ifdef KEY_LEFT
-    /* Arrow keys */
-    if (code == KEY_LEFT) {
+    /* Arrow keys (portable chords translated by the platform layer). */
+    if (code == RETRO_KEY_LEFT) {
         if (buf->cursor_col > 0) {
             buf->cursor_col--;
         } else if (buf->cursor_row > 0) {
@@ -452,7 +453,7 @@ bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key) {
         }
         return true;
     }
-    if (code == KEY_RIGHT) {
+    if (code == RETRO_KEY_RIGHT) {
         if (buf->cursor_col < buf->lines[buf->cursor_row].len) {
             buf->cursor_col++;
         } else if (buf->cursor_row + 1 < buf->line_count) {
@@ -461,32 +462,31 @@ bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key) {
         }
         return true;
     }
-    if (code == KEY_UP) {
+    if (code == RETRO_KEY_UP) {
         if (buf->cursor_row > 0) {
             buf->cursor_row--;
             text_buffer_clamp_col(buf);
         }
         return true;
     }
-    if (code == KEY_DOWN) {
+    if (code == RETRO_KEY_DOWN) {
         if (buf->cursor_row + 1 < buf->line_count) {
             buf->cursor_row++;
             text_buffer_clamp_col(buf);
         }
         return true;
     }
-    if (code == KEY_HOME) {
+    if (code == RETRO_KEY_HOME) {
         buf->cursor_col = 0;
         return true;
     }
-    if (code == KEY_END) {
+    if (code == RETRO_KEY_END) {
         buf->cursor_col = buf->lines[buf->cursor_row].len;
         return true;
     }
-    if (code == KEY_DC) {
+    if (code == RETRO_KEY_DC) {
         return text_buffer_delete_forward(buf);
     }
-#endif
 
     /* Printable character */
     if (key->is_printable && key->ascii > 0) {

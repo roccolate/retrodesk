@@ -4,13 +4,14 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "core/key_chord.h"
+
 enum {
     MENU_BAR_MENU_INIT_CAP = 4,
     MENU_BAR_ITEM_INIT_CAP = 4,
     MENU_BAR_LABEL_GAP = 2,        /* spaces between top-level menus */
     MENU_BAR_DROPDOWN_PAD = 2,     /* left/right padding inside dropdown */
     MENU_BAR_ITEM_PAD = 1,         /* vertical padding between items */
-    MENU_BAR_F10_CODE = 271,       /* ncurses KEY_F10 fallback */
 };
 
 struct MenuBar {
@@ -279,7 +280,7 @@ bool menu_bar_handle_key(MenuBar *bar, const RetroKeyEvent *key) {
     bool open = menu_bar_is_open(bar);
 
     /* Escape always closes when open. */
-    if (code == 27 /* Escape */) {
+    if (code == RETRO_KEY_ESC) {
         if (open) {
             menu_bar_close(bar);
             return true;
@@ -288,7 +289,7 @@ bool menu_bar_handle_key(MenuBar *bar, const RetroKeyEvent *key) {
     }
 
     /* F10 toggles the first menu. */
-    if (code == MENU_BAR_F10_CODE) {
+    if (code == RETRO_KEY_F10) {
         if (open) {
             menu_bar_close(bar);
         } else {
@@ -298,8 +299,7 @@ bool menu_bar_handle_key(MenuBar *bar, const RetroKeyEvent *key) {
     }
 
     /* Arrow keys: Left/Right cycle menus (open or close after last). */
-#ifdef KEY_LEFT
-    if (code == KEY_LEFT) {
+    if (code == RETRO_KEY_LEFT) {
         if (open) {
             if (bar->open_menu == 0) {
                 menu_bar_open(bar, bar->menu_count - 1);
@@ -309,7 +309,7 @@ bool menu_bar_handle_key(MenuBar *bar, const RetroKeyEvent *key) {
         }
         return true;
     }
-    if (code == KEY_RIGHT) {
+    if (code == RETRO_KEY_RIGHT) {
         if (open) {
             if (bar->open_menu + 1 >= bar->menu_count) {
                 menu_bar_open(bar, 0);
@@ -319,11 +319,9 @@ bool menu_bar_handle_key(MenuBar *bar, const RetroKeyEvent *key) {
         }
         return true;
     }
-#endif
 
     /* Up/Down navigate items. */
-#ifdef KEY_UP
-    if (code == KEY_UP) {
+    if (code == RETRO_KEY_UP) {
         if (!open) return false;
         MenuBarMenu *m = &bar->menus[bar->open_menu];
         if (m->item_count == 0) return true;
@@ -336,7 +334,7 @@ bool menu_bar_handle_key(MenuBar *bar, const RetroKeyEvent *key) {
         bar->open_item = idx;
         return true;
     }
-    if (code == KEY_DOWN) {
+    if (code == RETRO_KEY_DOWN) {
         if (!open) return false;
         MenuBarMenu *m = &bar->menus[bar->open_menu];
         if (m->item_count == 0) return true;
@@ -349,10 +347,9 @@ bool menu_bar_handle_key(MenuBar *bar, const RetroKeyEvent *key) {
         bar->open_item = idx;
         return true;
     }
-#endif
 
     /* Enter activates the current item. */
-    if (code == '\n' || code == '\r' || code == 10 || code == 13) {
+    if (code == RETRO_KEY_LF || code == RETRO_KEY_CR) {
         if (open) {
             menu_bar_activate_current(bar);
             return true;

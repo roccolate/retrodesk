@@ -513,7 +513,12 @@ static void desktop_update_status(Desktop *desktop) {
     desktop->diagnostics.drag_degraded = wm_drag_is_degraded(desktop->wm);
 
     struct tm tm_buf;
-    struct tm *tm_now = localtime_r(&now, &tm_buf);
+    struct tm *tm_now = NULL;
+#if defined(_WIN32)
+    if (localtime_s(&tm_buf, &now) == 0) tm_now = &tm_buf;
+#else
+    tm_now = localtime_r(&now, &tm_buf);
+#endif
     char timestr[32] = "--:--:--";
     if (tm_now) strftime(timestr, sizeof(timestr), "%H:%M:%S", tm_now);
 

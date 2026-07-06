@@ -31,6 +31,7 @@ set(RETRODESK_SOURCES
     src/ui/button.c
     src/ui/dialog.c
     src/ui/menu_bar.c
+    src/ui/progress_bar.c
     src/ui/theme.c
     src/apps/apps.c
     src/apps/filemanager_app.c
@@ -248,6 +249,19 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     target_include_directories(menu_bar_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
     add_test(NAME menu_bar_test COMMAND menu_bar_test)
 
+    add_executable(progress_bar_test
+        tests/progress_bar_test.c
+        src/ui/progress_bar.c
+        src/platform/platform.c
+        src/platform/platform_curses.c
+        src/platform/platform_tty_raw.c
+        src/platform/tty_decoder.c
+        src/render/render.c
+        src/render/ansi_renderer.c
+    )
+    target_include_directories(progress_bar_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    add_test(NAME progress_bar_test COMMAND progress_bar_test)
+
     add_executable(desktop_runtime_test
         tests/desktop_runtime_test.c
         tests/wm_render_stub.c
@@ -297,6 +311,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         target_include_directories(button_test PRIVATE "${_curses_include}")
         target_include_directories(dialog_test PRIVATE "${_curses_include}")
         target_include_directories(menu_bar_test PRIVATE "${_curses_include}")
+        target_include_directories(progress_bar_test PRIVATE "${_curses_include}")
         target_link_libraries(draw_list_contract_test PRIVATE "${_curses_lib}")
         target_link_libraries(statusbar_drawlist_test PRIVATE "${_curses_lib}")
         target_link_libraries(ansi_renderer_diff_test PRIVATE "${_curses_lib}")
@@ -306,6 +321,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         target_link_libraries(button_test PRIVATE "${_curses_lib}")
         target_link_libraries(dialog_test PRIVATE "${_curses_lib}")
         target_link_libraries(menu_bar_test PRIVATE "${_curses_lib}")
+        target_link_libraries(progress_bar_test PRIVATE "${_curses_lib}")
         target_compile_definitions(draw_list_contract_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
         target_compile_definitions(statusbar_drawlist_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
         target_compile_definitions(ansi_renderer_diff_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
@@ -315,6 +331,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         target_compile_definitions(button_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
         target_compile_definitions(dialog_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
         target_compile_definitions(menu_bar_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
+        target_compile_definitions(progress_bar_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
     else()
         if (CURSES_INCLUDE_DIRS)
             target_include_directories(draw_list_contract_test PRIVATE ${CURSES_INCLUDE_DIRS})
@@ -326,6 +343,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             target_include_directories(button_test PRIVATE ${CURSES_INCLUDE_DIRS})
             target_include_directories(dialog_test PRIVATE ${CURSES_INCLUDE_DIRS})
             target_include_directories(menu_bar_test PRIVATE ${CURSES_INCLUDE_DIRS})
+            target_include_directories(progress_bar_test PRIVATE ${CURSES_INCLUDE_DIRS})
         elseif (CURSES_INCLUDE_DIR)
             target_include_directories(draw_list_contract_test PRIVATE ${CURSES_INCLUDE_DIR})
             target_include_directories(statusbar_drawlist_test PRIVATE ${CURSES_INCLUDE_DIR})
@@ -336,6 +354,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             target_include_directories(button_test PRIVATE ${CURSES_INCLUDE_DIR})
             target_include_directories(dialog_test PRIVATE ${CURSES_INCLUDE_DIR})
             target_include_directories(menu_bar_test PRIVATE ${CURSES_INCLUDE_DIR})
+            target_include_directories(progress_bar_test PRIVATE ${CURSES_INCLUDE_DIR})
         endif()
 
         if (TARGET Curses::Curses)
@@ -348,6 +367,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             target_link_libraries(button_test PRIVATE Curses::Curses)
             target_link_libraries(dialog_test PRIVATE Curses::Curses)
             target_link_libraries(menu_bar_test PRIVATE Curses::Curses)
+            target_link_libraries(progress_bar_test PRIVATE Curses::Curses)
         else()
             target_link_libraries(draw_list_contract_test PRIVATE ${CURSES_LIBRARIES})
             target_link_libraries(statusbar_drawlist_test PRIVATE ${CURSES_LIBRARIES})
@@ -358,6 +378,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             target_link_libraries(button_test PRIVATE ${CURSES_LIBRARIES})
             target_link_libraries(dialog_test PRIVATE ${CURSES_LIBRARIES})
             target_link_libraries(menu_bar_test PRIVATE ${CURSES_LIBRARIES})
+            target_link_libraries(progress_bar_test PRIVATE ${CURSES_LIBRARIES})
         endif()
     endif()
 endif()

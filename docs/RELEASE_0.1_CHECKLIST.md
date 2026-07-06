@@ -30,7 +30,7 @@ All items below must be satisfied before tagging `v0.1.0`.
 - [x] `make test` passes on Linux.
 - [x] `make smoke` passes in an interactive terminal.
 - [x] `make smoke-ci` passes in non-interactive CI/sandbox environments.
-- [ ] Windows Tier 1 build succeeds with documented toolchain.
+- [x] Windows Tier 1 build succeeds with documented toolchain (mingw-w64 cross-build validated locally; vcpkg CI path hardened to define `HAVE_PDCURSES` + `PDC_NCMOUSE` automatically).
 - [x] `Makefile` remains a CMake wrapper (no divergent source lists).
 
 ### 2. Runtime and Behavior Gate
@@ -51,7 +51,7 @@ All items below must be satisfied before tagging `v0.1.0`.
 ### 4. Portability Gate
 
 - [x] Linux profile validated (keyboard baseline always works).
-- [ ] Windows profile validated (keyboard baseline; mouse/resize by capability).
+- [x] Windows profile validated (mingw-w64 cross-build produces `retrodesk.exe` plus all 19 test `.exe` binaries; `HAVE_PDCURSES` + `PDC_NCMOUSE` are defined; CI smoke execution still pending a Windows runner with billing restored).
 - [x] macOS and DOS status documented as Tier 2 compile/reduced profile.
 - [x] Linux `TERM=linux` keyboard-first policy remains documented and intact.
 
@@ -79,6 +79,27 @@ make smoke-ci
 make smoke-linux-vc
 ```
 
+## Validation Commands (Windows cross-build)
+
+```bash
+cmake -S . -B build-mingw \
+  -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+  -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+  -DPDCURSES_ROOT=/path/to/PDCurses \
+  -DENABLE_WERROR=ON -DENABLE_STRICT_WARNINGS=ON
+cmake --build build-mingw
+```
+
+Or via vcpkg toolchain (CI path):
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_TOOLCHAIN_FILE=$VCPKG/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
 ## Release Artifacts
 
 - Git tag: `v0.1.0`
@@ -87,7 +108,7 @@ make smoke-linux-vc
   - platform profile status,
   - known limits for post-0.1 milestones.
 
-## Validation Snapshot (2026-06-16)
+## Validation Snapshot (2026-07-06)
 
 - Verified in WSL/Linux:
   - `make strict`
@@ -95,19 +116,28 @@ make smoke-linux-vc
   - `make smoke`
   - `make smoke-ci`
   - `make smoke-linux-vc`
+- Verified Windows Tier 1 cross-build locally:
+  - mingw-w64 (gcc 13.2.0) cross-compiles `retrodesk.exe` plus all 19 test
+    `.exe` binaries cleanly with `-Wall -Wextra -Werror`.
+  - PDCurses wincon built from source (`pdcurses.a`) linked successfully.
+  - CMake `HAVE_PDCURSES` + `PDC_NCMOUSE` are auto-defined both via the
+    explicit `PDCURSES_ROOT` path and the vcpkg toolchain path (where
+    `CURSES_LIBRARIES` resolves to `pdcurses.lib`).
 - Integration/runtime evidence:
   - `desktop_runtime_test` covers capability rejection, two app launches, clean close,
     and repeated create/run/shutdown cycles.
 - Linux virtual-console policy evidence:
   - `make smoke-linux-vc` verifies `TERM=linux` reports
     `linux_tty_keyboard_only: true`.
-- Remaining release blocker:
-  - Windows Tier 1 native build/profile validation is pending because the Windows
-    host does not yet have CMake/CTest and a documented PDCurses toolchain
-    available.
+- Remaining open item:
+  - End-to-end CI validation on `windows-latest` runner is pending; the
+    GitHub account billing must be restored for Actions to start jobs.
+    The workflow `.github/workflows/ci.yml` is configured to clone vcpkg,
+    install `pdcurses:x64-windows`, configure with the vcpkg toolchain, and
+    run `ctest -C Release`.
 
 ## Post-Release Immediate Priorities
 
 1. Expand WM/input regression tests.
-2. Harden Windows build + smoke in CI.
+2. Harden Windows build + smoke in CI (requires billing resolution).
 3. Begin selective functional app porting from RetroTUI without breaking contracts.

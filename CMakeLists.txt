@@ -123,6 +123,18 @@ else()
     else()
         target_link_libraries(retrodesk PRIVATE ${CURSES_LIBRARIES})
     endif()
+
+    # When Curses was supplied by vcpkg's pdcurses port (or any other
+    # PDCurses provider), activate HAVE_PDCURSES + PDC_NCMOUSE so the
+    # platform layer enables extended mouse and resize behavior.
+    set(_curses_lib_list "${CURSES_LIBRARIES}")
+    list(TRANSFORM _curses_lib_list APPEND)
+    string(JOIN "" _curses_lib_concat ${_curses_lib_list})
+    string(TOLOWER "${_curses_lib_concat}" _curses_lib_concat_lower)
+    string(FIND "${_curses_lib_concat_lower}" "pdcurses" _pdcurses_idx)
+    if (NOT _pdcurses_idx EQUAL -1)
+        target_compile_definitions(retrodesk PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
+    endif()
 endif()
 
 if (ENABLE_TESTS AND BUILD_TESTING)
@@ -338,17 +350,11 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         target_link_libraries(menu_bar_test PRIVATE "${_curses_lib}")
         target_link_libraries(progress_bar_test PRIVATE "${_curses_lib}")
         target_link_libraries(tab_test PRIVATE "${_curses_lib}")
-        target_compile_definitions(draw_list_contract_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(statusbar_drawlist_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(ansi_renderer_diff_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(text_input_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(scroll_list_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(text_buffer_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(button_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(dialog_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(menu_bar_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(progress_bar_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
-        target_compile_definitions(tab_test PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
+        foreach(_t draw_list_contract_test statusbar_drawlist_test ansi_renderer_diff_test
+                text_input_test scroll_list_test text_buffer_test button_test
+                dialog_test menu_bar_test progress_bar_test tab_test)
+            target_compile_definitions(${_t} PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
+        endforeach()
     else()
         if (CURSES_INCLUDE_DIRS)
             target_include_directories(draw_list_contract_test PRIVATE ${CURSES_INCLUDE_DIRS})
@@ -400,6 +406,17 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             target_link_libraries(menu_bar_test PRIVATE ${CURSES_LIBRARIES})
             target_link_libraries(progress_bar_test PRIVATE ${CURSES_LIBRARIES})
             target_link_libraries(tab_test PRIVATE ${CURSES_LIBRARIES})
+        endif()
+
+        # Mirror the retrodesk target's PDCurses auto-detection so test
+        # binaries see the same defines when built via vcpkg's pdcurses
+        # port (or any other PDCurses-resolving Curses package).
+        if (NOT _pdcurses_idx EQUAL -1)
+            foreach(_t draw_list_contract_test statusbar_drawlist_test ansi_renderer_diff_test
+                    text_input_test scroll_list_test text_buffer_test button_test
+                    dialog_test menu_bar_test progress_bar_test tab_test)
+                target_compile_definitions(${_t} PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
+            endforeach()
         endif()
     endif()
 endif()

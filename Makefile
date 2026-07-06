@@ -4,7 +4,8 @@ CONFIG ?= Release
 STRICT ?= ON
 WERROR ?= ON
 
-.PHONY: all configure build clean strict dev dos test smoke smoke-ci smoke-linux-vc
+.PHONY: all configure build clean strict dev dos test check-build-sources \
+        smoke smoke-ci smoke-linux-vc
 
 all: build
 
@@ -23,6 +24,13 @@ dev:
 
 dos:
 	$(MAKE) -f Makefile.djgpp
+
+# Verify that Makefile.djgpp's source list stays in sync with the
+# canonical RETRODESK_DJGPP_SOURCES in CMakeLists.txt. Cheap, runs
+# without configuring CMake. Wired into the same `make check` chain
+# in CI; safe to run locally before adding a new source file.
+check-build-sources:
+	@python3 scripts/check_djgpp_sources.py
 
 clean:
 	$(CMAKE) -E rm -rf $(BUILD_DIR)

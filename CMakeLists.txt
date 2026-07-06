@@ -41,6 +41,38 @@ set(RETRODESK_SOURCES
     src/apps/terminal_app.c
 )
 
+# DJGPP/DOS profile sources. Identical to RETRODESK_SOURCES minus the
+# raw-TTY backend (POSIX poll/ioctl/termios — not available on DOS).
+# Makefile.djgpp must stay in sync with this list; the script
+# scripts/check_djgpp_sources.py enforces that.
+set(RETRODESK_DJGPP_SOURCES
+    src/main.c
+    src/core/cli.c
+    src/core/desktop.c
+    src/core/key_chord.c
+    src/platform/platform.c
+    src/platform/platform_curses.c
+    src/platform/tty_decoder.c
+    src/render/render.c
+    src/render/ansi_renderer.c
+    src/wm/window_manager.c
+    src/app/app_runtime.c
+    src/ui/statusbar.c
+    src/ui/text_input.c
+    src/ui/scroll_list.c
+    src/ui/text_buffer.c
+    src/ui/button.c
+    src/ui/dialog.c
+    src/ui/menu_bar.c
+    src/ui/progress_bar.c
+    src/ui/tab.c
+    src/ui/theme.c
+    src/apps/apps.c
+    src/apps/filemanager_app.c
+    src/apps/notepad_app.c
+    src/apps/terminal_app.c
+)
+
 add_executable(retrodesk ${RETRODESK_SOURCES})
 target_include_directories(retrodesk PRIVATE ${CMAKE_SOURCE_DIR}/src)
 

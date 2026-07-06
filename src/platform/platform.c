@@ -92,9 +92,6 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
     PlatformBackend *platform = calloc(1, sizeof(*platform));
     if (!platform) return NULL;
 
-    InputBackendKind requested_backend =
-        config ? config->requested_input_backend : INPUT_BACKEND_UNKNOWN;
-
 #if defined(_WIN32)
     /* Windows terminals like Git Bash/mintty can start detached from a real console. */
     if (!windows_ensure_console()) {
@@ -109,6 +106,8 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
 #endif
 
 #if !defined(_WIN32) && !defined(__DJGPP__)
+    InputBackendKind requested_backend =
+        config ? config->requested_input_backend : INPUT_BACKEND_UNKNOWN;
     if (requested_backend == INPUT_BACKEND_TTY_RAW) {
         if (!platform_init_tty_raw_backend(platform)) {
             free(platform);
@@ -116,6 +115,8 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
         }
         return platform;
     }
+#else
+    (void)config;
 #endif
 
     if (!platform_init_curses_backend(platform, config)) {

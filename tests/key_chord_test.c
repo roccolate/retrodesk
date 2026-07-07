@@ -60,7 +60,8 @@ static void test_function_keys(void) {
     assert(RETRO_KEY_F10 == 0x1109);
     assert(RETRO_KEY_F12 == 0x110B);
     /* F-keys live outside both the ASCII and the navigation ranges. */
-    assert(RETRO_KEY_F1 > 0x2000);
+    assert(RETRO_KEY_F1 > 0xFF);
+    assert(RETRO_KEY_F1 > RETRO_KEY_BTAB);
     printf("  PASS: function_keys\n");
 }
 
@@ -156,12 +157,13 @@ static void test_no_collisions(void) {
 /* --- null / boundary safety ----------------------------------------- */
 
 static void test_boundaries(void) {
-    /* Chords range. */
+    /* Chords range: 0x1000..0x1FFF (inclusive). 0x2000 is past the end. */
     assert(!retro_key_is_chord(0x0FFF));
     assert(retro_key_is_chord(0x1000));
     assert(retro_key_is_chord(0x10FF));
     assert(retro_key_is_chord(0x1100));
-    assert(!retro_key_is_chord(0x1FFF));
+    assert(retro_key_is_chord(0x1FFF));
+    assert(!retro_key_is_chord(0x2000));
     /* Printability around the boundaries. */
     assert(!retro_key_is_printable(0x1F));
     assert(retro_key_is_printable(0x20));

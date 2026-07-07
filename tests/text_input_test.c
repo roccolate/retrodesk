@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "core/key_chord.h"
 #include "ui/text_input.h"
 
 /* Helper to simulate a printable key press. */
@@ -80,9 +81,8 @@ static void test_cursor_movement(void) {
     text_input_set_text(ti, "Hello");
     assert(text_input_cursor(ti) == 5); /* set_text puts cursor at end */
 
-#ifdef KEY_LEFT
     /* Move left */
-    RetroKeyEvent left = key_code(KEY_LEFT);
+    RetroKeyEvent left = key_code(RETRO_KEY_LEFT);
     text_input_handle_key(ti, &left);
     assert(text_input_cursor(ti) == 4);
 
@@ -97,7 +97,7 @@ static void test_cursor_movement(void) {
     assert(text_input_cursor(ti) == 0);
 
     /* Move right */
-    RetroKeyEvent right = key_code(KEY_RIGHT);
+    RetroKeyEvent right = key_code(RETRO_KEY_RIGHT);
     text_input_handle_key(ti, &right);
     assert(text_input_cursor(ti) == 1);
 
@@ -106,7 +106,6 @@ static void test_cursor_movement(void) {
     text_input_handle_key(ti, &k);
     assert(strcmp(text_input_text(ti), "HXello") == 0);
     assert(text_input_cursor(ti) == 2);
-#endif
 
     text_input_destroy(ti);
     printf("  PASS: cursor_movement\n");
@@ -131,13 +130,8 @@ static void test_ctrl_shortcuts(void) {
     text_input_handle_key(ti, &ctrl_a2); /* go home */
 
     /* Move right 5 positions */
-#ifdef KEY_RIGHT
-    RetroKeyEvent right = key_code(KEY_RIGHT);
+    RetroKeyEvent right = key_code(RETRO_KEY_RIGHT);
     for (int i = 0; i < 5; i++) text_input_handle_key(ti, &right);
-#else
-    /* Fallback: set cursor manually via set_text trick */
-    text_input_set_text(ti, "Hello World");
-#endif
     RetroKeyEvent ctrl_k = key_code(11);
     text_input_handle_key(ti, &ctrl_k);
     assert(strcmp(text_input_text(ti), "Hello") == 0);

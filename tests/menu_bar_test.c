@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "core/key_chord.h"
 #include "ui/menu_bar.h"
 
 /* --- callback tracking ----------------------------------------------- */
@@ -96,9 +97,9 @@ static void test_open_close(void) {
     menu_bar_add_item(bar, 0, "Open", 'O', on_activate, NULL);
     menu_bar_add_item(bar, 0, "Save", 'S', on_activate, NULL);
 
-    menu_bar_open(bar, 1);
+    menu_bar_open(bar, 0);
     assert(menu_bar_is_open(bar));
-    assert(menu_bar_open_menu(bar) == 1);
+    assert(menu_bar_open_menu(bar) == 0);
     assert(menu_bar_open_item(bar) == 0);
 
     menu_bar_close(bar);
@@ -173,7 +174,7 @@ static void test_key_escape_closes(void) {
 static void test_key_f10_toggles(void) {
     MenuBar *bar = menu_bar_create();
     menu_bar_add_menu(bar, "File", 'F');
-    RetroKeyEvent f10 = {.key_code = 271, .is_printable = false, .ascii = 0};
+    RetroKeyEvent f10 = {.key_code = RETRO_KEY_F10, .is_printable = false, .ascii = 0};
     bool consumed = menu_bar_handle_key(bar, &f10);
     assert(consumed);
     assert(menu_bar_is_open(bar));
@@ -382,7 +383,8 @@ static void test_sizing(void) {
     menu_bar_add_item(bar, 0, "Open...", 'O', NULL, NULL);
     menu_bar_add_item(bar, 0, "Save", 'S', NULL, NULL);
     int w = menu_bar_width(bar);
-    assert(w >= 4 + 4 + 2 * 2); /* "File" + gaps */
+    /* One "File" menu: leading gap + label width + trailing gap. */
+    assert(w >= 2 + 4 + 2);
     int dw = menu_bar_dropdown_width(bar, 0);
     assert(dw > 6); /* at least "Open..." + padding */
     int dh = menu_bar_dropdown_height(bar, 0);

@@ -188,16 +188,17 @@ static void dialog_focus_cycle(Dialog *dlg, int delta) {
     if (!dlg) return;
     bool has_input = (dlg->type == DIALOG_INPUT);
     bool has_cancel = (dlg->type != DIALOG_MESSAGE);
-    int count = 1; /* OK */
-    if (has_input) count++;
-    if (has_cancel) count++;
+    /* Modulo over the full DIALOG_FOCUS_* enum range so the cycle visits
+       every slot (INPUT=0, OK=1, CANCEL=2) regardless of which ones are
+       actually present. Slots not present in this dialog type are skipped
+       in the loop below. */
+    const int focus_count = (DIALOG_FOCUS_CANCEL - DIALOG_FOCUS_INPUT + 1);
 
     int idx = dlg->input_focus;
-    for (int i = 0; i < count; i++) {
-        idx = (idx + delta + count) % count;
-        /* For INPUT dialogs, never skip the input on cycle — it is always
-           selectable. For non-input dialogs, input slot is unused. */
-        if (!has_input && idx == DIALOG_FOCUS_INPUT) continue;
+    for (int i = 0; i < focus_count; i++) {
+        idx = (idx + delta + focus_count) % focus_count;
+        if (!has_input  && idx == DIALOG_FOCUS_INPUT)  continue;
+        if (!has_cancel && idx == DIALOG_FOCUS_CANCEL) continue;
         break;
     }
     dlg->input_focus = idx;
@@ -371,7 +372,10 @@ bool dialog_set_input_text(Dialog *dlg, const char *text) {
 
 bool dialog_handle_key(Dialog *dlg, const RetroKeyEvent *key) {
     if (!dlg || !key) return false;
-    if (dlg->result != DIALOG_RESULT_NONE) return false;
+    /* Once dismissed, the dialog still owns the event stream until it is
+       destroyed — return consumed so the caller does not route the key to
+       a sibling widget while it is tearing the dialog down. */
+    if (dlg->result != DIALOG_RESULT_NONE) return true;
 
     int code = key->key_code;
     bool has_input = (dlg->type == DIALOG_INPUT);

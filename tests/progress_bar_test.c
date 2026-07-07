@@ -158,10 +158,18 @@ static void test_indeterminate_block_size(void) {
     progress_bar_set_style(bar, PROGRESS_BAR_INDETERMINATE);
     progress_bar_set_width(bar, 16);
 
-    /* Scan all tick positions and confirm the block of '=' is exactly
-       PROGRESS_BAR_INDETERMINATE_BLOCK chars wide. */
-    int span = 16 + 4 - 1; /* block width = 4 */
+    /* The indeterminate animation has the block enter from the left, slide
+       across, and exit on the right (scanner effect), so its visible width
+       ranges from 0..PROGRESS_BAR_INDETERMINATE_BLOCK depending on tick
+       position — when the block is fully off-screen on either edge, no
+       '=' cells are drawn. Sweep the full period and confirm:
+         - the block never overflows PROGRESS_BAR_INDETERMINATE_BLOCK
+         - at least one frame shows the full block width (i.e. the block
+           does fully appear inside the bar at some point during the
+           animation, so it's actually visible somewhere in the cycle) */
+    int span = 16 + 4 - 1;
     int period = span * 2 - 2;
+    int saw_full_block = 0;
     for (int t = 0; t < period; t++) {
         DrawList *dl = draw_list_create();
         RenderStyle frame = make_style(0, 0, false, false);
@@ -174,10 +182,12 @@ static void test_indeterminate_block_size(void) {
         for (int i = 0; i < 16; i++) {
             if (text[i] == '=') block_count++;
         }
-        assert(block_count == 4);
+        assert(block_count <= 4);
+        if (block_count == 4) saw_full_block = 1;
         draw_list_destroy(dl);
         progress_bar_tick(bar);
     }
+    assert(saw_full_block);
     progress_bar_destroy(bar);
     printf("  PASS: indeterminate_block_size\n");
 }

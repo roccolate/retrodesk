@@ -242,8 +242,9 @@ static void test_render_outputs_segments(void) {
     RenderStyle active = make_style(RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, true, true);
 
     int used = tab_render(tab, dl, 0, 0, 80, &normal, &active);
-    /* "[ Info] [Logs]" = 6 + 1 + 6 = 13 */
-    assert(used == 13);
+    /* "[ Info] [Logs]" = 7 + 1 + 7 = 15. The format is "[ label]" with a
+       leading space inside the brackets (same for active and inactive). */
+    assert(used == 15);
 
     bool saw_info = false, saw_logs = false;
     for (size_t i = 0; i < draw_list_count(dl); i++) {

@@ -37,6 +37,7 @@ apps with predictable behavior across platforms.
 12. [adr/ADR-0001-cmake-is-canonical.md](adr/ADR-0001-cmake-is-canonical.md)
 13. [adr/ADR-0002-tiered-platform-support.md](adr/ADR-0002-tiered-platform-support.md)
 14. [adr/ADR-0003-core-does-not-expose-curses.md](adr/ADR-0003-core-does-not-expose-curses.md)
+15. [CORE_HARDENING_PLAN.md](CORE_HARDENING_PLAN.md)
 
 ## Platform Support Tiers
 

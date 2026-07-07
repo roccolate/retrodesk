@@ -368,7 +368,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         )
         target_include_directories(retrocore_event_fixture_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
         target_compile_definitions(retrocore_event_fixture_test PRIVATE
-            RETROCORE_SPEC_DIR="${RETROCORE_SPEC_DIR}"
+            RETROCORE_SPEC_DIR=${RETROCORE_SPEC_DIR}
         )
         add_test(NAME retrocore_event_fixture_test COMMAND retrocore_event_fixture_test)
     else()

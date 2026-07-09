@@ -60,7 +60,8 @@ All items below must be satisfied before tagging `v0.1.0`.
 - [x] `docs/INDEX.md` links all active policies and this checklist.
 - [x] `docs/ROADMAP.md` references `v0.1.0` release gate.
 - [x] `docs/TESTING.md` reflects the release validation matrix.
-- [x] README remains concise and points to docs index.
+- [x] README is the user-facing entrypoint and points to the deeper docs index.
+- [x] Source layout, build targets, test suite, app status, and platform policy are reflected in the active docs.
 
 ### 6. Debt Gate
 
@@ -135,6 +136,18 @@ ctest --test-dir build --output-on-failure
     The workflow `.github/workflows/ci.yml` is configured to clone vcpkg,
     install `pdcurses:x64-windows`, configure with the vcpkg toolchain, and
     run `ctest -C Release`.
+
+## Documentation Refresh Snapshot (2026-07-09)
+
+The active docs were refreshed against the current CMake/source layout:
+
+- `README.md`
+- `docs/INDEX.md`
+- `docs/ARCHITECTURE.md`
+- `docs/BUILD_SYSTEM.md`
+- `docs/TESTING.md`
+- `docs/RETROTUI_GAP.md`
+- `docs/AGENTS.md`
 
 ## Post-Release Immediate Priorities
 

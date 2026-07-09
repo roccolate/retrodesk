@@ -2,24 +2,35 @@
 
 ## Vision
 
-RetroDesk aims to be a portable terminal desktop runtime in C11 that can host multiple
-apps with predictable behavior across platforms.
+RetroDesk aims to be a portable terminal desktop runtime in C11 that can host
+multiple apps with predictable behavior across platforms.
 
-`RetroTUI` is treated as a feature reference and risk catalog, not an architecture guide.
+`RetroTUI` is treated as a feature reference and risk catalog, not an
+architecture guide.
 
 ## Current State Summary
 
-- The runtime is being moved to explicit layers (`core`, `wm`, `app`, `render`, `platform`).
-- Build is CMake-first; Make wrappers exist for ergonomics and DOS specialization.
+- The runtime uses explicit layers: `core`, `wm`, `app`, `apps`, `render`,
+  `platform`, and `ui`.
+- Build is CMake-first; Make wrappers exist for ergonomics and DOS
+  specialization.
+- The window manager, app runtime, render abstraction, theme catalog, and
+  current widget set are implemented as foundation components.
+- Built-in apps are currently placeholder workflows wired through the app
+  runtime, not finished user-facing productivity apps.
 - Linux virtual console support is keyboard-first by policy.
+- Windows and Linux are Tier 1 validation targets; macOS and DOS/DJGPP are
+  Tier 2 capability-limited targets.
 
 ## Design Principles
 
 - Single main event loop.
 - Single frame flush point.
-- No `curses` types in domain/public headers.
+- No `curses`/PDCurses backend types in domain/public headers.
 - Explicit ownership and lifecycle for all resources.
 - Capability-based behavior per backend/platform.
+- Tests and docs change with public contracts, build targets, platform policy,
+  or source layout.
 
 ## Recommended Reading Order
 
@@ -31,13 +42,15 @@ apps with predictable behavior across platforms.
 6. [RETROCORE_SPEC.md](RETROCORE_SPEC.md)
 7. [RETROTUI_GAP.md](RETROTUI_GAP.md)
 8. [TESTING.md](TESTING.md)
-9. [CODE_STANDARDS.md](CODE_STANDARDS.md)
+9. [ROADMAP.md](ROADMAP.md)
 10. [RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md)
-11. [TECH_DEBT_POLICY.md](TECH_DEBT_POLICY.md)
-12. [adr/ADR-0001-cmake-is-canonical.md](adr/ADR-0001-cmake-is-canonical.md)
-13. [adr/ADR-0002-tiered-platform-support.md](adr/ADR-0002-tiered-platform-support.md)
-14. [adr/ADR-0003-core-does-not-expose-curses.md](adr/ADR-0003-core-does-not-expose-curses.md)
-15. [CORE_HARDENING_PLAN.md](CORE_HARDENING_PLAN.md)
+11. [CODE_STANDARDS.md](CODE_STANDARDS.md)
+12. [TECH_DEBT_POLICY.md](TECH_DEBT_POLICY.md)
+13. [CORE_HARDENING_PLAN.md](CORE_HARDENING_PLAN.md)
+14. [AGENTS.md](AGENTS.md)
+15. [adr/ADR-0001-cmake-is-canonical.md](adr/ADR-0001-cmake-is-canonical.md)
+16. [adr/ADR-0002-tiered-platform-support.md](adr/ADR-0002-tiered-platform-support.md)
+17. [adr/ADR-0003-core-does-not-expose-curses.md](adr/ADR-0003-core-does-not-expose-curses.md)
 
 ## Platform Support Tiers
 
@@ -48,4 +61,6 @@ apps with predictable behavior across platforms.
 
 ## README Policy
 
-`README.md` is intentionally short. Detailed technical policy lives under `docs/`.
+`README.md` is the user-facing entrypoint: quick overview, build/use commands,
+current project structure, and links into the deeper technical docs. Detailed
+policy and release gates live under `docs/`.

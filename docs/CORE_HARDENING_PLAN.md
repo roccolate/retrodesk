@@ -16,8 +16,6 @@ The following items are still pending in the current source:
   window has already been created.
 - `retro_cli_parse` still returns `bool`, so `--help` and parse failure are not
   represented as distinct result states.
-- `RetroKeyEvent.ascii` is still `char`; it should become `unsigned char` before
-  extended byte handling is considered safe across platforms.
 - `key_chord.h` currently defines F1..F12 only. The function-key comment says
   the values are macro-generated even though they are manually listed.
 - Several `desktop.c` helpers still duplicate app lookup and capability /
@@ -25,6 +23,11 @@ The following items are still pending in the current source:
 - Uppercase `Q`/`W` hotkeys are still tracked as a polish item unless source
   changes prove otherwise.
 - Selective redraw and statusbar text caching are not implemented.
+
+Completed hardening items:
+
+- `RetroKeyEvent.ascii` is `unsigned char`, documented in `src/core/event.h`, and
+  covered by `tests/key_chord_test.c` with an extended-byte preservation check.
 
 Do not mark an item complete without the matching source change and a regression
 test.
@@ -66,6 +69,9 @@ if (desc->create && !desc->create(instance, &instance->ctx)) {
 
 Test: extend `tests/desktop_runtime_test.c` with a descriptor whose `create`
 callback fails. Hook `destroy` to increment a counter. Assert the counter is 1.
+
+Note: this needs a clean test-only way to register a failing descriptor with a
+`Desktop` without exposing test apps in normal runtime builds.
 
 ### 1.2 CLI parse result states
 
@@ -129,9 +135,9 @@ should contain only diagnostic fields that are not already represented by
 Tests: bench mode and shell diagnostics must still expose the same user-visible
 fields.
 
-### 2.3 Sign-safe ASCII byte
+### 2.3 Sign-safe ASCII byte — done
 
-Change:
+Changed:
 
 ```c
 char ascii;
@@ -143,11 +149,12 @@ to:
 unsigned char ascii;
 ```
 
-Add comments in `src/core/event.h` explaining that `0x80..0xFF` may be valid
-byte values in some locales/codepages and must not be corrupted by signed
-`char` behavior.
+`src/core/event.h` now documents that `0x80..0xFF` may be valid byte values in
+some locales/codepages and must not be corrupted by signed `char` behavior.
 
-Tests: add a round-trip test for a byte such as `0xE9`.
+Test coverage: `tests/key_chord_test.c` checks that byte `0xE9` is preserved as
+an unsigned byte and is not misclassified as a RetroDesk chord, portable
+printable character, or ASCII control value.
 
 ## Phase 3 — Internal Refactors
 
@@ -199,7 +206,7 @@ ctest --test-dir build-asan --output-on-failure
 - [ ] 1.3 — function-key vocabulary/comment is corrected and tested.
 - [ ] 2.1 — `app_launch` return type is unambiguous.
 - [ ] 2.2 — diagnostics no longer duplicate capability ownership.
-- [ ] 2.3 — `RetroKeyEvent.ascii` is `unsigned char` and documented.
+- [x] 2.3 — `RetroKeyEvent.ascii` is `unsigned char` and documented.
 - [ ] 3.x — repeated app lookup and launcher internals are simplified.
 - [ ] 4.x — uppercase hotkeys, selective redraw, and statusbar cache are done.
 - [ ] Debug and Release tests pass.

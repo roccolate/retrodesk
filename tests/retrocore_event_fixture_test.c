@@ -8,6 +8,7 @@
 #include "apps/apps_internal.h"
 #include "core/desktop.h"
 #include "platform/platform.h"
+#include "wm/window_manager.h"
 
 #ifndef RETROCORE_SPEC_DIR
 #error "RETROCORE_SPEC_DIR must point at a retrocore-spec checkout"
@@ -263,6 +264,86 @@ static WindowId replay_launch_files(Desktop *desktop, size_t *out_app_count_befo
     return files_window;
 }
 
+static bool read_drag_delta(const char *fixture, int *out_dx, int *out_dy) {
+    int down_x;
+    int down_y;
+    int move_x;
+    int move_y;
+
+    if (!find_event_field_int(fixture, "pointer_down", "x", &down_x)) return false;
+    if (!find_event_field_int(fixture, "pointer_down", "y", &down_y)) return false;
+    if (!find_event_field_int(fixture, "pointer_move", "x", &move_x)) return false;
+    if (!find_event_field_int(fixture, "pointer_move", "y", &move_y)) return false;
+
+    if (out_dx) *out_dx = move_x - down_x;
+    if (out_dy) *out_dy = move_y - down_y;
+    return true;
+}
+
+static void assert_window_drag_geometry(const char *fixture) {
+    const RetroAppDescriptor *files_desc = filemanager_app_descriptor();
+    Renderer *renderer;
+    WindowManager *wm;
+    WindowId window_id;
+    RetroWindowSpec spec;
+    RetroWindow *window;
+    RetroEvent down;
+    RetroEvent move;
+    RetroEvent up;
+    int dx;
+    int dy;
+    int final_y = 0;
+    int final_x = 0;
+    int final_h = 0;
+    int final_w = 0;
+    int local_down_x;
+    int local_down_y;
+
+    assert(files_desc != NULL);
+    assert(read_drag_delta(fixture, &dx, &dy));
+
+    renderer = renderer_create(NULL);
+    assert(renderer != NULL);
+    wm = wm_create(renderer);
+    assert(wm != NULL);
+
+    spec = (RetroWindowSpec){
+        .height = files_desc->default_height,
+        .width = files_desc->default_width,
+        .y = files_desc->default_y,
+        .x = files_desc->default_x,
+        .title = files_desc->display_name,
+        .flags = files_desc->window_flags,
+        .draw_cb = NULL,
+        .event_cb = NULL,
+        .user_data = NULL,
+    };
+    window_id = wm_create_window(wm, &spec);
+    assert(window_id != WINDOW_ID_INVALID);
+
+    local_down_x = files_desc->default_x + 4;
+    local_down_y = files_desc->default_y;
+    down = make_pointer_down_event(local_down_x, local_down_y);
+    move = make_pointer_move_event(local_down_x + dx, local_down_y + dy);
+    up = make_pointer_up_event(local_down_x + dx, local_down_y + dy);
+
+    assert(wm_handle_event(wm, &down));
+    assert(wm_handle_event(wm, &move));
+    assert(wm_handle_event(wm, &up));
+
+    window = wm_window(wm, window_id);
+    assert(window != NULL);
+    retro_window_get_geometry(window, &final_y, &final_x, &final_h, &final_w);
+    assert(final_y == files_desc->default_y + dy);
+    assert(final_x == files_desc->default_x + dx);
+    assert(final_h == files_desc->default_height);
+    assert(final_w == files_desc->default_width);
+    assert(wm_active_window(wm) == window_id);
+
+    wm_destroy(wm);
+    renderer_destroy(renderer);
+}
+
 static void replay_open_files_and_focus(void) {
     const char *fixture_path = STR(RETROCORE_SPEC_DIR) "/fixtures/events/open-files-and-focus.json";
     char *fixture = read_text_file(fixture_path);
@@ -296,14 +377,10 @@ static void replay_window_drag_basic_if_available(void) {
     size_t app_count_before;
     size_t window_count_before;
     const RetroAppDescriptor *files_desc;
-    int down_x;
-    int down_y;
-    int move_x;
-    int move_y;
-    int local_down_x;
-    int local_down_y;
     int dx;
     int dy;
+    int local_down_x;
+    int local_down_y;
     RetroEvent events[4];
 
     if (!fixture) {
@@ -319,14 +396,7 @@ static void replay_window_drag_basic_if_available(void) {
     assert(strstr(fixture, "\"app\": \"files\"") != NULL);
     assert(strstr(fixture, "\"focused\": true") != NULL);
     assert_supported_event_types(fixture);
-
-    assert(find_event_field_int(fixture, "pointer_down", "x", &down_x));
-    assert(find_event_field_int(fixture, "pointer_down", "y", &down_y));
-    assert(find_event_field_int(fixture, "pointer_move", "x", &move_x));
-    assert(find_event_field_int(fixture, "pointer_move", "y", &move_y));
-
-    dx = move_x - down_x;
-    dy = move_y - down_y;
+    assert(read_drag_delta(fixture, &dx, &dy));
 
     platform = platform_stub_new();
     assert(platform != NULL);
@@ -340,12 +410,9 @@ static void replay_window_drag_basic_if_available(void) {
 
     /* The retrocore fixture uses logical coordinates. The RetroDesk adapter
        translates the start point to the local File Manager title bar while
-       preserving the fixture's drag delta. This exercises real WM pointer-drag
-       handling without requiring projects to share identical initial geometry.
-
-       TODO: replace descriptor-based coordinate translation with a public
-       desktop/window geometry assertion helper, then assert final coordinates
-       against the WM result instead of only focus/existence/count invariants. */
+       preserving the fixture's drag delta. This exercises real desktop/WM event
+       routing without requiring projects to share identical initial geometry.
+       WM-level coordinate assertions are covered by assert_window_drag_geometry. */
     local_down_x = files_desc->default_x + 4;
     local_down_y = files_desc->default_y;
 
@@ -360,6 +427,8 @@ static void replay_window_drag_basic_if_available(void) {
     assert(desktop_active_window(desktop) == files_window);
     assert(desktop_app_count(desktop) == app_count_before);
     assert(desktop_window_count(desktop) == window_count_before);
+
+    assert_window_drag_geometry(fixture);
 
     desktop_shutdown(desktop);
     platform_destroy(platform);

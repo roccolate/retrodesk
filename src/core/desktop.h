@@ -47,6 +47,9 @@ size_t desktop_app_count(const Desktop *desktop);
 size_t desktop_window_count(const Desktop *desktop);
 WindowId desktop_active_window(const Desktop *desktop);
 WindowId desktop_app_window_id(const Desktop *desktop, const char *app_id);
+#ifdef RETRODESK_ENABLE_TEST_HOOKS
+bool desktop_register_app_for_test(Desktop *desktop, const RetroAppDescriptor *desc);
+#endif
 void desktop_shutdown(Desktop *desktop);
 
 #endif

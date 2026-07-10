@@ -179,7 +179,7 @@ static void launcher_event(RetroWindow *window, const RetroEvent *event, void *u
     if (!desktop || !event || event->type != RETRO_EVENT_KEY) return;
 
     int key = event->data.key.key_code;
-    char ch = event->data.key.ascii;
+    unsigned char ch = event->data.key.ascii;
     size_t count = sizeof(k_launcher_items) / sizeof(k_launcher_items[0]);
     if (count == 0) return;
 
@@ -422,6 +422,7 @@ RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
     instance->ctx.window_id = wid;
 
     if (desc->create && !desc->create(instance, &instance->ctx)) {
+        if (desc->destroy) desc->destroy(instance);
         wm_close_window(desktop->wm, wid);
         free(instance);
         return NULL;
@@ -475,6 +476,11 @@ WindowId desktop_app_window_id(const Desktop *desktop, const char *app_id) {
     }
 
     return WINDOW_ID_INVALID;
+}
+
+bool desktop_register_app_for_test(Desktop *desktop, const RetroAppDescriptor *desc) {
+    if (!desktop || !desktop->app_registry || !desc) return false;
+    return app_registry_register(desktop->app_registry, desc);
 }
 
 static void desktop_cleanup_apps(Desktop *desktop) {

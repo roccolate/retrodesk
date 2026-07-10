@@ -14,8 +14,6 @@ The following items are still pending in the current source:
   "already running, focused existing window".
 - `app_launch` does not call `desc->destroy` when `desc->create` fails after the
   window has already been created.
-- `key_chord.h` currently defines F1..F12 only. The function-key comment says
-  the values are macro-generated even though they are manually listed.
 - Several `desktop.c` helpers still duplicate app lookup and capability /
   diagnostics state handling.
 - Uppercase `Q`/`W` hotkeys are still tracked as a polish item unless source
@@ -26,6 +24,9 @@ Completed hardening items:
 
 - `retro_cli_parse` returns `RetroCliParseResult`, distinguishing valid parse,
   help/usage, and parse errors. `main()` exits successfully for `--help` / `-h`.
+- Function-key vocabulary is now documented as the explicitly supported F1..F12
+  range. F13..F24 are intentionally not claimed until backend mapping and tests
+  prove consistent support.
 - `RetroKeyEvent.ascii` is `unsigned char`, documented in `src/core/event.h`, and
   covered by `tests/key_chord_test.c` with an extended-byte preservation check.
 
@@ -98,12 +99,19 @@ Test coverage: `tests/cli_parse_test.c` covers OK, help, short help, invalid
 backend combinations, invalid theme, unknown flag, invalid argc, null argv, and
 null output options.
 
-### 1.3 Function-key vocabulary
+### 1.3 Function-key vocabulary — done
 
-Update `key_chord.h` so the comment matches the implementation and add F13..F24
-if the supported backends expose them consistently.
+`key_chord.h` now documents the current portable function-key vocabulary as
+F1..F12 only. That matches the currently translated curses/PDCurses backend
+surface.
 
-Tests: extend `tests/key_chord_test.c` for F-key ranges and classification.
+F13..F24 are deliberately not added yet because the supported backends do not
+currently expose a tested, consistent mapping for them. Raw TTY function-key
+escape handling is also not claimed yet.
+
+Test coverage: `tests/key_chord_test.c` verifies that F1..F12 are sequential,
+classified as chords, non-printable, non-control, and live outside raw byte and
+navigation ranges.
 
 ## Phase 2 — API Disambiguation
 
@@ -207,7 +215,7 @@ ctest --test-dir build-asan --output-on-failure
 
 - [ ] 1.1 — `app_launch` calls `destroy` on `create` failure.
 - [x] 1.2 — CLI parse result distinguishes OK, usage, and parse error.
-- [ ] 1.3 — function-key vocabulary/comment is corrected and tested.
+- [x] 1.3 — function-key vocabulary/comment is corrected and tested.
 - [ ] 2.1 — `app_launch` return type is unambiguous.
 - [ ] 2.2 — diagnostics no longer duplicate capability ownership.
 - [x] 2.3 — `RetroKeyEvent.ascii` is `unsigned char` and documented.

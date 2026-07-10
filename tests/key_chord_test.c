@@ -56,10 +56,22 @@ static void test_navigation_chords(void) {
 }
 
 static void test_function_keys(void) {
+    const int fkeys[] = {
+        RETRO_KEY_F1,  RETRO_KEY_F2,  RETRO_KEY_F3,  RETRO_KEY_F4,
+        RETRO_KEY_F5,  RETRO_KEY_F6,  RETRO_KEY_F7,  RETRO_KEY_F8,
+        RETRO_KEY_F9,  RETRO_KEY_F10, RETRO_KEY_F11, RETRO_KEY_F12,
+    };
+
+    for (int i = 0; i < 12; ++i) {
+        assert(fkeys[i] == RETRO_KEY_F1 + i);
+        assert(retro_key_is_chord(fkeys[i]));
+        assert(!retro_key_is_printable(fkeys[i]));
+        assert(!retro_key_is_control(fkeys[i]));
+    }
+
     assert(RETRO_KEY_F1  == 0x1100);
-    assert(RETRO_KEY_F5  == 0x1104);
-    assert(RETRO_KEY_F10 == 0x1109);
     assert(RETRO_KEY_F12 == 0x110B);
+    assert(RETRO_KEY_F12 == RETRO_KEY_F1 + 11);
     /* F-keys live outside both the ASCII and the navigation ranges. */
     assert(RETRO_KEY_F1 > 0xFF);
     assert(RETRO_KEY_F1 > RETRO_KEY_BTAB);

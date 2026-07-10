@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 
+#include "core/event.h"
 #include "core/key_chord.h"
 
 /* --- ASCII chord macros ----------------------------------------------- */
@@ -142,6 +143,17 @@ static void test_is_control(void) {
     printf("  PASS: is_control\n");
 }
 
+static void test_key_event_ascii_byte_is_unsigned(void) {
+    RetroKeyEvent key = {0};
+    key.ascii = (unsigned char)0xE9;
+    assert(key.ascii == 0xE9u);
+    assert((int)key.ascii == 233);
+    assert(!retro_key_is_chord((int)key.ascii));
+    assert(!retro_key_is_printable((int)key.ascii));
+    assert(!retro_key_is_control((int)key.ascii));
+    printf("  PASS: key_event_ascii_byte_is_unsigned\n");
+}
+
 /* --- collision invariants ------------------------------------------- */
 
 static void test_no_collisions(void) {
@@ -182,6 +194,7 @@ int main(void) {
     test_is_chord();
     test_is_printable();
     test_is_control();
+    test_key_event_ascii_byte_is_unsigned();
     test_no_collisions();
     test_boundaries();
     printf("All key_chord tests passed.\n");

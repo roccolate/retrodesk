@@ -128,6 +128,11 @@ static bool window_title_hit(const RetroWindow *window, int y, int x) {
     return (y - window->y) == 0;
 }
 
+static bool window_is_focusable(const RetroWindow *window) {
+    if (!window) return false;
+    return (window->flags & WINDOW_FLAG_FIXED) == 0;
+}
+
 static RetroWindow *wm_top_window_at(WindowManager *wm, int y, int x) {
     if (!wm) return NULL;
     for (size_t i = wm->count; i > 0; --i) {
@@ -279,13 +284,22 @@ bool wm_cycle_focus(WindowManager *wm) {
     if (!wm || wm->count < 2) return false;
     /* Do not cycle focus while a modal window is active. */
     if (wm_topmost_modal(wm)) return false;
+
     int idx = wm_find_index(wm, wm->active_id);
     if (idx < 0) idx = (int)wm->count - 1;
-    size_t next = ((size_t)idx + 1) % wm->count;
-    wm->active_id = wm->windows[next]->id;
-    wm_bring_to_front(wm, wm->active_id);
-    wm_update_active_flags(wm);
-    return true;
+
+    for (size_t step = 1; step <= wm->count; ++step) {
+        size_t next = ((size_t)idx + step) % wm->count;
+        RetroWindow *candidate = wm->windows[next];
+        if (!window_is_focusable(candidate)) continue;
+        if (candidate->id == wm->active_id) return false;
+        wm->active_id = candidate->id;
+        wm_bring_to_front(wm, wm->active_id);
+        wm_update_active_flags(wm);
+        return true;
+    }
+
+    return false;
 }
 
 WindowId wm_active_window(const WindowManager *wm) {

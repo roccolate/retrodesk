@@ -47,14 +47,15 @@ static bool retro_cli_apply_backend_defaults(RetroCliOptions *opt, FILE *err) {
     return true;
 }
 
-bool retro_cli_parse(int argc, char **argv, RetroCliOptions *out, FILE *err) {
-    if (!out || argc < 1 || !argv) return false;
+RetroCliParseResult retro_cli_parse(int argc, char **argv, RetroCliOptions *out,
+                                    FILE *err) {
+    if (!out || argc < 1 || !argv) return RETRO_CLI_PARSE_ERROR;
     retro_cli_default(out);
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             retro_cli_print_usage(err, argv[0]);
-            return false;
+            return RETRO_CLI_SHOWED_USAGE;
         }
         if (strcmp(argv[i], "--bench-startup") == 0) {
             out->bench_mode = true;
@@ -83,13 +84,14 @@ bool retro_cli_parse(int argc, char **argv, RetroCliOptions *out, FILE *err) {
                             "unknown theme '%s' (valid: xp|hacker|amiga|win31)\n",
                             argv[i] + 8);
                 }
-                return false;
+                return RETRO_CLI_PARSE_ERROR;
             }
             continue;
         }
         if (err) retro_cli_print_usage(err, argv[0]);
-        return false;
+        return RETRO_CLI_PARSE_ERROR;
     }
 
-    return retro_cli_apply_backend_defaults(out, err);
+    return retro_cli_apply_backend_defaults(out, err) ? RETRO_CLI_OK
+                                                      : RETRO_CLI_PARSE_ERROR;
 }

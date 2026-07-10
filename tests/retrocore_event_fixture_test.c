@@ -128,12 +128,14 @@ static char *read_text_file(const char *path) {
 
 static const char *retrocore_app_to_retrodesk(const char *app_id) {
     if (strcmp(app_id, "files") == 0) return "filemanager";
+    if (strcmp(app_id, "notes") == 0) return "notepad";
     return app_id;
 }
 
 static bool event_type_is_supported(const char *type) {
     return strcmp(type, "launch_app") == 0 || strcmp(type, "pointer_down") == 0 ||
-           strcmp(type, "pointer_move") == 0 || strcmp(type, "pointer_up") == 0;
+           strcmp(type, "pointer_move") == 0 || strcmp(type, "pointer_up") == 0 ||
+           strcmp(type, "focus_next") == 0 || strcmp(type, "close_window") == 0;
 }
 
 static void assert_supported_event_types(const char *fixture) {
@@ -201,6 +203,24 @@ static RetroEvent make_quit_event(void) {
     return event;
 }
 
+static RetroEvent make_focus_next_event(void) {
+    RetroEvent event = {0};
+    event.type = RETRO_EVENT_KEY;
+    event.data.key.key_code = '\t';
+    event.data.key.ascii = '\0';
+    event.data.key.is_printable = false;
+    return event;
+}
+
+static RetroEvent make_close_focused_window_event(void) {
+    RetroEvent event = {0};
+    event.type = RETRO_EVENT_KEY;
+    event.data.key.key_code = 'w';
+    event.data.key.ascii = 'w';
+    event.data.key.is_printable = true;
+    return event;
+}
+
 static RetroEvent make_pointer_down_event(int x, int y) {
     RetroEvent event = {0};
     event.type = RETRO_EVENT_MOUSE;
@@ -239,29 +259,36 @@ static Desktop *create_fixture_desktop(PlatformBackend *platform, bool bench_mod
     return desktop_create(&cfg);
 }
 
-static WindowId replay_launch_files(Desktop *desktop, size_t *out_app_count_before,
-                                    size_t *out_window_count_before) {
-    const char *retrodesk_app = retrocore_app_to_retrodesk("files");
-    WindowId files_window = desktop_app_window_id(desktop, retrodesk_app);
+static WindowId replay_launch_existing_app(Desktop *desktop, const char *logical_app_id,
+                                           size_t *out_app_count_before,
+                                           size_t *out_window_count_before) {
+    const char *retrodesk_app = retrocore_app_to_retrodesk(logical_app_id);
+    WindowId window = desktop_app_window_id(desktop, retrodesk_app);
     size_t app_count_before;
     size_t window_count_before;
 
-    assert(files_window != WINDOW_ID_INVALID);
+    assert(window != WINDOW_ID_INVALID);
 
     app_count_before = desktop_app_count(desktop);
     window_count_before = desktop_window_count(desktop);
 
-    /* Retrocore's logical app id is `files`. RetroDesk's local app id is
-       `filemanager`. File Manager starts by default, so launching `files`
-       should focus the existing instance rather than duplicate it. */
+    /* RetroDesk launches File Manager and Notepad by default in the current
+       foundation desktop. Replaying retrocore launch_app for those logical apps
+       should focus existing instances instead of creating duplicates. */
     assert(app_launch(desktop, retrodesk_app) == NULL);
     assert(desktop_app_count(desktop) == app_count_before);
     assert(desktop_window_count(desktop) == window_count_before);
-    assert(desktop_active_window(desktop) == files_window);
+    assert(desktop_active_window(desktop) == window);
 
     if (out_app_count_before) *out_app_count_before = app_count_before;
     if (out_window_count_before) *out_window_count_before = window_count_before;
-    return files_window;
+    return window;
+}
+
+static WindowId replay_launch_files(Desktop *desktop, size_t *out_app_count_before,
+                                    size_t *out_window_count_before) {
+    return replay_launch_existing_app(desktop, "files", out_app_count_before,
+                                      out_window_count_before);
 }
 
 static bool read_drag_delta(const char *fixture, int *out_dx, int *out_dy) {
@@ -435,8 +462,111 @@ static void replay_window_drag_basic_if_available(void) {
     free(fixture);
 }
 
+static void replay_focus_next_basic_if_available(void) {
+    const char *fixture_path = STR(RETROCORE_SPEC_DIR) "/fixtures/events/focus-next-basic.json";
+    char *fixture = read_text_file(fixture_path);
+    PlatformBackend *platform;
+    Desktop *desktop;
+    WindowId files_window;
+    WindowId notes_window;
+    size_t app_count_before;
+    size_t window_count_before;
+    RetroEvent events[2];
+
+    if (!fixture) {
+        printf("retrocore: skipping focus-next-basic fixture; file not found at %s\n",
+               fixture_path);
+        return;
+    }
+
+    assert(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
+    assert(strstr(fixture, "\"type\": \"focus_next\"") != NULL);
+    assert(strstr(fixture, "\"app\": \"files\"") != NULL);
+    assert(strstr(fixture, "\"app\": \"notes\"") != NULL);
+    assert(strstr(fixture, "\"focused\": true") != NULL);
+    assert(strstr(fixture, "\"focused\": false") != NULL);
+    assert_supported_event_types(fixture);
+
+    platform = platform_stub_new();
+    assert(platform != NULL);
+    desktop = create_fixture_desktop(platform, false);
+    assert(desktop != NULL);
+
+    files_window = replay_launch_existing_app(desktop, "files", NULL, NULL);
+    notes_window = replay_launch_existing_app(desktop, "notes", NULL, NULL);
+    assert(files_window != notes_window);
+    assert(desktop_active_window(desktop) == notes_window);
+
+    app_count_before = desktop_app_count(desktop);
+    window_count_before = desktop_window_count(desktop);
+
+    events[0] = make_focus_next_event();
+    events[1] = make_quit_event();
+    platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
+
+    assert(desktop_run(desktop) == EXIT_SUCCESS);
+    assert(desktop_active_window(desktop) == files_window);
+    assert(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == files_window);
+    assert(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("notes")) == notes_window);
+    assert(desktop_app_count(desktop) == app_count_before);
+    assert(desktop_window_count(desktop) == window_count_before);
+
+    desktop_shutdown(desktop);
+    platform_destroy(platform);
+    free(fixture);
+}
+
+static void replay_close_focused_window_if_available(void) {
+    const char *fixture_path = STR(RETROCORE_SPEC_DIR) "/fixtures/events/close-focused-window.json";
+    char *fixture = read_text_file(fixture_path);
+    PlatformBackend *platform;
+    Desktop *desktop;
+    WindowId files_window;
+    size_t app_count_before;
+    size_t window_count_before;
+    RetroEvent events[2];
+
+    if (!fixture) {
+        printf("retrocore: skipping close-focused-window fixture; file not found at %s\n",
+               fixture_path);
+        return;
+    }
+
+    assert(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
+    assert(strstr(fixture, "\"type\": \"close_window\"") != NULL);
+    assert(strstr(fixture, "\"window\": \"focused\"") != NULL);
+    assert(strstr(fixture, "\"app\": \"files\"") != NULL);
+    assert(strstr(fixture, "\"exists\": false") != NULL);
+    assert_supported_event_types(fixture);
+
+    platform = platform_stub_new();
+    assert(platform != NULL);
+    desktop = create_fixture_desktop(platform, false);
+    assert(desktop != NULL);
+
+    files_window = replay_launch_files(desktop, &app_count_before, &window_count_before);
+    assert(app_count_before > 0);
+    assert(window_count_before > 0);
+
+    events[0] = make_close_focused_window_event();
+    events[1] = make_quit_event();
+    platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
+
+    assert(desktop_run(desktop) == EXIT_SUCCESS);
+    assert(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == WINDOW_ID_INVALID);
+    assert(desktop_active_window(desktop) != files_window);
+    assert(desktop_app_count(desktop) == app_count_before - 1u);
+    assert(desktop_window_count(desktop) == window_count_before - 1u);
+
+    desktop_shutdown(desktop);
+    platform_destroy(platform);
+    free(fixture);
+}
+
 int main(void) {
     replay_open_files_and_focus();
     replay_window_drag_basic_if_available();
+    replay_focus_next_basic_if_available();
+    replay_close_focused_window_if_available();
     return 0;
 }

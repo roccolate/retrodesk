@@ -65,8 +65,10 @@ repository.
 | --- | --- | --- |
 | `fixtures/events/open-files-and-focus.json` | Supported | Maps logical app `files` to RetroDesk app `filemanager`. Verifies launching/focusing does not duplicate the default File Manager instance. |
 | `fixtures/events/window-drag-basic.json` | Supported | Replays pointer down/move/up through RetroDesk's desktop/WM event path. Verifies File Manager still exists, remains focused, is not duplicated, and verifies final WM geometry at the window-manager level. |
+| `fixtures/events/focus-next-basic.json` | Supported | Maps logical app `notes` to RetroDesk app `notepad`, launches/focuses Notes, then replays `focus_next` and verifies focus moves back to Files while app/window counts remain stable. |
+| `fixtures/events/close-focused-window.json` | Supported | Launches/focuses Files, replays `close_window` for the focused window, and verifies the File Manager app/window is removed. |
 
-If `window-drag-basic.json` is not present in a local `retrocore-spec` checkout,
+If newer optional fixtures are not present in a local `retrocore-spec` checkout,
 the test prints a skip message for that fixture and continues.
 
 ## Supported Event Types
@@ -77,11 +79,11 @@ Currently supported by the tiny fixture runner:
 - `pointer_down`
 - `pointer_move`
 - `pointer_up`
+- `focus_next`
+- `close_window`
 
 Currently planned / TODO:
 
-- `focus_next`
-- `close_window`
 - `key`
 - `menu_action`
 
@@ -93,10 +95,12 @@ clear TODO/skipped message or fail with a clear unsupported-event assertion.
 | Retrocore logical app | RetroDesk local app |
 | --- | --- |
 | `files` | `filemanager` |
+| `notes` | `notepad` |
 
-`File Manager` is launched by default in RetroDesk. Replaying `launch_app` for
-logical app `files` should focus the existing `filemanager` instance instead of
-creating a duplicate window/app instance.
+`File Manager` and `Notepad` are launched by default in the current RetroDesk
+foundation desktop. Replaying `launch_app` for logical apps `files` and `notes`
+should focus the existing local instances instead of creating duplicate
+window/app instances.
 
 ## Coordinate Mapping
 

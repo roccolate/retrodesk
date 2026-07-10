@@ -59,16 +59,24 @@ The fixture says:
 
 RetroDesk's fixture runner preserves the fixture drag delta but translates the
 starting coordinate to the local File Manager title bar. This keeps RetroDesk's
-layout native while still exercising real WM pointer-drag event handling.
+layout native while still exercising real desktop/WM pointer-drag event routing.
 
-The test currently asserts:
+The desktop-level replay asserts:
 
 - File Manager window exists.
 - File Manager remains focused after the pointer sequence.
 - App/window counts do not increase.
 
-TODO: add final window coordinate assertions when RetroDesk exposes a clean
-public desktop/window geometry assertion helper for tests.
+The WM-level replay of the same fixture delta asserts:
+
+- the dragged window's final `y` coordinate equals initial `y + dy`,
+- the dragged window's final `x` coordinate equals initial `x + dx`,
+- window size is unchanged,
+- the dragged window remains active.
+
+TODO: if a future retrocore fixture needs post-replay app-window coordinates from
+`Desktop`, add a small public desktop/window geometry helper instead of reaching
+into private `Desktop` internals.
 
 ## Covered By
 
@@ -117,6 +125,12 @@ assert logical state without reaching into private structs:
 - `desktop_app_window_id()`
 - `desktop_app_count()`
 - `desktop_window_count()`
+
+WM-level tests may also use the public WM inspection helpers:
+
+- `wm_window()`
+- `retro_window_get_geometry()`
+- `wm_active_window()`
 
 ## Boundary
 

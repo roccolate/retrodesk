@@ -14,8 +14,6 @@ The following items are still pending in the current source:
   "already running, focused existing window".
 - `app_launch` does not call `desc->destroy` when `desc->create` fails after the
   window has already been created.
-- `retro_cli_parse` still returns `bool`, so `--help` and parse failure are not
-  represented as distinct result states.
 - `key_chord.h` currently defines F1..F12 only. The function-key comment says
   the values are macro-generated even though they are manually listed.
 - Several `desktop.c` helpers still duplicate app lookup and capability /
@@ -26,6 +24,8 @@ The following items are still pending in the current source:
 
 Completed hardening items:
 
+- `retro_cli_parse` returns `RetroCliParseResult`, distinguishing valid parse,
+  help/usage, and parse errors. `main()` exits successfully for `--help` / `-h`.
 - `RetroKeyEvent.ascii` is `unsigned char`, documented in `src/core/event.h`, and
   covered by `tests/key_chord_test.c` with an extended-byte preservation check.
 
@@ -73,9 +73,9 @@ callback fails. Hook `destroy` to increment a counter. Assert the counter is 1.
 Note: this needs a clean test-only way to register a failing descriptor with a
 `Desktop` without exposing test apps in normal runtime builds.
 
-### 1.2 CLI parse result states
+### 1.2 CLI parse result states — done
 
-Replace `bool retro_cli_parse(...)` with an enum result:
+`retro_cli_parse(...)` now returns:
 
 ```c
 typedef enum RetroCliParseResult {
@@ -91,8 +91,12 @@ Behavior:
 - Unknown arguments print usage/error details and return `RETRO_CLI_PARSE_ERROR`.
 - Invalid backend combinations return `RETRO_CLI_PARSE_ERROR`.
 - Valid configurations return `RETRO_CLI_OK`.
+- `main()` returns `EXIT_SUCCESS` for help/usage and `EXIT_FAILURE` only for
+  parse errors.
 
-Tests: extend `tests/cli_parse_test.c` for each branch.
+Test coverage: `tests/cli_parse_test.c` covers OK, help, short help, invalid
+backend combinations, invalid theme, unknown flag, invalid argc, null argv, and
+null output options.
 
 ### 1.3 Function-key vocabulary
 
@@ -202,7 +206,7 @@ ctest --test-dir build-asan --output-on-failure
 ## Completion Checklist
 
 - [ ] 1.1 — `app_launch` calls `destroy` on `create` failure.
-- [ ] 1.2 — CLI parse result distinguishes OK, usage, and parse error.
+- [x] 1.2 — CLI parse result distinguishes OK, usage, and parse error.
 - [ ] 1.3 — function-key vocabulary/comment is corrected and tested.
 - [ ] 2.1 — `app_launch` return type is unambiguous.
 - [ ] 2.2 — diagnostics no longer duplicate capability ownership.

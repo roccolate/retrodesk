@@ -12,8 +12,6 @@ The following items are still pending in the current source:
 
 - `app_launch` returns `NULL` for multiple meanings: launch failure and
   "already running, focused existing window".
-- `app_launch` does not call `desc->destroy` when `desc->create` fails after the
-  window has already been created.
 - Several `desktop.c` helpers still duplicate app lookup and capability /
   diagnostics state handling.
 - Uppercase `Q`/`W` hotkeys are still tracked as a polish item unless source
@@ -22,6 +20,10 @@ The following items are still pending in the current source:
 
 Completed hardening items:
 
+- `app_launch` now calls the descriptor `destroy` callback when `create` fails
+  after the app window has already been created. `tests/desktop_runtime_test.c`
+  registers a test-only failing app descriptor and asserts create/destroy/count
+  behavior.
 - `retro_cli_parse` returns `RetroCliParseResult`, distinguishing valid parse,
   help/usage, and parse errors. `main()` exits successfully for `--help` / `-h`.
 - Function-key vocabulary is now documented as the explicitly supported F1..F12
@@ -45,19 +47,10 @@ test.
 
 ## Phase 1 — Bug-Shaped Cleanup
 
-### 1.1 App create-failure cleanup
+### 1.1 App create-failure cleanup — done
 
-Current shape:
-
-```c
-if (desc->create && !desc->create(instance, &instance->ctx)) {
-    wm_close_window(desktop->wm, wid);
-    free(instance);
-    return NULL;
-}
-```
-
-Required behavior:
+`app_launch` now performs descriptor cleanup when `create` fails after window
+creation:
 
 ```c
 if (desc->create && !desc->create(instance, &instance->ctx)) {
@@ -68,11 +61,19 @@ if (desc->create && !desc->create(instance, &instance->ctx)) {
 }
 ```
 
-Test: extend `tests/desktop_runtime_test.c` with a descriptor whose `create`
-callback fails. Hook `destroy` to increment a counter. Assert the counter is 1.
+Test coverage: `tests/desktop_runtime_test.c` registers a test-only descriptor
+whose `create` callback fails and whose `destroy` callback increments a counter.
+The test asserts that:
 
-Note: this needs a clean test-only way to register a failing descriptor with a
-`Desktop` without exposing test apps in normal runtime builds.
+- `create` is called once,
+- `destroy` is called once,
+- no app instance is recorded,
+- no extra window remains,
+- `desktop_app_window_id()` returns `WINDOW_ID_INVALID` for the failed app.
+
+The test uses `RETRODESK_ENABLE_TEST_HOOKS` to expose
+`desktop_register_app_for_test()` without adding the artificial descriptor to
+normal runtime app registration.
 
 ### 1.2 CLI parse result states — done
 
@@ -213,7 +214,7 @@ ctest --test-dir build-asan --output-on-failure
 
 ## Completion Checklist
 
-- [ ] 1.1 — `app_launch` calls `destroy` on `create` failure.
+- [x] 1.1 — `app_launch` calls `destroy` on `create` failure.
 - [x] 1.2 — CLI parse result distinguishes OK, usage, and parse error.
 - [x] 1.3 — function-key vocabulary/comment is corrected and tested.
 - [ ] 2.1 — `app_launch` return type is unambiguous.

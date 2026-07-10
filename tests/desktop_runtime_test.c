@@ -1,3 +1,5 @@
+#define RETRODESK_ENABLE_TEST_HOOKS
+
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -15,6 +17,10 @@ struct PlatformBackend {
     size_t event_count;
     size_t event_index;
 };
+
+static int g_failing_create_calls;
+static int g_failing_destroy_calls;
+static int g_failing_state_marker;
 
 static void platform_stub_update_mask(PlatformFeatures *features) {
     if (!features) return;
@@ -61,9 +67,39 @@ static RetroEvent key_event(char ascii) {
     event.type = RETRO_EVENT_KEY;
     event.data.key.key_code = (int)ascii;
     event.data.key.is_printable = (ascii >= 32 && ascii <= 126);
-    event.data.key.ascii = event.data.key.is_printable ? ascii : '\0';
+    event.data.key.ascii = event.data.key.is_printable ? (unsigned char)ascii : 0;
     return event;
 }
+
+static bool failing_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
+    assert(instance != NULL);
+    assert(ctx != NULL);
+    g_failing_create_calls++;
+    instance->state = &g_failing_state_marker;
+    return false;
+}
+
+static void failing_destroy(RetroAppInstance *instance) {
+    assert(instance != NULL);
+    assert(instance->state == &g_failing_state_marker);
+    g_failing_destroy_calls++;
+    instance->state = NULL;
+}
+
+static const RetroAppDescriptor k_failing_create_descriptor = {
+    .app_id = "test-failing-create",
+    .display_name = "Failing Create",
+    .required_capabilities = 0,
+    .default_height = 6,
+    .default_width = 24,
+    .default_y = 2,
+    .default_x = 4,
+    .window_flags = WINDOW_FLAG_APP_OWNED,
+    .create = failing_create,
+    .on_event = NULL,
+    .on_render = NULL,
+    .destroy = failing_destroy,
+};
 
 bool platform_poll_event(PlatformBackend *platform, RetroEvent *out_event, int timeout_ms) {
     (void)timeout_ms;
@@ -110,6 +146,38 @@ static void test_capability_rejection(void) {
     assert(desktop_app_count(desktop) == 0);
     assert(app_launch(desktop, "filemanager") == NULL);
     assert(app_launch(desktop, "terminal") == NULL);
+
+    desktop_shutdown(desktop);
+    platform_destroy(platform);
+}
+
+static void test_failed_create_calls_destroy(void) {
+    PlatformBackend *platform = platform_stub_new(true);
+    assert(platform != NULL);
+
+    DesktopConfig cfg = {
+        .platform = platform,
+        .input_timeout_ms = 20,
+        .bench_mode = true,
+        .render_backend = RENDER_BACKEND_CURSES,
+        .theme_kind = RETRO_THEME_XP,
+    };
+    Desktop *desktop = desktop_create(&cfg);
+    assert(desktop != NULL);
+
+    size_t app_count_before = desktop_app_count(desktop);
+    size_t window_count_before = desktop_window_count(desktop);
+    g_failing_create_calls = 0;
+    g_failing_destroy_calls = 0;
+    g_failing_state_marker = 42;
+
+    assert(desktop_register_app_for_test(desktop, &k_failing_create_descriptor));
+    assert(app_launch(desktop, "test-failing-create") == NULL);
+    assert(g_failing_create_calls == 1);
+    assert(g_failing_destroy_calls == 1);
+    assert(desktop_app_count(desktop) == app_count_before);
+    assert(desktop_window_count(desktop) == window_count_before);
+    assert(desktop_app_window_id(desktop, "test-failing-create") == WINDOW_ID_INVALID);
 
     desktop_shutdown(desktop);
     platform_destroy(platform);
@@ -176,6 +244,7 @@ static void test_repeat_create_run_shutdown(void) {
 
 int main(void) {
     test_capability_rejection();
+    test_failed_create_calls_destroy();
     test_launch_and_clean_close();
     test_repeat_create_run_shutdown();
     return 0;

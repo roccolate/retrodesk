@@ -26,6 +26,8 @@ Currently covered fixtures:
 ```text
 open-files-and-focus.json
 window-drag-basic.json
+focus-next-basic.json
+close-focused-window.json
 ```
 
 ## Fixture: `open-files-and-focus.json`
@@ -78,6 +80,41 @@ TODO: if a future retrocore fixture needs post-replay app-window coordinates fro
 `Desktop`, add a small public desktop/window geometry helper instead of reaching
 into private `Desktop` internals.
 
+## Fixture: `focus-next-basic.json`
+
+The fixture says:
+
+1. launch/focus logical app `files`,
+2. launch/focus logical app `notes`,
+3. replay `focus_next`,
+4. expect logical app `files` to become focused again.
+
+RetroDesk maps logical app `notes` to local app id `notepad`.
+
+The test asserts:
+
+- File Manager and Notepad windows both exist.
+- `launch_app files` and `launch_app notes` focus existing default app instances
+  instead of duplicating them.
+- `focus_next` maps to the desktop Tab focus command.
+- Focus moves from Notepad back to File Manager.
+- App/window counts do not increase.
+
+## Fixture: `close-focused-window.json`
+
+The fixture says:
+
+1. launch/focus logical app `files`,
+2. replay `close_window` for the focused window,
+3. expect logical app `files` to no longer have a window.
+
+The test asserts:
+
+- File Manager is focused before close.
+- `close_window focused` maps to the desktop close-window command.
+- File Manager's app/window is removed.
+- Active focus moves away from the closed File Manager window.
+
 ## Covered By
 
 ```text
@@ -106,15 +143,22 @@ Currently supported by the tiny fixture runner:
 - `pointer_down`
 - `pointer_move`
 - `pointer_up`
+- `focus_next`
+- `close_window`
 
 Planned/TODO event types:
 
-- `focus_next`
-- `close_window`
 - `key`
 - `menu_action`
 
 Unsupported fixture event types must not be silently ignored.
+
+## App ID Mapping
+
+| Retrocore logical app | RetroDesk local app |
+| --- | --- |
+| `files` | `filemanager` |
+| `notes` | `notepad` |
 
 ## Public Introspection Helpers
 

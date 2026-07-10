@@ -10,7 +10,11 @@ enum { DEFAULT_INPUT_TIMEOUT_MS = 120 };
 
 int main(int argc, char **argv) {
     RetroCliOptions options = {0};
-    if (!retro_cli_parse(argc, argv, &options, stderr)) {
+    RetroCliParseResult parse_result = retro_cli_parse(argc, argv, &options, stderr);
+    if (parse_result == RETRO_CLI_SHOWED_USAGE) {
+        return EXIT_SUCCESS;
+    }
+    if (parse_result != RETRO_CLI_OK) {
         return EXIT_FAILURE;
     }
 

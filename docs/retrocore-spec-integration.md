@@ -64,7 +64,7 @@ repository.
 | Fixture | Status | Notes |
 | --- | --- | --- |
 | `fixtures/events/open-files-and-focus.json` | Supported | Maps logical app `files` to RetroDesk app `filemanager`. Verifies launching/focusing does not duplicate the default File Manager instance. |
-| `fixtures/events/window-drag-basic.json` | Supported, partial assertion | Replays pointer down/move/up through RetroDesk's WM event path. Verifies File Manager still exists, remains focused, and is not duplicated. Final coordinate assertions are TODO until a clean public geometry assertion helper exists. |
+| `fixtures/events/window-drag-basic.json` | Supported | Replays pointer down/move/up through RetroDesk's desktop/WM event path. Verifies File Manager still exists, remains focused, is not duplicated, and verifies final WM geometry at the window-manager level. |
 
 If `window-drag-basic.json` is not present in a local `retrocore-spec` checkout,
 the test prints a skip message for that fixture and continues.
@@ -109,8 +109,13 @@ This proves RetroDesk can consume the fixture vocabulary and exercise real WM
 pointer-drag handling without pretending that all projects share pixel-identical
 layouts.
 
-TODO: expose a small public desktop/window geometry assertion helper for tests,
-then assert final window coordinates after the drag sequence.
+The desktop-level replay asserts logical outcomes: File Manager remains focused,
+exists, and is not duplicated. A WM-level replay of the same fixture delta uses
+`retro_window_get_geometry()` to assert final coordinates.
+
+TODO: if future retrocore fixtures require app-level geometry assertions after a
+full `Desktop` replay, add a small public desktop/window geometry helper instead
+of reaching into private `Desktop` internals.
 
 ## Non-Goals
 

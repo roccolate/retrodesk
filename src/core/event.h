@@ -15,7 +15,12 @@ typedef enum RetroEventType {
 typedef struct RetroKeyEvent {
     int key_code;
     bool is_printable;
-    char ascii;
+    /* Raw ASCII/byte payload for printable key events. This is unsigned so
+       bytes in the 0x80..0xFF range are preserved across platforms where
+       plain `char` is signed. Extended bytes are not automatically portable
+       printable characters or RetroDesk key chords; callers must interpret
+       them according to the active backend/locale/codepage policy. */
+    unsigned char ascii;
 } RetroKeyEvent;
 
 typedef struct RetroMouseEvent {

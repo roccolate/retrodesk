@@ -59,8 +59,10 @@
 #define RETRO_KEY_IC     0x1009  /* Insert Character */
 #define RETRO_KEY_BTAB   0x100A  /* Shift+Tab */
 
-/* Function keys F1..F12 — generated via macro so additional rows can be
-   added without listing every constant. */
+/* Function keys currently covered by portable backend mappings. ncurses and
+   PDCurses translation covers F1..F12; raw TTY function-key escape handling is
+   intentionally not claimed here yet. Add F13..F24 only after platform mapping
+   and tests prove consistent support. */
 #define RETRO_KEY_F1     0x1100
 #define RETRO_KEY_F2     0x1101
 #define RETRO_KEY_F3     0x1102

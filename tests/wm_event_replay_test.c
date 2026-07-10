@@ -84,6 +84,17 @@ int main(void) {
         .event_cb = spy_event,
         .user_data = &spy_b,
     };
+    RetroWindowSpec fixed_spec = {
+        .height = 5,
+        .width = 18,
+        .y = 0,
+        .x = 0,
+        .title = "Fixed",
+        .flags = WINDOW_FLAG_FIXED,
+        .draw_cb = spy_draw,
+        .event_cb = NULL,
+        .user_data = NULL,
+    };
 
     WindowId a = wm_create_window(wm, &a_spec);
     WindowId b = wm_create_window(wm, &b_spec);
@@ -99,6 +110,16 @@ int main(void) {
     assert(wm_handle_event(wm, &click_overlap));
     assert(wm_active_window(wm) == a);
 
+    assert(wm_cycle_focus(wm));
+    assert(wm_active_window(wm) == b);
+
+    WindowId fixed = wm_create_window(wm, &fixed_spec);
+    assert(fixed > 0);
+    assert(wm_window_count(wm) == 3);
+    assert(wm_active_window(wm) == fixed);
+
+    assert(wm_cycle_focus(wm));
+    assert(wm_active_window(wm) == a);
     assert(wm_cycle_focus(wm));
     assert(wm_active_window(wm) == b);
 
@@ -125,8 +146,9 @@ int main(void) {
     RetroEvent key_x = key_event('x', 'x');
     assert(wm_handle_event(wm, &key_x));
     assert(!wm_window_exists(wm, b));
-    assert(wm_window_count(wm) == 1);
+    assert(wm_window_count(wm) == 2);
     assert(wm_active_window(wm) == a);
+    assert(wm_window_exists(wm, fixed));
 
     wm_set_drag_enabled(wm, true);
     wm_set_drag_auto_degrade(wm, true);

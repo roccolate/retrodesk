@@ -26,6 +26,9 @@ typedef struct RetroAppContext {
     WindowId window_id;
     const DesktopCapabilities *capabilities;
     const RetroTheme *theme;
+    /* Optional resource selected by a launcher (currently a filesystem path).
+       The runtime owns the string for the lifetime of the instance. */
+    const char *resource_path;
 } RetroAppContext;
 
 typedef struct RetroAppDescriptor {
@@ -37,9 +40,12 @@ typedef struct RetroAppDescriptor {
     int default_y;
     int default_x;
     WindowFlags window_flags;
+    bool allow_multiple;
     bool (*create)(RetroAppInstance *instance, const RetroAppContext *ctx);
     void (*on_event)(RetroAppInstance *instance, const RetroEvent *event);
     void (*on_render)(RetroAppInstance *instance, DrawList *draw_list);
+    /* Return false to keep a dirty/document-protecting app open. */
+    bool (*can_close)(RetroAppInstance *instance);
     void (*destroy)(RetroAppInstance *instance);
 } RetroAppDescriptor;
 
@@ -48,6 +54,7 @@ struct RetroAppInstance {
     RetroAppContext ctx;
     void *state;
     bool close_requested;
+    char *resource_path_owned;
 };
 
 AppRegistry *app_registry_create(void);

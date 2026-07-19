@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <stdbool.h>
 
 #include "app/app_runtime.h"
@@ -25,7 +25,7 @@ static void dummy_destroy(RetroAppInstance *instance) {
 
 int main(void) {
     AppRegistry *registry = app_registry_create();
-    assert(registry != NULL);
+    TEST_REQUIRE(registry != NULL);
 
     const RetroAppDescriptor app_a = {
         .app_id = "test-a",
@@ -57,21 +57,21 @@ int main(void) {
         .destroy = dummy_destroy,
     };
 
-    assert(app_registry_register(registry, &app_a));
-    assert(app_registry_register(registry, &app_b));
-    assert(!app_registry_register(registry, &app_a)); /* duplicate app_id should fail */
+    TEST_REQUIRE(app_registry_register(registry, &app_a));
+    TEST_REQUIRE(app_registry_register(registry, &app_b));
+    TEST_REQUIRE(!app_registry_register(registry, &app_a)); /* duplicate app_id should fail */
 
-    assert(app_registry_count(registry) == 2);
-    assert(app_registry_find(registry, "test-a") == &app_a);
-    assert(app_registry_find(registry, "test-b") == &app_b);
-    assert(app_registry_find(registry, "missing") == NULL);
+    TEST_REQUIRE(app_registry_count(registry) == 2);
+    TEST_REQUIRE(app_registry_find(registry, "test-a") == &app_a);
+    TEST_REQUIRE(app_registry_find(registry, "test-b") == &app_b);
+    TEST_REQUIRE(app_registry_find(registry, "missing") == NULL);
 
-    assert(app_registry_descriptor_at(registry, 0) != NULL);
-    assert(app_registry_descriptor_at(registry, 1) != NULL);
-    assert(app_registry_descriptor_at(registry, 2) == NULL);
+    TEST_REQUIRE(app_registry_descriptor_at(registry, 0) != NULL);
+    TEST_REQUIRE(app_registry_descriptor_at(registry, 1) != NULL);
+    TEST_REQUIRE(app_registry_descriptor_at(registry, 2) == NULL);
 
     app_registry_reset(registry);
-    assert(app_registry_count(registry) == 0);
+    TEST_REQUIRE(app_registry_count(registry) == 0);
     app_registry_destroy(registry);
     return 0;
 }

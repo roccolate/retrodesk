@@ -5,6 +5,8 @@
 void retro_cli_default(RetroCliOptions *out) {
     if (!out) return;
     out->bench_mode = false;
+    out->diagnose_mode = false;
+    out->version_mode = false;
     out->render_backend = RENDER_BACKEND_AUTO;
     out->input_backend = INPUT_BACKEND_UNKNOWN;
     out->theme_kind = RETRO_THEME_XP;
@@ -13,12 +15,13 @@ void retro_cli_default(RetroCliOptions *out) {
 void retro_cli_print_usage(FILE *out, const char *argv0) {
     if (!out) return;
     fprintf(out,
-            "usage: %s [--bench-startup] [--render-backend=curses|ansi] [--input-backend=curses|tty] [--theme=xp|hacker|amiga|win31]\n",
+            "usage: %s [--help] [--version] [--diagnose] [--bench-startup] [--render-backend=curses|ansi] [--input-backend=curses|tty] [--theme=xp|hacker|amiga|win31]\n",
             argv0 ? argv0 : "retrodesk");
 }
 
-static bool retro_cli_apply_backend_defaults(RetroCliOptions *opt, FILE *err) {
-    if (!opt) return false;
+static RetroCliParseResult retro_cli_apply_backend_defaults(RetroCliOptions *opt,
+                                                            FILE *err) {
+    if (!opt) return RETRO_CLI_PARSE_ERROR;
 
     if (opt->render_backend == RENDER_BACKEND_ANSI &&
         opt->input_backend == INPUT_BACKEND_UNKNOWN) {
@@ -34,7 +37,7 @@ static bool retro_cli_apply_backend_defaults(RetroCliOptions *opt, FILE *err) {
             fputs("invalid backend combination: --input-backend=tty requires --render-backend=ansi\n",
                   err);
         }
-        return false;
+        return RETRO_CLI_PARSE_ERROR;
     }
     if (opt->input_backend == INPUT_BACKEND_NCURSES &&
         opt->render_backend == RENDER_BACKEND_ANSI) {
@@ -42,23 +45,32 @@ static bool retro_cli_apply_backend_defaults(RetroCliOptions *opt, FILE *err) {
             fputs("invalid backend combination: --input-backend=curses requires --render-backend=curses\n",
                   err);
         }
-        return false;
+        return RETRO_CLI_PARSE_ERROR;
     }
-    return true;
+    return RETRO_CLI_OK;
 }
 
 RetroCliParseResult retro_cli_parse(int argc, char **argv, RetroCliOptions *out,
-                                    FILE *err) {
+                                    FILE *standard_out, FILE *err) {
     if (!out || argc < 1 || !argv) return RETRO_CLI_PARSE_ERROR;
     retro_cli_default(out);
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            retro_cli_print_usage(err, argv[0]);
+            retro_cli_print_usage(standard_out, argv[0]);
             return RETRO_CLI_SHOWED_USAGE;
         }
         if (strcmp(argv[i], "--bench-startup") == 0) {
             out->bench_mode = true;
+            continue;
+        }
+        if (strcmp(argv[i], "--diagnose") == 0) {
+            out->diagnose_mode = true;
+            out->bench_mode = true;
+            continue;
+        }
+        if (strcmp(argv[i], "--version") == 0) {
+            out->version_mode = true;
             continue;
         }
         if (strcmp(argv[i], "--render-backend=ansi") == 0) {
@@ -92,6 +104,5 @@ RetroCliParseResult retro_cli_parse(int argc, char **argv, RetroCliOptions *out,
         return RETRO_CLI_PARSE_ERROR;
     }
 
-    return retro_cli_apply_backend_defaults(out, err) ? RETRO_CLI_OK
-                                                      : RETRO_CLI_PARSE_ERROR;
+    return retro_cli_apply_backend_defaults(out, err);
 }

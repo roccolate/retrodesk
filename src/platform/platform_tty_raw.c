@@ -11,26 +11,13 @@
 
 #include "core/key_chord.h"
 
-/* Global pointer for signal handler to restore terminal state on crash. */
+/* The handler only records a signal.  Terminal restoration happens from the
+   normal platform_destroy path, where stdio and termios are safe to use. */
 static PlatformBackend *g_tty_signal_platform = NULL;
 
 static void platform_tty_signal_handler(int sig) {
-    /* NOTE: tcsetattr is async-signal-safe per POSIX. The xterm mouse
-       disable path uses fputs/fflush which are technically not safe, but
-       leaving mouse tracking enabled on crash is worse for the user. */
-    if (g_tty_signal_platform) {
-        if (g_tty_signal_platform->tty_raw_enabled &&
-            g_tty_signal_platform->tty_has_saved_mode) {
-            tcsetattr(STDIN_FILENO, TCSANOW, &g_tty_signal_platform->tty_saved_mode);
-        }
-        if (g_tty_signal_platform->xterm_mouse_tracking_forced) {
-            /* Best-effort: write(2) would be safer but mouse disable uses
-               fputs which is acceptable for a crash-recovery path. */
-            platform_disable_xterm_mouse_tracking();
-        }
-    }
-    signal(sig, SIG_DFL);
-    raise(sig);
+    (void)sig;
+    if (g_tty_signal_platform) g_tty_signal_platform->tty_signal_pending = 1;
 }
 
 static bool platform_query_tty_size(int *rows, int *cols) {
@@ -143,12 +130,10 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     tty_decoder_init(&platform->tty_decoder);
     platform_update_mask(&platform->features);
 
-    /* Install signal handlers to restore terminal on crash. */
+    /* Signal handlers only record termination; normal loop cleanup restores tty. */
     g_tty_signal_platform = platform;
     signal(SIGINT, platform_tty_signal_handler);
     signal(SIGTERM, platform_tty_signal_handler);
-    signal(SIGSEGV, platform_tty_signal_handler);
-    signal(SIGABRT, platform_tty_signal_handler);
 
     return true;
 }
@@ -156,6 +141,7 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
 bool platform_poll_event_tty_raw(PlatformBackend *platform, RetroEvent *out_event,
                                  int timeout_ms) {
     if (!platform || !out_event) return false;
+    if (platform->tty_signal_pending) return false;
     if (timeout_ms < 0) timeout_ms = 0;
 
     if (platform_decode_tty_key(platform, out_event)) return true;
@@ -200,8 +186,6 @@ void platform_destroy_tty_raw_backend(PlatformBackend *platform) {
     if (g_tty_signal_platform == platform) {
         signal(SIGINT, SIG_DFL);
         signal(SIGTERM, SIG_DFL);
-        signal(SIGSEGV, SIG_DFL);
-        signal(SIGABRT, SIG_DFL);
         g_tty_signal_platform = NULL;
     }
     platform_disable_tty_raw(platform);

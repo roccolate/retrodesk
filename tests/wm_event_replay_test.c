@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <stdbool.h>
 
 #include "wm/window_manager.h"
@@ -54,10 +54,10 @@ static RetroEvent mouse_event(int y, int x, bool moved, bool b1_pressed, bool b1
 
 int main(void) {
     Renderer *renderer = renderer_create(NULL);
-    assert(renderer != NULL);
+    TEST_REQUIRE(renderer != NULL);
 
     WindowManager *wm = wm_create(renderer);
-    assert(wm != NULL);
+    TEST_REQUIRE(wm != NULL);
 
     WindowSpy spy_a = {0};
     WindowSpy spy_b = {0};
@@ -98,57 +98,57 @@ int main(void) {
 
     WindowId a = wm_create_window(wm, &a_spec);
     WindowId b = wm_create_window(wm, &b_spec);
-    assert(a > 0 && b > 0);
-    assert(wm_window_count(wm) == 2);
-    assert(wm_active_window(wm) == b);
+    TEST_REQUIRE(a > 0 && b > 0);
+    TEST_REQUIRE(wm_window_count(wm) == 2);
+    TEST_REQUIRE(wm_active_window(wm) == b);
 
     RetroEvent click_a = mouse_event(2, 2, false, false, false, true);
-    assert(wm_handle_event(wm, &click_a));
-    assert(wm_active_window(wm) == a);
+    TEST_REQUIRE(wm_handle_event(wm, &click_a));
+    TEST_REQUIRE(wm_active_window(wm) == a);
 
     RetroEvent click_overlap = mouse_event(4, 8, false, false, false, true);
-    assert(wm_handle_event(wm, &click_overlap));
-    assert(wm_active_window(wm) == a);
+    TEST_REQUIRE(wm_handle_event(wm, &click_overlap));
+    TEST_REQUIRE(wm_active_window(wm) == a);
 
-    assert(wm_cycle_focus(wm));
-    assert(wm_active_window(wm) == b);
+    TEST_REQUIRE(wm_cycle_focus(wm));
+    TEST_REQUIRE(wm_active_window(wm) == b);
 
     WindowId fixed = wm_create_window(wm, &fixed_spec);
-    assert(fixed > 0);
-    assert(wm_window_count(wm) == 3);
-    assert(wm_active_window(wm) == fixed);
+    TEST_REQUIRE(fixed > 0);
+    TEST_REQUIRE(wm_window_count(wm) == 3);
+    TEST_REQUIRE(wm_active_window(wm) == fixed);
 
-    assert(wm_cycle_focus(wm));
-    assert(wm_active_window(wm) == a);
-    assert(wm_cycle_focus(wm));
-    assert(wm_active_window(wm) == b);
+    TEST_REQUIRE(wm_cycle_focus(wm));
+    TEST_REQUIRE(wm_active_window(wm) == a);
+    TEST_REQUIRE(wm_cycle_focus(wm));
+    TEST_REQUIRE(wm_active_window(wm) == b);
 
     int by = 0, bx = 0, bh = 0, bw = 0;
     retro_window_get_geometry(wm_window(wm, b), &by, &bx, &bh, &bw);
     RetroEvent drag_start = mouse_event(by, bx + 1, false, true, false, false);
     RetroEvent drag_move = mouse_event(by + 2, bx + 4, true, false, false, false);
     RetroEvent drag_end = mouse_event(by + 2, bx + 4, false, false, true, false);
-    assert(wm_handle_event(wm, &drag_start));
-    assert(wm_handle_event(wm, &drag_move));
-    assert(wm_handle_event(wm, &drag_end));
+    TEST_REQUIRE(wm_handle_event(wm, &drag_start));
+    TEST_REQUIRE(wm_handle_event(wm, &drag_move));
+    TEST_REQUIRE(wm_handle_event(wm, &drag_end));
 
     int ny = 0, nx = 0;
     retro_window_get_geometry(wm_window(wm, b), &ny, &nx, NULL, NULL);
-    assert(ny == by + 2);
-    assert(nx == bx + 3);
+    TEST_REQUIRE(ny == by + 2);
+    TEST_REQUIRE(nx == bx + 3);
 
-    assert(spy_b.key_events == 0);
+    TEST_REQUIRE(spy_b.key_events == 0);
     RetroEvent key_a = key_event('a', 'a');
-    assert(wm_handle_event(wm, &key_a));
-    assert(spy_b.key_events == 1);
+    TEST_REQUIRE(wm_handle_event(wm, &key_a));
+    TEST_REQUIRE(spy_b.key_events == 1);
 
     spy_b.close_on_x = true;
     RetroEvent key_x = key_event('x', 'x');
-    assert(wm_handle_event(wm, &key_x));
-    assert(!wm_window_exists(wm, b));
-    assert(wm_window_count(wm) == 2);
-    assert(wm_active_window(wm) == a);
-    assert(wm_window_exists(wm, fixed));
+    TEST_REQUIRE(wm_handle_event(wm, &key_x));
+    TEST_REQUIRE(!wm_window_exists(wm, b));
+    TEST_REQUIRE(wm_window_count(wm) == 2);
+    TEST_REQUIRE(wm_active_window(wm) == a);
+    TEST_REQUIRE(wm_window_exists(wm, fixed));
 
     wm_set_drag_enabled(wm, true);
     wm_set_drag_auto_degrade(wm, true);
@@ -157,12 +157,12 @@ int main(void) {
         retro_window_get_geometry(wm_window(wm, a), &ay, &ax, NULL, NULL);
         RetroEvent no_move_start = mouse_event(ay, ax + 1, false, true, false, false);
         RetroEvent no_move_end = mouse_event(ay, ax + 1, false, false, true, false);
-        assert(wm_handle_event(wm, &no_move_start));
-        assert(wm_handle_event(wm, &no_move_end));
+        TEST_REQUIRE(wm_handle_event(wm, &no_move_start));
+        TEST_REQUIRE(wm_handle_event(wm, &no_move_end));
     }
-    assert(wm_drag_is_degraded(wm));
-    assert(!wm_drag_is_enabled(wm));
-    assert(wm_drag_no_motion_sessions(wm) >= 3);
+    TEST_REQUIRE(wm_drag_is_degraded(wm));
+    TEST_REQUIRE(!wm_drag_is_enabled(wm));
+    TEST_REQUIRE(wm_drag_no_motion_sessions(wm) >= 3);
 
     wm_render(wm, renderer, NULL);
 

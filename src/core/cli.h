@@ -8,11 +8,8 @@
 #include "render/render.h"
 #include "ui/theme.h"
 
-/* Command-line option parser. Returns RetroCliOptions filled from argv;
-   rejects invalid backend combinations (e.g. tty-input with curses-render).
-
-   Help/usage is distinct from parse failure so callers can exit successfully
-   after printing --help output. */
+/* Command-line option parser. Distinguishes a successful help request from
+   invalid input so callers can return the correct process status. */
 
 typedef enum RetroCliParseResult {
     RETRO_CLI_OK = 0,
@@ -22,6 +19,8 @@ typedef enum RetroCliParseResult {
 
 typedef struct RetroCliOptions {
     bool bench_mode;
+    bool diagnose_mode;
+    bool version_mode;
     RenderBackendKind render_backend;
     InputBackendKind input_backend;
     RetroThemeKind theme_kind;
@@ -30,6 +29,6 @@ typedef struct RetroCliOptions {
 void retro_cli_default(RetroCliOptions *out);
 void retro_cli_print_usage(FILE *out, const char *argv0);
 RetroCliParseResult retro_cli_parse(int argc, char **argv, RetroCliOptions *out,
-                                    FILE *err);
+                                    FILE *standard_out, FILE *err);
 
 #endif

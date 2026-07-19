@@ -1,6 +1,6 @@
 #define RETRODESK_ENABLE_TEST_HOOKS
 
-#include <assert.h>
+#include "test_harness.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -8,6 +8,7 @@
 
 #include "app/app_runtime.h"
 #include "core/desktop.h"
+#include "core/key_chord.h"
 #include "platform/platform.h"
 
 struct PlatformBackend {
@@ -62,26 +63,26 @@ static void platform_stub_set_events(PlatformBackend *platform, const RetroEvent
     platform->event_index = 0;
 }
 
-static RetroEvent key_event(char ascii) {
+static RetroEvent key_event(int key_code, char ascii) {
     RetroEvent event = {0};
     event.type = RETRO_EVENT_KEY;
-    event.data.key.key_code = (int)ascii;
+    event.data.key.key_code = key_code;
     event.data.key.is_printable = (ascii >= 32 && ascii <= 126);
     event.data.key.ascii = event.data.key.is_printable ? (unsigned char)ascii : 0;
     return event;
 }
 
 static bool failing_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
-    assert(instance != NULL);
-    assert(ctx != NULL);
+    TEST_REQUIRE(instance != NULL);
+    TEST_REQUIRE(ctx != NULL);
     g_failing_create_calls++;
     instance->state = &g_failing_state_marker;
     return false;
 }
 
 static void failing_destroy(RetroAppInstance *instance) {
-    assert(instance != NULL);
-    assert(instance->state == &g_failing_state_marker);
+    TEST_REQUIRE(instance != NULL);
+    TEST_REQUIRE(instance->state == &g_failing_state_marker);
     g_failing_destroy_calls++;
     instance->state = NULL;
 }
@@ -101,12 +102,13 @@ static const RetroAppDescriptor k_failing_create_descriptor = {
     .destroy = failing_destroy,
 };
 
-bool platform_poll_event(PlatformBackend *platform, RetroEvent *out_event, int timeout_ms) {
+RetroPollResult platform_poll_event(PlatformBackend *platform, RetroEvent *out_event,
+                                    int timeout_ms) {
     (void)timeout_ms;
-    if (!platform || !out_event) return false;
-    if (platform->event_index >= platform->event_count) return false;
+    if (!platform || !out_event) return RETRO_POLL_ERROR;
+    if (platform->event_index >= platform->event_count) return RETRO_POLL_TIMEOUT;
     *out_event = platform->events[platform->event_index++];
-    return true;
+    return RETRO_POLL_EVENT;
 }
 
 const PlatformFeatures *platform_features(const PlatformBackend *platform) {
@@ -130,7 +132,7 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
 
 static void test_capability_rejection(void) {
     PlatformBackend *platform = platform_stub_new(false);
-    assert(platform != NULL);
+    TEST_REQUIRE(platform != NULL);
 
     DesktopConfig cfg = {
         .platform = platform,
@@ -140,12 +142,12 @@ static void test_capability_rejection(void) {
         .theme_kind = RETRO_THEME_XP,
     };
     Desktop *desktop = desktop_create(&cfg);
-    assert(desktop != NULL);
+    TEST_REQUIRE(desktop != NULL);
 
     /* Built-in apps require keyboard capability and should be rejected. */
-    assert(desktop_app_count(desktop) == 0);
-    assert(app_launch(desktop, "filemanager") == NULL);
-    assert(app_launch(desktop, "terminal") == NULL);
+    TEST_REQUIRE(desktop_app_count(desktop) == 0);
+    TEST_REQUIRE(app_launch(desktop, "filemanager") == NULL);
+    TEST_REQUIRE(app_launch(desktop, "diagnostics") == NULL);
 
     desktop_shutdown(desktop);
     platform_destroy(platform);
@@ -153,7 +155,7 @@ static void test_capability_rejection(void) {
 
 static void test_failed_create_calls_destroy(void) {
     PlatformBackend *platform = platform_stub_new(true);
-    assert(platform != NULL);
+    TEST_REQUIRE(platform != NULL);
 
     DesktopConfig cfg = {
         .platform = platform,
@@ -163,7 +165,7 @@ static void test_failed_create_calls_destroy(void) {
         .theme_kind = RETRO_THEME_XP,
     };
     Desktop *desktop = desktop_create(&cfg);
-    assert(desktop != NULL);
+    TEST_REQUIRE(desktop != NULL);
 
     size_t app_count_before = desktop_app_count(desktop);
     size_t window_count_before = desktop_window_count(desktop);
@@ -171,13 +173,14 @@ static void test_failed_create_calls_destroy(void) {
     g_failing_destroy_calls = 0;
     g_failing_state_marker = 42;
 
-    assert(desktop_register_app_for_test(desktop, &k_failing_create_descriptor));
-    assert(app_launch(desktop, "test-failing-create") == NULL);
-    assert(g_failing_create_calls == 1);
-    assert(g_failing_destroy_calls == 1);
-    assert(desktop_app_count(desktop) == app_count_before);
-    assert(desktop_window_count(desktop) == window_count_before);
-    assert(desktop_app_window_id(desktop, "test-failing-create") == WINDOW_ID_INVALID);
+    TEST_REQUIRE(desktop_register_app_for_test(desktop, &k_failing_create_descriptor));
+    TEST_REQUIRE(app_launch(desktop, "test-failing-create") == NULL);
+    TEST_REQUIRE(g_failing_create_calls == 1);
+    TEST_REQUIRE(g_failing_destroy_calls == 1);
+    TEST_REQUIRE(desktop_app_count(desktop) == app_count_before);
+    TEST_REQUIRE(desktop_window_count(desktop) == window_count_before);
+    TEST_REQUIRE(desktop_app_window_id(desktop, "test-failing-create") ==
+                 WINDOW_ID_INVALID);
 
     desktop_shutdown(desktop);
     platform_destroy(platform);
@@ -185,7 +188,7 @@ static void test_failed_create_calls_destroy(void) {
 
 static void test_launch_and_clean_close(void) {
     PlatformBackend *platform = platform_stub_new(true);
-    assert(platform != NULL);
+    TEST_REQUIRE(platform != NULL);
 
     DesktopConfig cfg = {
         .platform = platform,
@@ -195,26 +198,26 @@ static void test_launch_and_clean_close(void) {
         .theme_kind = RETRO_THEME_XP,
     };
     Desktop *desktop = desktop_create(&cfg);
-    assert(desktop != NULL);
+    TEST_REQUIRE(desktop != NULL);
 
     size_t base_apps = desktop_app_count(desktop);
     size_t base_windows = desktop_window_count(desktop);
-    assert(base_apps >= 2);
-    assert(base_windows >= base_apps + 1); /* + shell window */
+    TEST_REQUIRE(base_apps >= 1);
+    TEST_REQUIRE(base_windows >= base_apps + 1); /* + shell window */
 
-    RetroAppInstance *terminal = app_launch(desktop, "terminal");
-    assert(terminal != NULL);
-    assert(desktop_app_count(desktop) == base_apps + 1);
-    assert(desktop_window_count(desktop) == base_windows + 1);
+    RetroAppInstance *diagnostics = app_launch(desktop, "diagnostics");
+    TEST_REQUIRE(diagnostics != NULL);
+    TEST_REQUIRE(desktop_app_count(desktop) == base_apps + 1);
+    TEST_REQUIRE(desktop_window_count(desktop) == base_windows + 1);
 
-    app_request_close(terminal);
-    const RetroEvent events[] = {key_event('q')};
+    app_request_close(diagnostics);
+    const RetroEvent events[] = {key_event(RETRO_KEY_CTRL_Q, '\0')};
     platform_stub_set_events(platform, events, 1);
-    assert(desktop_run(desktop) == EXIT_SUCCESS);
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
 
     /* Close request should have removed terminal app/window before exit. */
-    assert(desktop_app_count(desktop) == base_apps);
-    assert(desktop_window_count(desktop) == base_windows);
+    TEST_REQUIRE(desktop_app_count(desktop) == base_apps);
+    TEST_REQUIRE(desktop_window_count(desktop) == base_windows);
 
     desktop_shutdown(desktop);
     platform_destroy(platform);
@@ -223,8 +226,8 @@ static void test_launch_and_clean_close(void) {
 static void test_repeat_create_run_shutdown(void) {
     for (int i = 0; i < 3; ++i) {
         PlatformBackend *platform = platform_stub_new(true);
-        assert(platform != NULL);
-        const RetroEvent events[] = {key_event('q')};
+        TEST_REQUIRE(platform != NULL);
+        const RetroEvent events[] = {key_event(RETRO_KEY_CTRL_Q, '\0')};
         platform_stub_set_events(platform, events, 1);
 
         DesktopConfig cfg = {
@@ -235,8 +238,8 @@ static void test_repeat_create_run_shutdown(void) {
             .theme_kind = RETRO_THEME_XP,
         };
         Desktop *desktop = desktop_create(&cfg);
-        assert(desktop != NULL);
-        assert(desktop_run(desktop) == EXIT_SUCCESS);
+        TEST_REQUIRE(desktop != NULL);
+        TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
         desktop_shutdown(desktop);
         platform_destroy(platform);
     }

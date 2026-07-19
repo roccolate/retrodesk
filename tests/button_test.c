@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -26,18 +26,18 @@ static void reset_callback_state(void) {
 
 static void test_create_destroy(void) {
     Button *btn = button_create("OK");
-    assert(btn != NULL);
-    assert(strcmp(button_label(btn), "OK") == 0);
-    assert(button_focused(btn) == false);
-    assert(button_enabled(btn) == true);
-    assert(button_width(btn) == 6);  /* "[ OK ]" */
+    TEST_REQUIRE(btn != NULL);
+    TEST_REQUIRE(strcmp(button_label(btn), "OK") == 0);
+    TEST_REQUIRE(button_focused(btn) == false);
+    TEST_REQUIRE(button_enabled(btn) == true);
+    TEST_REQUIRE(button_width(btn) == 6);  /* "[ OK ]" */
     button_destroy(btn);
 
     /* NULL label creates empty button */
     btn = button_create(NULL);
-    assert(btn != NULL);
-    assert(strcmp(button_label(btn), "") == 0);
-    assert(button_width(btn) == 4);  /* "[  ]" */
+    TEST_REQUIRE(btn != NULL);
+    TEST_REQUIRE(strcmp(button_label(btn), "") == 0);
+    TEST_REQUIRE(button_width(btn) == 4);  /* "[  ]" */
     button_destroy(btn);
 
     printf("  PASS: create_destroy\n");
@@ -46,14 +46,14 @@ static void test_create_destroy(void) {
 static void test_set_label(void) {
     Button *btn = button_create("OK");
     bool ok = button_set_label(btn, "Cancel");
-    assert(ok);
-    assert(strcmp(button_label(btn), "Cancel") == 0);
-    assert(button_width(btn) == 10);  /* "[ Cancel ]" */
+    TEST_REQUIRE(ok);
+    TEST_REQUIRE(strcmp(button_label(btn), "Cancel") == 0);
+    TEST_REQUIRE(button_width(btn) == 10);  /* "[ Cancel ]" */
 
     ok = button_set_label(btn, "");
-    assert(ok);
-    assert(strcmp(button_label(btn), "") == 0);
-    assert(button_width(btn) == 4);
+    TEST_REQUIRE(ok);
+    TEST_REQUIRE(strcmp(button_label(btn), "") == 0);
+    TEST_REQUIRE(button_width(btn) == 4);
 
     button_destroy(btn);
     printf("  PASS: set_label\n");
@@ -61,13 +61,13 @@ static void test_set_label(void) {
 
 static void test_focus(void) {
     Button *btn = button_create("OK");
-    assert(!button_focused(btn));
+    TEST_REQUIRE(!button_focused(btn));
 
     button_set_focused(btn, true);
-    assert(button_focused(btn));
+    TEST_REQUIRE(button_focused(btn));
 
     button_set_focused(btn, false);
-    assert(!button_focused(btn));
+    TEST_REQUIRE(!button_focused(btn));
 
     button_destroy(btn);
     printf("  PASS: focus\n");
@@ -75,13 +75,13 @@ static void test_focus(void) {
 
 static void test_enabled(void) {
     Button *btn = button_create("OK");
-    assert(button_enabled(btn));
+    TEST_REQUIRE(button_enabled(btn));
 
     button_set_enabled(btn, false);
-    assert(!button_enabled(btn));
+    TEST_REQUIRE(!button_enabled(btn));
 
     button_set_enabled(btn, true);
-    assert(button_enabled(btn));
+    TEST_REQUIRE(button_enabled(btn));
 
     button_destroy(btn);
     printf("  PASS: enabled\n");
@@ -96,10 +96,10 @@ static void test_key_enter_activates(void) {
 
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = '\0'};
     bool consumed = button_handle_key(btn, &enter);
-    assert(consumed);
-    assert(g_callback_count == 1);
-    assert(g_callback_button == btn);
-    assert(g_callback_data == &sentinel);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(g_callback_count == 1);
+    TEST_REQUIRE(g_callback_button == btn);
+    TEST_REQUIRE(g_callback_data == &sentinel);
 
     button_destroy(btn);
     printf("  PASS: key_enter_activates\n");
@@ -113,8 +113,8 @@ static void test_key_space_activates(void) {
 
     RetroKeyEvent space = {.key_code = ' ', .is_printable = true, .ascii = ' '};
     bool consumed = button_handle_key(btn, &space);
-    assert(consumed);
-    assert(g_callback_count == 1);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(g_callback_count == 1);
 
     button_destroy(btn);
     printf("  PASS: key_space_activates\n");
@@ -128,8 +128,8 @@ static void test_key_unfocused_ignored(void) {
 
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = '\0'};
     bool consumed = button_handle_key(btn, &enter);
-    assert(!consumed);
-    assert(g_callback_count == 0);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(g_callback_count == 0);
 
     button_destroy(btn);
     printf("  PASS: key_unfocused_ignored\n");
@@ -144,8 +144,8 @@ static void test_key_disabled_ignored(void) {
 
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = '\0'};
     bool consumed = button_handle_key(btn, &enter);
-    assert(!consumed);
-    assert(g_callback_count == 0);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(g_callback_count == 0);
 
     button_destroy(btn);
     printf("  PASS: key_disabled_ignored\n");
@@ -159,8 +159,8 @@ static void test_key_other_not_consumed(void) {
 
     RetroKeyEvent letter = {.key_code = 'a', .is_printable = true, .ascii = 'a'};
     bool consumed = button_handle_key(btn, &letter);
-    assert(!consumed);
-    assert(g_callback_count == 0);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(g_callback_count == 0);
 
     button_destroy(btn);
     printf("  PASS: key_other_not_consumed\n");
@@ -177,8 +177,8 @@ static void test_mouse_click_activates(void) {
         .button1_clicked = true,
     };
     bool consumed = button_handle_mouse(btn, &click, 5, 10, 6);
-    assert(consumed);
-    assert(g_callback_count == 1);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(g_callback_count == 1);
 
     button_destroy(btn);
     printf("  PASS: mouse_click_activates\n");
@@ -195,8 +195,8 @@ static void test_mouse_outside_ignored(void) {
         .button1_clicked = true,
     };
     bool consumed = button_handle_mouse(btn, &click, 5, 10, 6);
-    assert(!consumed);
-    assert(g_callback_count == 0);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(g_callback_count == 0);
 
     /* Click outside horizontally (right) */
     RetroMouseEvent click2 = {
@@ -204,8 +204,8 @@ static void test_mouse_outside_ignored(void) {
         .button1_clicked = true,
     };
     consumed = button_handle_mouse(btn, &click2, 5, 10, 6);
-    assert(!consumed);
-    assert(g_callback_count == 0);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(g_callback_count == 0);
 
     /* Click outside horizontally (left) */
     RetroMouseEvent click3 = {
@@ -213,8 +213,8 @@ static void test_mouse_outside_ignored(void) {
         .button1_clicked = true,
     };
     consumed = button_handle_mouse(btn, &click3, 5, 10, 6);
-    assert(!consumed);
-    assert(g_callback_count == 0);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(g_callback_count == 0);
 
     button_destroy(btn);
     printf("  PASS: mouse_outside_ignored\n");
@@ -231,8 +231,8 @@ static void test_mouse_disabled_ignored(void) {
         .button1_clicked = true,
     };
     bool consumed = button_handle_mouse(btn, &click, 5, 10, 6);
-    assert(!consumed);
-    assert(g_callback_count == 0);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(g_callback_count == 0);
 
     button_destroy(btn);
     printf("  PASS: mouse_disabled_ignored\n");
@@ -250,17 +250,17 @@ static void test_render_normal(void) {
                             .reverse = false, .bold = false};
 
     button_render(btn, dl, 5, 10, &normal, &focused, &disabled);
-    assert(draw_list_count(dl) == 1);
+    TEST_REQUIRE(draw_list_count(dl) == 1);
 
     DrawCommandView cmd;
     bool ok = draw_list_get(dl, 0, &cmd);
-    assert(ok);
-    assert(cmd.type == DRAW_COMMAND_TEXT);
-    assert(cmd.y == 5);
-    assert(cmd.x == 10);
-    assert(strcmp(cmd.text, "[ OK ]") == 0);
+    TEST_REQUIRE(ok);
+    TEST_REQUIRE(cmd.type == DRAW_COMMAND_TEXT);
+    TEST_REQUIRE(cmd.y == 5);
+    TEST_REQUIRE(cmd.x == 10);
+    TEST_REQUIRE(strcmp(cmd.text, "[ OK ]") == 0);
     /* Normal style (not focused, enabled) */
-    assert(cmd.style.reverse == false);
+    TEST_REQUIRE(cmd.style.reverse == false);
 
     draw_list_destroy(dl);
     button_destroy(btn);
@@ -280,12 +280,12 @@ static void test_render_focused(void) {
                             .reverse = false, .bold = false};
 
     button_render(btn, dl, 0, 0, &normal, &focused, &disabled);
-    assert(draw_list_count(dl) == 1);
+    TEST_REQUIRE(draw_list_count(dl) == 1);
 
     DrawCommandView cmd;
     draw_list_get(dl, 0, &cmd);
-    assert(cmd.style.reverse == true);
-    assert(cmd.style.bold == true);
+    TEST_REQUIRE(cmd.style.reverse == true);
+    TEST_REQUIRE(cmd.style.bold == true);
 
     draw_list_destroy(dl);
     button_destroy(btn);
@@ -305,12 +305,12 @@ static void test_render_disabled(void) {
                             .reverse = false, .bold = false};
 
     button_render(btn, dl, 0, 0, &normal, &focused, &disabled);
-    assert(draw_list_count(dl) == 1);
+    TEST_REQUIRE(draw_list_count(dl) == 1);
 
     DrawCommandView cmd;
     draw_list_get(dl, 0, &cmd);
     /* Should use disabled style */
-    assert(cmd.style.fg == RENDER_COLOR_BLACK);
+    TEST_REQUIRE(cmd.style.fg == RENDER_COLOR_BLACK);
 
     draw_list_destroy(dl);
     button_destroy(btn);
@@ -324,20 +324,20 @@ static void test_no_callback(void) {
 
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = '\0'};
     bool consumed = button_handle_key(btn, &enter);
-    assert(consumed);
+    TEST_REQUIRE(consumed);
 
     button_destroy(btn);
     printf("  PASS: no_callback\n");
 }
 
 static void test_null_safety(void) {
-    assert(strcmp(button_label(NULL), "") == 0);
-    assert(button_focused(NULL) == false);
-    assert(button_enabled(NULL) == false);
-    assert(button_width(NULL) == 0);
-    assert(!button_set_label(NULL, "x"));
-    assert(!button_handle_key(NULL, NULL));
-    assert(!button_handle_mouse(NULL, NULL, 0, 0, 0));
+    TEST_REQUIRE(strcmp(button_label(NULL), "") == 0);
+    TEST_REQUIRE(button_focused(NULL) == false);
+    TEST_REQUIRE(button_enabled(NULL) == false);
+    TEST_REQUIRE(button_width(NULL) == 0);
+    TEST_REQUIRE(!button_set_label(NULL, "x"));
+    TEST_REQUIRE(!button_handle_key(NULL, NULL));
+    TEST_REQUIRE(!button_handle_mouse(NULL, NULL, 0, 0, 0));
     button_set_focused(NULL, true);
     button_set_enabled(NULL, true);
     button_set_callback(NULL, NULL, NULL);

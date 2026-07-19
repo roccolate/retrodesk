@@ -1,10 +1,12 @@
 CMAKE ?= cmake
 BUILD_DIR ?= build
+TEST_BUILD_ROOT ?= build/tests
 CONFIG ?= Release
 STRICT ?= ON
 WERROR ?= ON
 
-.PHONY: all configure build clean strict dev dos test check-build-sources \
+.PHONY: all configure build clean strict dev dos test test-debug test-release \
+        test-all _test check-test-oracles check-build-sources \
         smoke smoke-ci smoke-linux-vc
 
 all: build
@@ -32,10 +34,25 @@ dos:
 check-build-sources:
 	@python3 scripts/check_djgpp_sources.py
 
+check-test-oracles:
+	@python3 scripts/check_test_oracles.py
+
 clean:
 	$(CMAKE) -E rm -rf $(BUILD_DIR)
 
-test: build
+test: test-debug
+
+test-debug:
+	$(MAKE) _test BUILD_DIR=$(TEST_BUILD_ROOT)/debug CONFIG=Debug
+
+test-release:
+	$(MAKE) _test BUILD_DIR=$(TEST_BUILD_ROOT)/release CONFIG=Release
+
+test-all: test-debug test-release
+	@python3 scripts/compare_ctest_manifests.py \
+		$(TEST_BUILD_ROOT)/debug $(TEST_BUILD_ROOT)/release
+
+_test: check-test-oracles build
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
 
 smoke: build

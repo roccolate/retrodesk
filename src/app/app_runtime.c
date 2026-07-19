@@ -87,6 +87,8 @@ void app_destroy(RetroAppInstance *app) {
     }
     app->state = NULL;
     app->descriptor = NULL;
+    free(app->resource_path_owned);
+    app->resource_path_owned = NULL;
     free(app);
 }
 

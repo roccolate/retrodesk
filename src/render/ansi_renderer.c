@@ -41,9 +41,16 @@ static void ansi_style(FILE *out, const RenderStyle *style) {
     fputc('m', out);
 }
 
+static char ansi_sanitize_cell_char(char ch) {
+    unsigned char byte = (unsigned char)ch;
+    if (byte == '\0') return ' ';
+    if (byte < 0x20 || byte > 0x7e) return '?';
+    return (char)byte;
+}
+
 static void ansi_repeat(FILE *out, char ch, int count) {
     if (!out || count <= 0) return;
-    char c = (ch == '\0') ? ' ' : ch;
+    char c = ansi_sanitize_cell_char(ch);
     for (int i = 0; i < count; ++i) fputc(c, out);
 }
 
@@ -145,14 +152,14 @@ static void ansi_set_cell(AnsiRenderer *renderer, int y, int x, char ch,
         return;
     }
     size_t idx = (size_t)y * (size_t)renderer->cols + (size_t)x;
-    renderer->curr[idx].ch = (ch == '\0') ? ' ' : ch;
+    renderer->curr[idx].ch = ansi_sanitize_cell_char(ch);
     renderer->curr[idx].style = style ? *style : ansi_default_style();
 }
 
 static void ansi_compose_fill(AnsiRenderer *renderer, int origin_y, int origin_x, int h,
                               int w, const DrawCommandView *cmd) {
     if (!renderer || !renderer->curr || !cmd || h <= 0 || w <= 0) return;
-    char fill_ch = (cmd->ch == '\0') ? ' ' : cmd->ch;
+    char fill_ch = ansi_sanitize_cell_char(cmd->ch);
     RenderStyle fill_style = cmd->style;
     for (int yy = 0; yy < h; ++yy) {
         int y = origin_y + yy;

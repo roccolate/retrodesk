@@ -223,6 +223,8 @@ bool tty_decoder_decode(TtyDecoder *decoder, const TtyDecoderKeyMap *keys,
         out_event->data.key.key_code = 27;
         out_event->data.key.is_printable = false;
         out_event->data.key.ascii = '\0';
+        out_event->data.key.text_codepoint = 0;
+        out_event->data.key.modifiers = RETRO_MOD_NONE;
         return true;
     }
 
@@ -231,5 +233,7 @@ bool tty_decoder_decode(TtyDecoder *decoder, const TtyDecoderKeyMap *keys,
     out_event->data.key.key_code = (b0 == '\r') ? '\n' : (int)b0;
     out_event->data.key.is_printable = (b0 >= 32 && b0 <= 126);
     out_event->data.key.ascii = out_event->data.key.is_printable ? (char)b0 : '\0';
+    out_event->data.key.text_codepoint = out_event->data.key.is_printable ? b0 : 0;
+    out_event->data.key.modifiers = RETRO_MOD_NONE;
     return true;
 }

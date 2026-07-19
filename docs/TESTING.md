@@ -2,97 +2,73 @@
 
 ## Layered Strategy
 
-- Unit tests for pure runtime logic (`core`, `wm`, app registry behavior).
-- Widget tests for reusable UI components.
-- Integration tests for backend event translation and render contracts.
-- Desktop runtime tests for app launch/close and lifecycle behavior.
-- Optional shared contract tests against `retrocore-spec` fixtures.
-- Smoke tests per target platform profile.
+- Unit tests for pure runtime logic (`core`, `wm`, app registry, widgets,
+  storage helpers).
+- Integration tests for backend event translation, render contracts, app
+  lifecycle, and desktop runtime behavior.
+- Fixture tests for shared retrocore behavior when `RETROCORE_SPEC_DIR` is
+  available or required.
+- Smoke tests per claimed platform profile.
 
-## Current Test Suite
+## Test Oracle Policy
 
-Registered by `CMakeLists.txt` when `ENABLE_TESTS=ON` and `BUILD_TESTING` is
-true:
+Tests must use always-active oracles from `tests/test_harness.h`.
 
-- `cli_parse_test`
-- `key_chord_test`
-- `app_registry_test`
-- `platform_features_test`
-- `wm_event_replay_test`
-- `theme_catalog_test`
-- `draw_list_contract_test`
-- `statusbar_drawlist_test`
-- `ansi_renderer_diff_test`
-- `tty_decoder_test`
-- `text_input_test`
-- `scroll_list_test`
-- `text_buffer_test`
-- `button_test`
-- `dialog_test`
-- `menu_bar_test`
-- `progress_bar_test`
-- `tab_test`
-- `desktop_runtime_test`
-
-Optional test:
-
-- `retrocore_event_fixture_test` is enabled only when
-  `${RETROCORE_SPEC_DIR}/fixtures/events/open-files-and-focus.json` exists.
+- Do not include `<assert.h>` in tests.
+- Do not use `assert(...)`; Release builds may compile it out.
+- Run `python3 scripts/check_test_oracles.py` before release evidence is
+  collected.
 
 ## Mandatory Scenarios
 
-- Desktop create/run/shutdown lifecycle.
-- Init rollback on partial failure.
-- Focus and z-order transitions.
-- Drag on supported capabilities and fallback when unsupported.
-- Resize handling where available.
-- Capability-based app launch rejection.
-- App close lifecycle releases window ownership cleanly.
-- Single-flush-per-tick enforcement.
+- desktop create/run/shutdown lifecycle.
+- init rollback on partial failure.
+- focus and z-order transitions.
+- drag on supported capabilities and fallback when unsupported.
+- resize handling where available.
+- capability-based app launch rejection.
+- app close lifecycle releases window ownership cleanly.
+- dirty app close rejection without nested loops.
+- single-flush-per-tick enforcement.
 - CLI/backend flag combination validation.
-- Backend-neutral key vocabulary behavior.
-- Widget event/render behavior without requiring `initscr`.
-- Shared fixture compatibility when `retrocore-spec` is available.
+- POSIX storage list/read/write/conflict behavior while it is the active storage
+  adapter.
+- File Manager and Notepad open/save flows for the Linux preview.
 
 ## Platform Smoke Matrix
 
-- Linux (Tier 1): keyboard baseline always; mouse as capability.
-- Windows (Tier 1): keyboard + PDCurses mouse/resize where available.
-- macOS (Tier 2): compile and keyboard baseline.
-- DOS (Tier 2): compile and reduced feature baseline.
+- Linux active profile: keyboard baseline always; mouse as capability.
+- Windows planned Tier 1: PDCurses + storage adapter/gating required before any
+  release claim.
+- macOS experimental: compile and keyboard baseline only when validated.
+- DOS experimental: compile/reduced feature baseline only when validated.
 - Interactive smoke gate: `make smoke` (PTY required).
 - Interactive Linux VC gate: `make smoke-linux-vc` (PTY required, expects
   `linux_tty_keyboard_only: true` under `TERM=linux`).
 - Non-interactive fallback smoke: `make smoke-ci`.
 
-## Local Validation Commands
+## Local Commands
 
 ```bash
-make clean
-make strict
+make check-test-oracles
 make test
-make check-build-sources
+make test-all
 make smoke-ci
 ```
 
-Interactive terminal validation:
-
-```bash
-make smoke
-make smoke-linux-vc
-```
+`make test` configures with CMake and requires curses development headers.
+Remove stale build directories before collecting evidence if they were created
+from another absolute checkout path.
 
 ## Regression Rules
 
 - Any interface-level change must update related docs.
-- Any source layout/build target change must update `README.md`,
-  `docs/INDEX.md`, and `docs/BUILD_SYSTEM.md` when user-facing or
-  architecture-facing behavior changes.
-- Any bug fix around input/focus/resize must add a reproducible scenario.
-- CI strict job must remain warning-clean.
+- Any bug fix around input/focus/resize/storage must add a reproducible
+  scenario.
+- CI strict jobs must remain warning-clean.
 - `wm` focus/z-order/drag/close behavior must be covered by event replay tests.
-- TTY raw decoder changes must be covered by parser unit tests.
-- Widget behavior changes must add or update widget-level tests.
+- tty raw decoder changes must be covered by parser unit tests.
+- app-runtime changes must cover lifecycle, launch rejection, and close cleanup.
 
 ## Release Gate Reference
 

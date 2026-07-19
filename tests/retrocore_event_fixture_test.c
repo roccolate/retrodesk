@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -7,6 +7,7 @@
 
 #include "apps/apps_internal.h"
 #include "core/desktop.h"
+#include "core/key_chord.h"
 #include "platform/platform.h"
 #include "wm/window_manager.h"
 
@@ -59,18 +60,19 @@ static PlatformBackend *platform_stub_new(void) {
 
 static void platform_stub_set_events(PlatformBackend *platform, const RetroEvent *events,
                                      size_t event_count) {
-    assert(platform != NULL);
+    TEST_REQUIRE(platform != NULL);
     platform->events = events;
     platform->event_count = event_count;
     platform->next_event = 0;
 }
 
-bool platform_poll_event(PlatformBackend *platform, RetroEvent *out_event, int timeout_ms) {
+RetroPollResult platform_poll_event(PlatformBackend *platform, RetroEvent *out_event,
+                                    int timeout_ms) {
     (void)timeout_ms;
-    if (!platform || !out_event) return false;
-    if (platform->next_event >= platform->event_count) return false;
+    if (!platform || !out_event) return RETRO_POLL_ERROR;
+    if (platform->next_event >= platform->event_count) return RETRO_POLL_TIMEOUT;
     *out_event = platform->events[platform->next_event++];
-    return true;
+    return RETRO_POLL_EVENT;
 }
 
 const PlatformFeatures *platform_features(const PlatformBackend *platform) {
@@ -147,14 +149,14 @@ static void assert_supported_event_types(const char *fixture) {
         char type[64];
         size_t len;
 
-        assert(colon != NULL);
+        TEST_REQUIRE(colon != NULL);
         start = strchr(colon, '"');
-        assert(start != NULL);
+        TEST_REQUIRE(start != NULL);
         start++;
         end = strchr(start, '"');
-        assert(end != NULL);
+        TEST_REQUIRE(end != NULL);
         len = (size_t)(end - start);
-        assert(len < sizeof(type));
+        TEST_REQUIRE(len < sizeof(type));
         memcpy(type, start, len);
         type[len] = '\0';
 
@@ -163,7 +165,7 @@ static void assert_supported_event_types(const char *fixture) {
                     "TODO: retrocore fixture event type '%s' is not supported by "
                     "retrocore_event_fixture_test yet\n",
                     type);
-            assert(!"unsupported retrocore event type in fixture");
+            TEST_REQUIRE(!"unsupported retrocore event type in fixture");
         }
         cursor = end + 1;
     }
@@ -197,16 +199,16 @@ static bool find_event_field_int(const char *fixture, const char *event_type,
 static RetroEvent make_quit_event(void) {
     RetroEvent event = {0};
     event.type = RETRO_EVENT_KEY;
-    event.data.key.key_code = 'q';
-    event.data.key.is_printable = true;
-    event.data.key.ascii = 'q';
+    event.data.key.key_code = RETRO_KEY_CTRL_Q;
+    event.data.key.is_printable = false;
+    event.data.key.ascii = '\0';
     return event;
 }
 
 static RetroEvent make_focus_next_event(void) {
     RetroEvent event = {0};
     event.type = RETRO_EVENT_KEY;
-    event.data.key.key_code = '\t';
+    event.data.key.key_code = RETRO_KEY_F6;
     event.data.key.ascii = '\0';
     event.data.key.is_printable = false;
     return event;
@@ -215,9 +217,9 @@ static RetroEvent make_focus_next_event(void) {
 static RetroEvent make_close_focused_window_event(void) {
     RetroEvent event = {0};
     event.type = RETRO_EVENT_KEY;
-    event.data.key.key_code = 'w';
-    event.data.key.ascii = 'w';
-    event.data.key.is_printable = true;
+    event.data.key.key_code = RETRO_KEY_CTRL_W;
+    event.data.key.ascii = '\0';
+    event.data.key.is_printable = false;
     return event;
 }
 
@@ -267,7 +269,7 @@ static WindowId replay_launch_existing_app(Desktop *desktop, const char *logical
     size_t app_count_before;
     size_t window_count_before;
 
-    assert(window != WINDOW_ID_INVALID);
+    TEST_REQUIRE(window != WINDOW_ID_INVALID);
 
     app_count_before = desktop_app_count(desktop);
     window_count_before = desktop_window_count(desktop);
@@ -275,10 +277,10 @@ static WindowId replay_launch_existing_app(Desktop *desktop, const char *logical
     /* RetroDesk launches File Manager and Notepad by default in the current
        foundation desktop. Replaying retrocore launch_app for those logical apps
        should focus existing instances instead of creating duplicates. */
-    assert(app_launch(desktop, retrodesk_app) == NULL);
-    assert(desktop_app_count(desktop) == app_count_before);
-    assert(desktop_window_count(desktop) == window_count_before);
-    assert(desktop_active_window(desktop) == window);
+    TEST_REQUIRE(app_launch(desktop, retrodesk_app) == NULL);
+    TEST_REQUIRE(desktop_app_count(desktop) == app_count_before);
+    TEST_REQUIRE(desktop_window_count(desktop) == window_count_before);
+    TEST_REQUIRE(desktop_active_window(desktop) == window);
 
     if (out_app_count_before) *out_app_count_before = app_count_before;
     if (out_window_count_before) *out_window_count_before = window_count_before;
@@ -326,13 +328,13 @@ static void assert_window_drag_geometry(const char *fixture) {
     int local_down_x;
     int local_down_y;
 
-    assert(files_desc != NULL);
-    assert(read_drag_delta(fixture, &dx, &dy));
+    TEST_REQUIRE(files_desc != NULL);
+    TEST_REQUIRE(read_drag_delta(fixture, &dx, &dy));
 
     renderer = renderer_create(NULL);
-    assert(renderer != NULL);
+    TEST_REQUIRE(renderer != NULL);
     wm = wm_create(renderer);
-    assert(wm != NULL);
+    TEST_REQUIRE(wm != NULL);
 
     spec = (RetroWindowSpec){
         .height = files_desc->default_height,
@@ -346,7 +348,7 @@ static void assert_window_drag_geometry(const char *fixture) {
         .user_data = NULL,
     };
     window_id = wm_create_window(wm, &spec);
-    assert(window_id != WINDOW_ID_INVALID);
+    TEST_REQUIRE(window_id != WINDOW_ID_INVALID);
 
     local_down_x = files_desc->default_x + 4;
     local_down_y = files_desc->default_y;
@@ -354,18 +356,18 @@ static void assert_window_drag_geometry(const char *fixture) {
     move = make_pointer_move_event(local_down_x + dx, local_down_y + dy);
     up = make_pointer_up_event(local_down_x + dx, local_down_y + dy);
 
-    assert(wm_handle_event(wm, &down));
-    assert(wm_handle_event(wm, &move));
-    assert(wm_handle_event(wm, &up));
+    TEST_REQUIRE(wm_handle_event(wm, &down));
+    TEST_REQUIRE(wm_handle_event(wm, &move));
+    TEST_REQUIRE(wm_handle_event(wm, &up));
 
     window = wm_window(wm, window_id);
-    assert(window != NULL);
+    TEST_REQUIRE(window != NULL);
     retro_window_get_geometry(window, &final_y, &final_x, &final_h, &final_w);
-    assert(final_y == files_desc->default_y + dy);
-    assert(final_x == files_desc->default_x + dx);
-    assert(final_h == files_desc->default_height);
-    assert(final_w == files_desc->default_width);
-    assert(wm_active_window(wm) == window_id);
+    TEST_REQUIRE(final_y == files_desc->default_y + dy);
+    TEST_REQUIRE(final_x == files_desc->default_x + dx);
+    TEST_REQUIRE(final_h == files_desc->default_height);
+    TEST_REQUIRE(final_w == files_desc->default_width);
+    TEST_REQUIRE(wm_active_window(wm) == window_id);
 
     wm_destroy(wm);
     renderer_destroy(renderer);
@@ -377,16 +379,16 @@ static void replay_open_files_and_focus(void) {
     PlatformBackend *platform;
     Desktop *desktop;
 
-    assert(fixture != NULL);
-    assert(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
-    assert(strstr(fixture, "\"app\": \"files\"") != NULL);
-    assert(strstr(fixture, "\"focused\": true") != NULL);
+    TEST_REQUIRE(fixture != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"app\": \"files\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"focused\": true") != NULL);
     assert_supported_event_types(fixture);
 
     platform = platform_stub_new();
-    assert(platform != NULL);
+    TEST_REQUIRE(platform != NULL);
     desktop = create_fixture_desktop(platform, true);
-    assert(desktop != NULL);
+    TEST_REQUIRE(desktop != NULL);
 
     (void)replay_launch_files(desktop, NULL, NULL);
 
@@ -416,24 +418,24 @@ static void replay_window_drag_basic_if_available(void) {
         return;
     }
 
-    assert(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
-    assert(strstr(fixture, "\"type\": \"pointer_down\"") != NULL);
-    assert(strstr(fixture, "\"type\": \"pointer_move\"") != NULL);
-    assert(strstr(fixture, "\"type\": \"pointer_up\"") != NULL);
-    assert(strstr(fixture, "\"app\": \"files\"") != NULL);
-    assert(strstr(fixture, "\"focused\": true") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"pointer_down\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"pointer_move\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"pointer_up\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"app\": \"files\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"focused\": true") != NULL);
     assert_supported_event_types(fixture);
-    assert(read_drag_delta(fixture, &dx, &dy));
+    TEST_REQUIRE(read_drag_delta(fixture, &dx, &dy));
 
     platform = platform_stub_new();
-    assert(platform != NULL);
+    TEST_REQUIRE(platform != NULL);
     desktop = create_fixture_desktop(platform, false);
-    assert(desktop != NULL);
+    TEST_REQUIRE(desktop != NULL);
 
     files_window = replay_launch_files(desktop, &app_count_before, &window_count_before);
 
     files_desc = filemanager_app_descriptor();
-    assert(files_desc != NULL);
+    TEST_REQUIRE(files_desc != NULL);
 
     /* The retrocore fixture uses logical coordinates. The RetroDesk adapter
        translates the start point to the local File Manager title bar while
@@ -449,11 +451,11 @@ static void replay_window_drag_basic_if_available(void) {
     events[3] = make_quit_event();
     platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
 
-    assert(desktop_run(desktop) == EXIT_SUCCESS);
-    assert(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == files_window);
-    assert(desktop_active_window(desktop) == files_window);
-    assert(desktop_app_count(desktop) == app_count_before);
-    assert(desktop_window_count(desktop) == window_count_before);
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
+    TEST_REQUIRE(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == files_window);
+    TEST_REQUIRE(desktop_active_window(desktop) == files_window);
+    TEST_REQUIRE(desktop_app_count(desktop) == app_count_before);
+    TEST_REQUIRE(desktop_window_count(desktop) == window_count_before);
 
     assert_window_drag_geometry(fixture);
 
@@ -479,23 +481,23 @@ static void replay_focus_next_basic_if_available(void) {
         return;
     }
 
-    assert(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
-    assert(strstr(fixture, "\"type\": \"focus_next\"") != NULL);
-    assert(strstr(fixture, "\"app\": \"files\"") != NULL);
-    assert(strstr(fixture, "\"app\": \"notes\"") != NULL);
-    assert(strstr(fixture, "\"focused\": true") != NULL);
-    assert(strstr(fixture, "\"focused\": false") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"focus_next\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"app\": \"files\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"app\": \"notes\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"focused\": true") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"focused\": false") != NULL);
     assert_supported_event_types(fixture);
 
     platform = platform_stub_new();
-    assert(platform != NULL);
+    TEST_REQUIRE(platform != NULL);
     desktop = create_fixture_desktop(platform, false);
-    assert(desktop != NULL);
+    TEST_REQUIRE(desktop != NULL);
 
     files_window = replay_launch_existing_app(desktop, "files", NULL, NULL);
     notes_window = replay_launch_existing_app(desktop, "notes", NULL, NULL);
-    assert(files_window != notes_window);
-    assert(desktop_active_window(desktop) == notes_window);
+    TEST_REQUIRE(files_window != notes_window);
+    TEST_REQUIRE(desktop_active_window(desktop) == notes_window);
 
     app_count_before = desktop_app_count(desktop);
     window_count_before = desktop_window_count(desktop);
@@ -504,12 +506,12 @@ static void replay_focus_next_basic_if_available(void) {
     events[1] = make_quit_event();
     platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
 
-    assert(desktop_run(desktop) == EXIT_SUCCESS);
-    assert(desktop_active_window(desktop) == files_window);
-    assert(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == files_window);
-    assert(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("notes")) == notes_window);
-    assert(desktop_app_count(desktop) == app_count_before);
-    assert(desktop_window_count(desktop) == window_count_before);
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
+    TEST_REQUIRE(desktop_active_window(desktop) == files_window);
+    TEST_REQUIRE(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == files_window);
+    TEST_REQUIRE(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("notes")) == notes_window);
+    TEST_REQUIRE(desktop_app_count(desktop) == app_count_before);
+    TEST_REQUIRE(desktop_window_count(desktop) == window_count_before);
 
     desktop_shutdown(desktop);
     platform_destroy(platform);
@@ -532,31 +534,31 @@ static void replay_close_focused_window_if_available(void) {
         return;
     }
 
-    assert(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
-    assert(strstr(fixture, "\"type\": \"close_window\"") != NULL);
-    assert(strstr(fixture, "\"window\": \"focused\"") != NULL);
-    assert(strstr(fixture, "\"app\": \"files\"") != NULL);
-    assert(strstr(fixture, "\"exists\": false") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"launch_app\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"type\": \"close_window\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"window\": \"focused\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"app\": \"files\"") != NULL);
+    TEST_REQUIRE(strstr(fixture, "\"exists\": false") != NULL);
     assert_supported_event_types(fixture);
 
     platform = platform_stub_new();
-    assert(platform != NULL);
+    TEST_REQUIRE(platform != NULL);
     desktop = create_fixture_desktop(platform, false);
-    assert(desktop != NULL);
+    TEST_REQUIRE(desktop != NULL);
 
     files_window = replay_launch_files(desktop, &app_count_before, &window_count_before);
-    assert(app_count_before > 0);
-    assert(window_count_before > 0);
+    TEST_REQUIRE(app_count_before > 0);
+    TEST_REQUIRE(window_count_before > 0);
 
     events[0] = make_close_focused_window_event();
     events[1] = make_quit_event();
     platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
 
-    assert(desktop_run(desktop) == EXIT_SUCCESS);
-    assert(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == WINDOW_ID_INVALID);
-    assert(desktop_active_window(desktop) != files_window);
-    assert(desktop_app_count(desktop) == app_count_before - 1u);
-    assert(desktop_window_count(desktop) == window_count_before - 1u);
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
+    TEST_REQUIRE(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == WINDOW_ID_INVALID);
+    TEST_REQUIRE(desktop_active_window(desktop) != files_window);
+    TEST_REQUIRE(desktop_app_count(desktop) == app_count_before - 1u);
+    TEST_REQUIRE(desktop_window_count(desktop) == window_count_before - 1u);
 
     desktop_shutdown(desktop);
     platform_destroy(platform);

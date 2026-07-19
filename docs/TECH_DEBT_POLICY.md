@@ -44,6 +44,20 @@ If trigger is met, removal becomes mandatory.
 - number of frame flush call sites,
 - count of duplicated source-list definitions across build systems.
 
+## Active Debt Register
+
+Items that are known in the current tree:
+
+- POSIX-only storage adapter blocks native Windows/macOS/DOS file-app claims.
+  Owner: core/storage. Removal trigger: native adapter or capability/build gate.
+  Target milestone: `v0.4.0`.
+- `desktop_fill_diagnostics` mutates runtime capabilities. Owner: core.
+  Removal trigger: complete `CORE_HARDENING_PLAN.md` diagnostics cleanup.
+  Target milestone: `v0.2.0`.
+- Notepad dirty-close UX blocks close but does not yet offer a discard/save
+  dialog. Owner: apps/ui. Removal trigger: non-blocking dirty-document flow.
+  Target milestone: `v0.3.0`.
+
 ## v0.1 Rule
 
 `v0.1.0` cannot be tagged with unresolved debt that violates

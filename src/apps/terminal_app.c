@@ -23,7 +23,7 @@ static void terminal_render(RetroAppInstance *instance, DrawList *draw_list) {
     const RenderStyle *accent = &theme->shell_accent;
     const DesktopCapabilities *cap = instance->ctx.capabilities;
 
-    draw_list_text(draw_list, 1, 2, "Terminal (placeholder app)", accent);
+    draw_list_text(draw_list, 1, 2, "Diagnostics", accent);
     draw_list_text(draw_list, 2, 2,
                    "This app shows detected runtime capabilities.", text);
 
@@ -50,8 +50,8 @@ static void terminal_destroy(RetroAppInstance *instance) {
 
 const RetroAppDescriptor *terminal_app_descriptor(void) {
     static const RetroAppDescriptor desc = {
-        .app_id = "terminal",
-        .display_name = "Terminal",
+        .app_id = "diagnostics",
+        .display_name = "Diagnostics",
         .required_capabilities = PLATFORM_CAP_KEYBOARD_BASIC,
         .default_height = 10,
         .default_width = 62,

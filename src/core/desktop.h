@@ -41,6 +41,8 @@ typedef struct DesktopDiagnostics {
 Desktop *desktop_create(const DesktopConfig *config);
 int desktop_run(Desktop *desktop);
 RetroAppInstance *app_launch(Desktop *desktop, const char *app_id);
+RetroAppInstance *app_launch_with_path(Desktop *desktop, const char *app_id,
+                                       const char *resource_path);
 void desktop_request_redraw(Desktop *desktop);
 const DesktopDiagnostics *desktop_diagnostics(const Desktop *desktop);
 size_t desktop_app_count(const Desktop *desktop);

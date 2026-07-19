@@ -2,7 +2,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 #include "core/key_chord.h"
 
@@ -10,6 +9,7 @@ enum {
     TAB_INIT_CAP = 4,
     TAB_BRACKET_OVERHEAD = 3,   /* "[ " + "]" */
     TAB_TAB_GAP = 1,
+    TAB_RENDER_CHUNK_CAP = 256,
 };
 
 typedef struct TabEntry {
@@ -228,6 +228,38 @@ int tab_height(void) {
     return 1;
 }
 
+static void tab_render_segment(DrawList *draw_list, int y, int x, int width,
+                               const TabEntry *entry, const RenderStyle *style) {
+    if (!draw_list || !entry || !style || width <= 0) return;
+
+    size_t label_len = strlen(entry->label);
+    int offset = 0;
+    while (offset < width) {
+        int remaining = width - offset;
+        int chunk_len = remaining < TAB_RENDER_CHUNK_CAP - 1
+                            ? remaining
+                            : TAB_RENDER_CHUNK_CAP - 1;
+        char chunk[TAB_RENDER_CHUNK_CAP];
+
+        for (int i = 0; i < chunk_len; ++i) {
+            int pos = offset + i;
+            if (pos == 0) {
+                chunk[i] = '[';
+            } else if (pos == 1) {
+                chunk[i] = ' ';
+            } else if (pos == width - 1 && width == entry->width) {
+                chunk[i] = ']';
+            } else {
+                size_t label_pos = (size_t)(pos - 2);
+                chunk[i] = label_pos < label_len ? entry->label[label_pos] : ' ';
+            }
+        }
+        chunk[chunk_len] = '\0';
+        if (!draw_list_text(draw_list, y, x + offset, chunk, style)) return;
+        offset += chunk_len;
+    }
+}
+
 int tab_render(const Tab *tab, DrawList *draw_list,
                int y, int x, int max_width,
                const RenderStyle *normal_style,
@@ -246,27 +278,9 @@ int tab_render(const Tab *tab, DrawList *draw_list,
         if (used + seg_w > max_width) seg_w = max_width - used;
         if (seg_w <= 0) break;
 
-        /* Build "[ label ]" segment, truncating if necessary. */
-        char seg[128];
-        int label_len = (int)strlen(e->label);
-        int interior = seg_w - 2; /* "[ " */
-        if (interior < 1) interior = 1;
-        int copy = label_len < interior ? label_len : interior;
-        snprintf(seg, sizeof(seg), "[ %.*s", copy, e->label);
-        size_t slen = strlen(seg);
-        /* Add closing ']' if room. */
-        if ((int)slen < seg_w - 1) {
-            seg[slen++] = ']';
-            seg[slen] = '\0';
-        } else if ((int)slen < seg_w) {
-            seg[slen] = ']';
-            seg[slen + 1] = '\0';
-            slen++;
-        } else {
-            seg[seg_w] = '\0';
-            slen = (size_t)seg_w;
-        }
-        draw_list_text(draw_list, y, cursor, seg, style);
+        /* Render in bounded chunks so the requested width is never used as
+           an index into a fixed-size stack buffer. */
+        tab_render_segment(draw_list, y, cursor, seg_w, e, style);
 
         cursor += seg_w;
         used += seg_w;

@@ -2,6 +2,9 @@
 #define RETRODESK_CORE_EVENT_H
 
 #include <stdbool.h>
+#include <stdint.h>
+
+#include "core/key_chord.h"
 
 /* Backend-neutral event types delivered by the platform layer. */
 
@@ -15,17 +18,22 @@ typedef enum RetroEventType {
 typedef struct RetroKeyEvent {
     int key_code;
     bool is_printable;
-    /* Raw ASCII/byte payload for printable key events. This is unsigned so
-       bytes in the 0x80..0xFF range are preserved across platforms where
-       plain `char` is signed. Extended bytes are not automatically portable
-       printable characters or RetroDesk key chords; callers must interpret
-       them according to the active backend/locale/codepage policy. */
+    /* `ascii` is retained for the byte-oriented widget transition.  New
+       callers should use text_codepoint; unsigned storage prevents bytes
+       0x80..0xFF from changing sign across platforms. */
     unsigned char ascii;
+    uint32_t text_codepoint;
+    unsigned int modifiers;
 } RetroKeyEvent;
 
 typedef struct RetroMouseEvent {
     int y;
     int x;
+    /* Screen coordinates are produced by the platform.  The WM fills these
+       content-local coordinates before dispatching to an app/widget. */
+    int local_y;
+    int local_x;
+    bool has_local_coordinates;
     bool moved;
     bool button1_pressed;
     bool button1_released;

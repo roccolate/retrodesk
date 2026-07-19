@@ -26,6 +26,8 @@ bool text_buffer_set_text(TextBuffer *buf, const char *text);
 size_t text_buffer_line_count(const TextBuffer *buf);
 const char *text_buffer_line(const TextBuffer *buf, size_t row);
 size_t text_buffer_line_length(const TextBuffer *buf, size_t row);
+/* Returns a newly allocated LF-separated snapshot.  The caller owns it. */
+char *text_buffer_to_text(const TextBuffer *buf, size_t *length);
 
 /* Cursor state */
 size_t text_buffer_cursor_row(const TextBuffer *buf);

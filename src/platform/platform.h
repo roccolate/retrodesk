@@ -48,9 +48,16 @@ typedef struct PlatformConfig {
 
 typedef struct PlatformBackend PlatformBackend;
 
+typedef enum RetroPollResult {
+    RETRO_POLL_TIMEOUT = 0,
+    RETRO_POLL_EVENT = 1,
+    RETRO_POLL_CLOSED = -1,
+    RETRO_POLL_ERROR = -2,
+} RetroPollResult;
+
 PlatformBackend *platform_create(const PlatformConfig *config);
-bool platform_poll_event(PlatformBackend *platform, RetroEvent *out_event,
-                         int timeout_ms);
+RetroPollResult platform_poll_event(PlatformBackend *platform,
+                                     RetroEvent *out_event, int timeout_ms);
 const PlatformFeatures *platform_features(const PlatformBackend *platform);
 const char *platform_backend_name(const PlatformBackend *platform);
 void platform_destroy(PlatformBackend *platform);

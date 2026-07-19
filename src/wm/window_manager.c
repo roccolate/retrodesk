@@ -327,6 +327,28 @@ bool wm_move_active_window(WindowManager *wm, int dy, int dx) {
     return true;
 }
 
+bool wm_resize_active_window(WindowManager *wm, int dh, int dw) {
+    if (!wm) return false;
+    RetroWindow *window = wm_find_window(wm, wm->active_id);
+    if (!window || (window->flags & WINDOW_FLAG_FIXED)) return false;
+    int rows = 0;
+    int cols = 0;
+    renderer_get_screen_size(wm->renderer, &rows, &cols);
+    int min_h = 4;
+    int min_w = 12;
+    int next_h = window->h + dh;
+    int next_w = window->w + dw;
+    if (next_h < min_h) next_h = min_h;
+    if (next_w < min_w) next_w = min_w;
+    if (rows > 0 && window->y + next_h > rows) next_h = rows - window->y;
+    if (cols > 0 && window->x + next_w > cols) next_w = cols - window->x;
+    if (next_h < min_h || next_w < min_w) return false;
+    if (next_h == window->h && next_w == window->w) return false;
+    window->h = next_h;
+    window->w = next_w;
+    return true;
+}
+
 bool wm_get_drag_preview(const WindowManager *wm, WindowId *id, int *y, int *x) {
     if (!wm || !wm->dragging || wm->drag_window_id == WINDOW_ID_INVALID) return false;
     RetroWindow *drag = wm_find_window(wm, wm->drag_window_id);
@@ -364,6 +386,12 @@ static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
             RetroEvent evt = {0};
             evt.type = RETRO_EVENT_MOUSE;
             evt.data.mouse = *mouse;
+            evt.data.mouse.local_y = mouse->y - modal->y - 1;
+            evt.data.mouse.local_x = mouse->x - modal->x - 1;
+            evt.data.mouse.has_local_coordinates =
+                evt.data.mouse.local_y >= 0 && evt.data.mouse.local_x >= 0 &&
+                evt.data.mouse.local_y < modal->h - 2 &&
+                evt.data.mouse.local_x < modal->w - 2;
             modal->event_cb(modal, &evt, modal->user_data);
         }
         wm_cleanup_closed(wm);
@@ -421,6 +449,11 @@ static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
         RetroEvent evt = {0};
         evt.type = RETRO_EVENT_MOUSE;
         evt.data.mouse = *mouse;
+        evt.data.mouse.local_y = mouse->y - hit->y - 1;
+        evt.data.mouse.local_x = mouse->x - hit->x - 1;
+        evt.data.mouse.has_local_coordinates =
+            evt.data.mouse.local_y >= 0 && evt.data.mouse.local_x >= 0 &&
+            evt.data.mouse.local_y < hit->h - 2 && evt.data.mouse.local_x < hit->w - 2;
         hit->event_cb(hit, &evt, hit->user_data);
     }
 }

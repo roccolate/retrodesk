@@ -27,7 +27,17 @@ make
 ./build/retrodesk
 ```
 
-## macOS
+## Experimental profiles
+
+Only the Linux build is currently release-gated. The following recipes are
+developer bring-up paths, not claims of validated product support.
+
+The current File Manager and Notepad preview uses the POSIX storage adapter in
+`src/storage/retro_fs_posix.c`. Native Windows and DOS need a native storage
+adapter or explicit feature gating before they can be treated as green release
+profiles.
+
+### macOS
 
 ### Prerequisites
 ```bash
@@ -50,9 +60,9 @@ make
 ./build/retrodesk
 ```
 
-## Windows (WSL2 or Native)
+### Windows (WSL2 or Native)
 
-### WSL2 (Easiest)
+#### WSL2
 ```bash
 # Inside WSL2 Ubuntu/Debian
 sudo apt install -y build-essential cmake libncurses-dev
@@ -62,7 +72,12 @@ make
 ./build/retrodesk
 ```
 
-### Native Windows with PDCurses
+#### Native Windows with PDCurses
+
+Native Windows is a planned Tier 1 target, but it is not currently a release
+claim. Use this recipe only for bring-up work; the storage layer must be
+ported or gated before this profile can be considered complete.
+
 ```bash
 # Clone PDCurses or download pre-built
 git clone https://github.com/wmcbrine/PDCurses.git
@@ -92,12 +107,10 @@ build\retrodesk.exe
 ./build/retrodesk --theme=win31
 
 # Hotkeys:
-# - q: quit
-# - m: toggle launcher
-# - 1/2/3: launch File Manager / Notepad / Terminal
-# - Tab: cycle window focus
-# - HJKL: move active window
-# - w: close active window
+# - F1: help, F2: launcher, F6: next window
+# - F7: move/resize mode
+# - Ctrl+W: close active window
+# - Ctrl+Q: quit
 # - Esc: close app
 ```
 
@@ -110,10 +123,23 @@ make
 make test
 ```
 
-All tests must pass. If any fail, check terminal support and try:
+Tests are non-interactive and must pass without changing `TERM`.
+`make test` requires curses development headers/libraries. If CMake reports
+`Could NOT find Curses`, install `libncurses-dev`, `ncurses-devel`, or the
+equivalent package for your platform and reconfigure from a clean build
+directory.
+
+### Full Local Gate
 ```bash
-TERM=xterm make test
+make clean
+make strict
+make test
+make test-all
+make smoke-ci
 ```
+
+`make smoke` and `make smoke-linux-vc` require an interactive PTY. They are
+manual gates, not reliable non-interactive sandbox checks.
 
 ### Development Build (no optimizations)
 ```bash
@@ -145,6 +171,10 @@ You need build tools:
 - **Ubuntu/Debian:** `sudo apt install libncurses-dev`
 - **macOS:** `brew install ncurses`
 - **Fedora:** `sudo dnf install ncurses-devel`
+
+If an existing `build/` directory was created from another absolute checkout
+path, remove it with `make clean` before rebuilding. CMake caches absolute
+source and binary directories.
 
 ### Build fails with errors
 1. Clean rebuild: `make clean && make`
@@ -202,9 +232,10 @@ docker run -it retrodesk
 
 ## Next Steps
 
-1. **Explore the apps:** Launch notepad, file manager, terminal
+1. **Explore the runtime:** Launch File Manager, open a text file, and try
+   Notepad save/Save As on Linux
 2. **Read the docs:** Check `docs/ROADMAP.md` for the v1.0 roadmap
-3. **Contribute:** Find an item in Phase 1-2 and send a PR
+3. **Contribute:** Find an open gate in `docs/RELEASE_0.1_CHECKLIST.md`
 4. **Customize:** Modify themes in `src/ui/theme.c`
 
 ---

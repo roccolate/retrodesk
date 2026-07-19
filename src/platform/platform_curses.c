@@ -228,5 +228,9 @@ bool platform_poll_event_curses(PlatformBackend *platform, RetroEvent *out_event
     out_event->data.key.key_code = translate_key_chord(ch);
     out_event->data.key.is_printable = retro_key_is_printable(ch);
     out_event->data.key.ascii = out_event->data.key.is_printable ? (char)ch : '\0';
+    out_event->data.key.text_codepoint = out_event->data.key.is_printable
+                                             ? (uint32_t)(unsigned char)ch
+                                             : 0;
+    out_event->data.key.modifiers = RETRO_MOD_NONE;
     return true;
 }

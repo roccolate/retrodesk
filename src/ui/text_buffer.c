@@ -1,6 +1,7 @@
 #include "ui/text_buffer.h"
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "core/key_chord.h"
@@ -208,6 +209,31 @@ size_t text_buffer_line_length(const TextBuffer *buf, size_t row) {
     return buf->lines[row].len;
 }
 
+char *text_buffer_to_text(const TextBuffer *buf, size_t *length) {
+    if (length) *length = 0;
+    if (!buf || buf->line_count == 0) return NULL;
+    size_t total = 0;
+    for (size_t i = 0; i < buf->line_count; ++i) {
+        if (buf->lines[i].len > SIZE_MAX - total) return NULL;
+        total += buf->lines[i].len;
+        if (i + 1 < buf->line_count) {
+            if (total == SIZE_MAX) return NULL;
+            total++;
+        }
+    }
+    char *out = malloc(total + 1);
+    if (!out) return NULL;
+    size_t offset = 0;
+    for (size_t i = 0; i < buf->line_count; ++i) {
+        memcpy(out + offset, buf->lines[i].data, buf->lines[i].len);
+        offset += buf->lines[i].len;
+        if (i + 1 < buf->line_count) out[offset++] = '\n';
+    }
+    out[offset] = '\0';
+    if (length) *length = offset;
+    return out;
+}
+
 /* ------------------------------------------------------------------ */
 /* Cursor                                                              */
 /* ------------------------------------------------------------------ */
@@ -265,15 +291,29 @@ bool text_buffer_insert_char(TextBuffer *buf, char ch) {
 bool text_buffer_insert_newline(TextBuffer *buf) {
     if (!buf || buf->line_count == 0) return false;
 
-    TextLine *cur = &buf->lines[buf->cursor_row];
+    const TextLine *cur = &buf->lines[buf->cursor_row];
     size_t col = buf->cursor_col;
     if (col > cur->len) col = cur->len;
 
     /* Text after cursor moves to new line. */
     size_t tail_len = cur->len - col;
 
-    /* Make room for the new line. */
-    if (!text_buffer_grow_lines(buf, buf->line_count + 1)) return false;
+    /* Fully prepare the new line before changing the line array. This keeps
+       the buffer unchanged if either allocation fails and copies the tail
+       while `cur` is still valid. */
+    TextLine new_line = {0};
+    if (!text_line_init(&new_line)) return false;
+    if (!text_line_set(&new_line, cur->data + col, tail_len)) {
+        text_line_free(&new_line);
+        return false;
+    }
+
+    /* Growing can relocate `buf->lines`, so no pointer into the old array is
+       used beyond this point. */
+    if (!text_buffer_grow_lines(buf, buf->line_count + 1)) {
+        text_line_free(&new_line);
+        return false;
+    }
 
     /* Shift lines down. */
     size_t insert_at = buf->cursor_row + 1;
@@ -283,24 +323,13 @@ bool text_buffer_insert_newline(TextBuffer *buf) {
                 (buf->line_count - insert_at) * sizeof(TextLine));
     }
 
-    /* Init new line with tail content. */
-    if (!text_line_init(&buf->lines[insert_at])) {
-        /* Roll back shift. */
-        if (insert_at < buf->line_count) {
-            memmove(&buf->lines[insert_at],
-                    &buf->lines[insert_at + 1],
-                    (buf->line_count - insert_at) * sizeof(TextLine));
-        }
-        return false;
-    }
-    text_line_set(&buf->lines[insert_at], cur->data + col, tail_len);
+    buf->lines[insert_at] = new_line;
     buf->line_count++;
 
     /* Truncate current line at cursor. */
-    /* Re-fetch pointer since grow may have reallocated. */
-    cur = &buf->lines[buf->cursor_row];
-    cur->data[col] = '\0';
-    cur->len = col;
+    TextLine *current = &buf->lines[buf->cursor_row];
+    current->data[col] = '\0';
+    current->len = col;
 
     /* Move cursor to beginning of new line. */
     buf->cursor_row = insert_at;

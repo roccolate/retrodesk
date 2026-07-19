@@ -6,16 +6,19 @@
 #include "core/desktop.h"
 #include "platform/platform.h"
 
+#define RETRODESK_VERSION "0.2.0-alpha"
+
 enum { DEFAULT_INPUT_TIMEOUT_MS = 120 };
 
 int main(int argc, char **argv) {
     RetroCliOptions options = {0};
-    RetroCliParseResult parse_result = retro_cli_parse(argc, argv, &options, stderr);
-    if (parse_result == RETRO_CLI_SHOWED_USAGE) {
+    RetroCliParseResult parse_result =
+        retro_cli_parse(argc, argv, &options, stdout, stderr);
+    if (parse_result == RETRO_CLI_SHOWED_USAGE) return EXIT_SUCCESS;
+    if (parse_result == RETRO_CLI_PARSE_ERROR) return EXIT_FAILURE;
+    if (options.version_mode) {
+        puts("retrodesk " RETRODESK_VERSION);
         return EXIT_SUCCESS;
-    }
-    if (parse_result != RETRO_CLI_OK) {
-        return EXIT_FAILURE;
     }
 
     setlocale(LC_ALL, "");
@@ -62,6 +65,18 @@ int main(int argc, char **argv) {
             printf("linux_tty_keyboard_only: %s\n",
                    diag->linux_tty_keyboard_only ? "true" : "false");
         }
+    }
+    if (options.diagnose_mode) {
+        const DesktopDiagnostics *diag = desktop_diagnostics(desktop);
+        if (diag) {
+            printf("capabilities: mouse=%s drag=%s resize=%s\n",
+                   diag->mouse_enabled ? "yes" : "no",
+                   diag->drag_enabled ? "yes" : "no",
+                   diag->resize_enabled ? "yes" : "no");
+        }
+        desktop_shutdown(desktop);
+        platform_destroy(platform);
+        return EXIT_SUCCESS;
     }
 
     int rc = desktop_run(desktop);

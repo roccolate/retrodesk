@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -32,36 +32,36 @@ static DialogStyles make_dialog_styles(void) {
 
 static void test_create_message(void) {
     Dialog *dlg = dialog_create_message("Info", "Hello world");
-    assert(dlg != NULL);
-    assert(dialog_type(dlg) == DIALOG_MESSAGE);
-    assert(dialog_result(dlg) == DIALOG_RESULT_NONE);
-    assert(dialog_suggest_height(dlg) >= 7);
-    assert(dialog_suggest_width(dlg, 80) >= 20);
+    TEST_REQUIRE(dlg != NULL);
+    TEST_REQUIRE(dialog_type(dlg) == DIALOG_MESSAGE);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_NONE);
+    TEST_REQUIRE(dialog_suggest_height(dlg) >= 7);
+    TEST_REQUIRE(dialog_suggest_width(dlg, 80) >= 20);
     dialog_destroy(dlg);
 
     /* NULL title/message should still work. */
     dlg = dialog_create_message(NULL, NULL);
-    assert(dlg != NULL);
-    assert(dialog_type(dlg) == DIALOG_MESSAGE);
+    TEST_REQUIRE(dlg != NULL);
+    TEST_REQUIRE(dialog_type(dlg) == DIALOG_MESSAGE);
     dialog_destroy(dlg);
     printf("  PASS: create_message\n");
 }
 
 static void test_create_confirm(void) {
     Dialog *dlg = dialog_create_confirm("Confirm", "Are you sure?");
-    assert(dlg != NULL);
-    assert(dialog_type(dlg) == DIALOG_CONFIRM);
-    assert(dialog_result(dlg) == DIALOG_RESULT_NONE);
+    TEST_REQUIRE(dlg != NULL);
+    TEST_REQUIRE(dialog_type(dlg) == DIALOG_CONFIRM);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_NONE);
     dialog_destroy(dlg);
     printf("  PASS: create_confirm\n");
 }
 
 static void test_create_input(void) {
     Dialog *dlg = dialog_create_input("Rename", "New name:", 16);
-    assert(dlg != NULL);
-    assert(dialog_type(dlg) == DIALOG_INPUT);
-    assert(dialog_result(dlg) == DIALOG_RESULT_NONE);
-    assert(strcmp(dialog_input_text(dlg), "") == 0);
+    TEST_REQUIRE(dlg != NULL);
+    TEST_REQUIRE(dialog_type(dlg) == DIALOG_INPUT);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_NONE);
+    TEST_REQUIRE(strcmp(dialog_input_text(dlg), "") == 0);
     dialog_destroy(dlg);
     printf("  PASS: create_input\n");
 }
@@ -72,8 +72,8 @@ static void test_message_enter_ok(void) {
     Dialog *dlg = dialog_create_message("Info", "Hi");
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = 0};
     bool consumed = dialog_handle_key(dlg, &enter);
-    assert(consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_OK);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_OK);
     dialog_destroy(dlg);
     printf("  PASS: message_enter_ok\n");
 }
@@ -82,8 +82,8 @@ static void test_message_escape_ok(void) {
     Dialog *dlg = dialog_create_message("Info", "Hi");
     RetroKeyEvent esc = {.key_code = 27, .is_printable = false, .ascii = 0};
     bool consumed = dialog_handle_key(dlg, &esc);
-    assert(consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_OK);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_OK);
     dialog_destroy(dlg);
     printf("  PASS: message_escape_ok\n");
 }
@@ -92,8 +92,8 @@ static void test_confirm_escape_cancel(void) {
     Dialog *dlg = dialog_create_confirm("Confirm", "Sure?");
     RetroKeyEvent esc = {.key_code = 27, .is_printable = false, .ascii = 0};
     bool consumed = dialog_handle_key(dlg, &esc);
-    assert(consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_CANCEL);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_CANCEL);
     dialog_destroy(dlg);
     printf("  PASS: confirm_escape_cancel\n");
 }
@@ -106,8 +106,8 @@ static void test_confirm_tab_cycle_then_enter(void) {
     /* Enter now should activate Cancel. */
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = 0};
     bool consumed = dialog_handle_key(dlg, &enter);
-    assert(consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_CANCEL);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_CANCEL);
     dialog_destroy(dlg);
     printf("  PASS: confirm_tab_cycle_then_enter\n");
 }
@@ -117,10 +117,10 @@ static void test_input_typing(void) {
     /* Initial focus is on the input — printable keys should go there. */
     RetroKeyEvent h = {.key_code = 'h', .is_printable = true, .ascii = 'h'};
     RetroKeyEvent i = {.key_code = 'i', .is_printable = true, .ascii = 'i'};
-    assert(dialog_handle_key(dlg, &h));
-    assert(dialog_handle_key(dlg, &i));
-    assert(strcmp(dialog_input_text(dlg), "hi") == 0);
-    assert(dialog_result(dlg) == DIALOG_RESULT_NONE);
+    TEST_REQUIRE(dialog_handle_key(dlg, &h));
+    TEST_REQUIRE(dialog_handle_key(dlg, &i));
+    TEST_REQUIRE(strcmp(dialog_input_text(dlg), "hi") == 0);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_NONE);
     dialog_destroy(dlg);
     printf("  PASS: input_typing\n");
 }
@@ -133,9 +133,9 @@ static void test_input_tab_to_ok(void) {
     dialog_handle_key(dlg, &tab);
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = 0};
     bool consumed = dialog_handle_key(dlg, &enter);
-    assert(consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_OK);
-    assert(strcmp(dialog_input_text(dlg), "h") == 0);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_OK);
+    TEST_REQUIRE(strcmp(dialog_input_text(dlg), "h") == 0);
     dialog_destroy(dlg);
     printf("  PASS: input_tab_to_ok\n");
 }
@@ -144,12 +144,12 @@ static void test_dismissed_ignores_events(void) {
     Dialog *dlg = dialog_create_message("Info", "Hi");
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = 0};
     dialog_handle_key(dlg, &enter);
-    assert(dialog_result(dlg) == DIALOG_RESULT_OK);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_OK);
     /* Further keys are consumed but result remains OK. */
     RetroKeyEvent esc = {.key_code = 27, .is_printable = false, .ascii = 0};
     bool consumed = dialog_handle_key(dlg, &esc);
-    assert(consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_OK);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_OK);
     dialog_destroy(dlg);
     printf("  PASS: dismissed_ignores_events\n");
 }
@@ -176,9 +176,9 @@ static void test_mouse_click_ok(void) {
             break;
         }
     }
-    assert(ok_x >= 0);
-    assert(ok_y >= 0);
-    assert(ok_w > 0);
+    TEST_REQUIRE(ok_x >= 0);
+    TEST_REQUIRE(ok_y >= 0);
+    TEST_REQUIRE(ok_w > 0);
 
     RetroMouseEvent click = {
         .y = ok_y,
@@ -186,8 +186,8 @@ static void test_mouse_click_ok(void) {
         .button1_clicked = true,
     };
     bool consumed = dialog_handle_mouse(dlg, &click, 0, 0, w, h);
-    assert(consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_OK);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_OK);
 
     draw_list_destroy(dl);
     dialog_destroy(dlg);
@@ -212,7 +212,7 @@ static void test_mouse_click_cancel(void) {
             break;
         }
     }
-    assert(cancel_x >= 0);
+    TEST_REQUIRE(cancel_x >= 0);
 
     RetroMouseEvent click = {
         .y = cancel_y,
@@ -220,8 +220,8 @@ static void test_mouse_click_cancel(void) {
         .button1_clicked = true,
     };
     bool consumed = dialog_handle_mouse(dlg, &click, 0, 0, w, h);
-    assert(consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_CANCEL);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_CANCEL);
 
     draw_list_destroy(dl);
     dialog_destroy(dlg);
@@ -235,8 +235,8 @@ static void test_mouse_outside(void) {
         .button1_clicked = true,
     };
     bool consumed = dialog_handle_mouse(dlg, &click, 0, 0, 30, 10);
-    assert(!consumed);
-    assert(dialog_result(dlg) == DIALOG_RESULT_NONE);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(dialog_result(dlg) == DIALOG_RESULT_NONE);
     dialog_destroy(dlg);
     printf("  PASS: mouse_outside\n");
 }
@@ -266,10 +266,10 @@ static void test_render_draws_frame_and_buttons(void) {
             if (strstr(cmd.text, "Are you sure?")) saw_message = true;
         }
     }
-    assert(saw_box);
-    assert(saw_ok);
-    assert(saw_cancel);
-    assert(saw_message);
+    TEST_REQUIRE(saw_box);
+    TEST_REQUIRE(saw_ok);
+    TEST_REQUIRE(saw_cancel);
+    TEST_REQUIRE(saw_message);
 
     draw_list_destroy(dl);
     dialog_destroy(dlg);
@@ -297,7 +297,7 @@ static void test_render_message_wraps(void) {
         }
     }
     /* Expect at least: 1 title-bearing box + several message lines + OK */
-    assert(text_lines >= 3);
+    TEST_REQUIRE(text_lines >= 3);
 
     draw_list_destroy(dl);
     dialog_destroy(dlg);
@@ -316,7 +316,7 @@ static void test_render_input_draws_field(void) {
 
     /* Should draw at least one OK + one Cancel + an input row + message. */
     size_t n = draw_list_count(dl);
-    assert(n > 0);
+    TEST_REQUIRE(n > 0);
 
     draw_list_destroy(dl);
     dialog_destroy(dlg);
@@ -328,12 +328,12 @@ static void test_render_input_draws_field(void) {
 static void test_set_input_text(void) {
     Dialog *dlg = dialog_create_input("Rename", "Name:", 32);
     bool ok = dialog_set_input_text(dlg, "pre-filled");
-    assert(ok);
-    assert(strcmp(dialog_input_text(dlg), "pre-filled") == 0);
+    TEST_REQUIRE(ok);
+    TEST_REQUIRE(strcmp(dialog_input_text(dlg), "pre-filled") == 0);
     /* Pre-filled text is truncated to max_input_len. */
     ok = dialog_set_input_text(dlg, "this string is definitely too long for the limit");
-    assert(ok);
-    assert(strlen(dialog_input_text(dlg)) <= 32);
+    TEST_REQUIRE(ok);
+    TEST_REQUIRE(strlen(dialog_input_text(dlg)) <= 32);
     dialog_destroy(dlg);
     printf("  PASS: set_input_text\n");
 }
@@ -342,16 +342,16 @@ static void test_set_input_text(void) {
 
 static void test_null_safety(void) {
     dialog_destroy(NULL);
-    assert(dialog_type(NULL) == DIALOG_MESSAGE);
-    assert(dialog_result(NULL) == DIALOG_RESULT_NONE);
-    assert(strcmp(dialog_input_text(NULL), "") == 0);
-    assert(!dialog_set_input_text(NULL, "x"));
+    TEST_REQUIRE(dialog_type(NULL) == DIALOG_MESSAGE);
+    TEST_REQUIRE(dialog_result(NULL) == DIALOG_RESULT_NONE);
+    TEST_REQUIRE(strcmp(dialog_input_text(NULL), "") == 0);
+    TEST_REQUIRE(!dialog_set_input_text(NULL, "x"));
     RetroKeyEvent k = {.key_code = 'a', .is_printable = true, .ascii = 'a'};
-    assert(!dialog_handle_key(NULL, &k));
+    TEST_REQUIRE(!dialog_handle_key(NULL, &k));
     RetroMouseEvent m = {.button1_clicked = true};
-    assert(!dialog_handle_mouse(NULL, &m, 0, 0, 10, 10));
-    assert(dialog_suggest_width(NULL, 80) == 20);
-    assert(dialog_suggest_height(NULL) == 7);
+    TEST_REQUIRE(!dialog_handle_mouse(NULL, &m, 0, 0, 10, 10));
+    TEST_REQUIRE(dialog_suggest_width(NULL, 80) == 20);
+    TEST_REQUIRE(dialog_suggest_height(NULL) == 7);
     dialog_render(NULL, NULL, 0, 0, 10, 10, NULL);
     printf("  PASS: null_safety\n");
 }

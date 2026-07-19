@@ -66,6 +66,7 @@ WindowId wm_active_window(const WindowManager *wm);
 bool wm_window_exists(const WindowManager *wm, WindowId id);
 size_t wm_window_count(const WindowManager *wm);
 bool wm_move_active_window(WindowManager *wm, int dy, int dx);
+bool wm_resize_active_window(WindowManager *wm, int dh, int dw);
 bool wm_get_drag_preview(const WindowManager *wm, WindowId *id, int *y, int *x);
 bool wm_drag_is_enabled(const WindowManager *wm);
 bool wm_drag_is_degraded(const WindowManager *wm);

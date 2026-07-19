@@ -9,6 +9,7 @@
 #include "platform/platform.h"
 
 #if !defined(_WIN32) && !defined(__DJGPP__)
+#include <signal.h>
 #include <termios.h>
 
 #include "platform/tty_decoder.h"
@@ -26,6 +27,7 @@ struct PlatformBackend {
     struct termios tty_saved_mode;
     int tty_rows;
     int tty_cols;
+    volatile sig_atomic_t tty_signal_pending;
     TtyDecoder tty_decoder;
 #endif
 };

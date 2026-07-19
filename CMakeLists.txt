@@ -1,13 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
-project(RetroDesk C)
+project(RetroDesk VERSION 0.2.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_STRICT_WARNINGS "Enable strict compiler warnings" ON)
 option(ENABLE_WERROR "Treat warnings as errors" ON)
 option(ENABLE_TESTS "Build lightweight unit tests" ON)
+option(RETROCORE_SPEC_REQUIRED "Fail when shared retrocore fixtures are missing" OFF)
 set(PDCURSES_ROOT "" CACHE PATH "Path to PDCurses root")
 set(RETROCORE_SPEC_DIR "${CMAKE_SOURCE_DIR}/../retrocore-spec" CACHE PATH
     "Path to a retrocore-spec checkout for shared contract fixture tests")
@@ -73,19 +75,50 @@ set(RETRODESK_DJGPP_SOURCES
     src/apps/terminal_app.c
 )
 
+# The first product slice uses the POSIX storage adapter.  Keep it out of the
+# DOS and Windows source profiles until their native adapters exist.
+if (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    list(APPEND RETRODESK_SOURCES src/storage/retro_fs_posix.c)
+endif()
+
+function(retrodesk_apply_quality target)
+    target_compile_features(${target} PRIVATE c_std_11)
+    target_compile_definitions(${target} PRIVATE
+        $<$<NOT:$<C_COMPILER_ID:MSVC>>:_POSIX_C_SOURCE=200809L>
+    )
+    if (ENABLE_STRICT_WARNINGS)
+        target_compile_options(${target} PRIVATE
+            $<$<C_COMPILER_ID:MSVC>:/W4>
+            $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Wall;-Wextra;-Wpedantic>
+        )
+    endif()
+    if (ENABLE_WERROR)
+        target_compile_options(${target} PRIVATE
+            $<$<C_COMPILER_ID:MSVC>:/WX>
+            $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Werror>
+        )
+    endif()
+endfunction()
+
 add_executable(retrodesk ${RETRODESK_SOURCES})
 target_include_directories(retrodesk PRIVATE ${CMAKE_SOURCE_DIR}/src)
+retrodesk_apply_quality(retrodesk)
 
-if (ENABLE_STRICT_WARNINGS)
-    target_compile_options(retrodesk PRIVATE
-        $<$<C_COMPILER_ID:MSVC>:/W4>
-        $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Wall;-Wextra;-Wpedantic>
-    )
-endif()
+include(GNUInstallDirs)
+install(TARGETS retrodesk RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES README.md INSTALL.md LICENSE
+        DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 if (ENABLE_TESTS)
     include(CTest)
     if (BUILD_TESTING)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        add_test(NAME test_oracle_guard
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/check_test_oracles.py)
+        add_custom_target(check-test-oracles
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/check_test_oracles.py
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            VERBATIM)
         add_executable(cli_parse_test
             tests/cli_parse_test.c
             src/core/cli.c
@@ -128,13 +161,6 @@ if (ENABLE_TESTS)
     target_include_directories(theme_catalog_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
     add_test(NAME theme_catalog_test COMMAND theme_catalog_test)
     endif()
-endif()
-
-if (ENABLE_WERROR)
-    target_compile_options(retrodesk PRIVATE
-        $<$<C_COMPILER_ID:MSVC>:/WX>
-        $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Werror>
-    )
 endif()
 
 if (PDCURSES_ROOT)
@@ -253,6 +279,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(text_buffer_test
         tests/text_buffer_test.c
         src/ui/text_buffer.c
+        src/ui/text_input.c
         src/core/key_chord.c
         src/platform/platform.c
         src/platform/platform_curses.c
@@ -345,12 +372,24 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         src/apps/filemanager_app.c
         src/apps/notepad_app.c
         src/apps/terminal_app.c
+        src/storage/retro_fs_posix.c
+        src/ui/text_buffer.c
+        src/ui/text_input.c
         src/wm/window_manager.c
         src/ui/statusbar.c
         src/ui/theme.c
     )
     target_include_directories(desktop_runtime_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
     add_test(NAME desktop_runtime_test COMMAND desktop_runtime_test)
+
+    if (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
+        add_executable(storage_test
+            tests/storage_test.c
+            src/storage/retro_fs_posix.c
+        )
+        target_include_directories(storage_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        add_test(NAME storage_test COMMAND storage_test)
+    endif()
 
     if (EXISTS "${RETROCORE_SPEC_DIR}/fixtures/events/open-files-and-focus.json")
         add_executable(retrocore_event_fixture_test
@@ -362,6 +401,9 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             src/apps/filemanager_app.c
             src/apps/notepad_app.c
             src/apps/terminal_app.c
+            src/storage/retro_fs_posix.c
+            src/ui/text_buffer.c
+            src/ui/text_input.c
             src/wm/window_manager.c
             src/ui/statusbar.c
             src/ui/theme.c
@@ -372,6 +414,10 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         )
         add_test(NAME retrocore_event_fixture_test COMMAND retrocore_event_fixture_test)
     else()
+        if (RETROCORE_SPEC_REQUIRED)
+            message(FATAL_ERROR
+                "retrocore-spec fixture missing: ${RETROCORE_SPEC_DIR}/fixtures/events/open-files-and-focus.json")
+        endif()
         message(STATUS "retrocore-spec fixtures not found at ${RETROCORE_SPEC_DIR}; skipping retrocore_event_fixture_test")
     endif()
 
@@ -467,4 +513,35 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             endforeach()
         endif()
     endif()
+
+    set(RETRODESK_TEST_TARGETS
+        cli_parse_test
+        key_chord_test
+        app_registry_test
+        platform_features_test
+        wm_event_replay_test
+        theme_catalog_test
+        draw_list_contract_test
+        statusbar_drawlist_test
+        ansi_renderer_diff_test
+        tty_decoder_test
+        text_input_test
+        scroll_list_test
+        text_buffer_test
+        button_test
+        dialog_test
+        menu_bar_test
+        progress_bar_test
+        tab_test
+        desktop_runtime_test
+    )
+    if (TARGET storage_test)
+        list(APPEND RETRODESK_TEST_TARGETS storage_test)
+    endif()
+    if (TARGET retrocore_event_fixture_test)
+        list(APPEND RETRODESK_TEST_TARGETS retrocore_event_fixture_test)
+    endif()
+    foreach(_test_target IN LISTS RETRODESK_TEST_TARGETS)
+        retrodesk_apply_quality(${_test_target})
+    endforeach()
 endif()

@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -40,10 +40,10 @@ static RenderStyle make_style(int fg, int bg, bool reverse, bool bold) {
 
 static void test_create_destroy(void) {
     MenuBar *bar = menu_bar_create();
-    assert(bar != NULL);
-    assert(menu_bar_menu_count(bar) == 0);
-    assert(!menu_bar_is_open(bar));
-    assert(menu_bar_open_menu(bar) == MENU_BAR_NO_MENU);
+    TEST_REQUIRE(bar != NULL);
+    TEST_REQUIRE(menu_bar_menu_count(bar) == 0);
+    TEST_REQUIRE(!menu_bar_is_open(bar));
+    TEST_REQUIRE(menu_bar_open_menu(bar) == MENU_BAR_NO_MENU);
     menu_bar_destroy(bar);
 
     /* NULL destroy must not crash. */
@@ -54,18 +54,18 @@ static void test_create_destroy(void) {
 static void test_add_menus(void) {
     MenuBar *bar = menu_bar_create();
     bool ok = menu_bar_add_menu(bar, "File", 'F');
-    assert(ok);
+    TEST_REQUIRE(ok);
     ok = menu_bar_add_menu(bar, "Edit", 'E');
-    assert(ok);
+    TEST_REQUIRE(ok);
     ok = menu_bar_add_menu(bar, "View", 'V');
-    assert(ok);
+    TEST_REQUIRE(ok);
     ok = menu_bar_add_menu(bar, "Help", 'H');
-    assert(ok);
-    assert(menu_bar_menu_count(bar) == 4);
-    assert(strcmp(menu_bar_menu_label(bar, 0), "File") == 0);
-    assert(menu_bar_menu_shortcut(bar, 1) == 'E');
+    TEST_REQUIRE(ok);
+    TEST_REQUIRE(menu_bar_menu_count(bar) == 4);
+    TEST_REQUIRE(strcmp(menu_bar_menu_label(bar, 0), "File") == 0);
+    TEST_REQUIRE(menu_bar_menu_shortcut(bar, 1) == 'E');
     /* NULL label rejected. */
-    assert(!menu_bar_add_menu(bar, NULL, 0));
+    TEST_REQUIRE(!menu_bar_add_menu(bar, NULL, 0));
     menu_bar_destroy(bar);
     printf("  PASS: add_menus\n");
 }
@@ -74,16 +74,16 @@ static void test_add_items(void) {
     MenuBar *bar = menu_bar_create();
     menu_bar_add_menu(bar, "File", 'F');
     bool ok = menu_bar_add_item(bar, 0, "Open...", 'O', on_activate, NULL);
-    assert(ok);
+    TEST_REQUIRE(ok);
     ok = menu_bar_add_item(bar, 0, "Save", 'S', on_activate, NULL);
-    assert(ok);
+    TEST_REQUIRE(ok);
     menu_bar_add_separator(bar, 0);
     ok = menu_bar_add_item(bar, 0, "Quit", 'Q', on_activate, NULL);
-    assert(ok);
-    assert(menu_bar_item_count(bar, 0) == 4);
+    TEST_REQUIRE(ok);
+    TEST_REQUIRE(menu_bar_item_count(bar, 0) == 4);
     /* Invalid menu index. */
-    assert(!menu_bar_add_item(bar, 5, "X", 'X', NULL, NULL));
-    assert(!menu_bar_add_separator(bar, 5));
+    TEST_REQUIRE(!menu_bar_add_item(bar, 5, "X", 'X', NULL, NULL));
+    TEST_REQUIRE(!menu_bar_add_separator(bar, 5));
     menu_bar_destroy(bar);
     printf("  PASS: add_items\n");
 }
@@ -98,19 +98,19 @@ static void test_open_close(void) {
     menu_bar_add_item(bar, 0, "Save", 'S', on_activate, NULL);
 
     menu_bar_open(bar, 0);
-    assert(menu_bar_is_open(bar));
-    assert(menu_bar_open_menu(bar) == 0);
-    assert(menu_bar_open_item(bar) == 0);
+    TEST_REQUIRE(menu_bar_is_open(bar));
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 0);
+    TEST_REQUIRE(menu_bar_open_item(bar) == 0);
 
     menu_bar_close(bar);
-    assert(!menu_bar_is_open(bar));
-    assert(menu_bar_open_menu(bar) == MENU_BAR_NO_MENU);
+    TEST_REQUIRE(!menu_bar_is_open(bar));
+    TEST_REQUIRE(menu_bar_open_menu(bar) == MENU_BAR_NO_MENU);
 
     /* Open with empty items picks no item. */
     menu_bar_add_menu(bar, "Empty", 'E');
     menu_bar_open(bar, 2);
-    assert(menu_bar_is_open(bar));
-    assert(menu_bar_open_item(bar) == MENU_BAR_NO_MENU);
+    TEST_REQUIRE(menu_bar_is_open(bar));
+    TEST_REQUIRE(menu_bar_open_item(bar) == MENU_BAR_NO_MENU);
 
     menu_bar_destroy(bar);
     printf("  PASS: open_close\n");
@@ -126,15 +126,15 @@ static void test_key_shortcut_opens(void) {
 
     RetroKeyEvent f = {.key_code = 'F', .is_printable = true, .ascii = 'F'};
     bool consumed = menu_bar_handle_key(bar, &f);
-    assert(consumed);
-    assert(menu_bar_is_open(bar));
-    assert(menu_bar_open_menu(bar) == 0);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(menu_bar_is_open(bar));
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 0);
 
     menu_bar_close(bar);
     RetroKeyEvent e = {.key_code = 'e', .is_printable = true, .ascii = 'e'};
     consumed = menu_bar_handle_key(bar, &e);
-    assert(consumed);
-    assert(menu_bar_open_menu(bar) == 1);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 1);
 
     menu_bar_destroy(bar);
     printf("  PASS: key_shortcut_opens\n");
@@ -149,11 +149,11 @@ static void test_key_shortcut_activates(void) {
     reset_callback_state();
     RetroKeyEvent q = {.key_code = 'q', .is_printable = true, .ascii = 'q'};
     bool consumed = menu_bar_handle_key(bar, &q);
-    assert(consumed);
-    assert(g_activate_count == 1);
-    assert(g_last_menu == 0);
-    assert(g_last_item == 0);
-    assert(!menu_bar_is_open(bar));
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(g_activate_count == 1);
+    TEST_REQUIRE(g_last_menu == 0);
+    TEST_REQUIRE(g_last_item == 0);
+    TEST_REQUIRE(!menu_bar_is_open(bar));
 
     menu_bar_destroy(bar);
     printf("  PASS: key_shortcut_activates\n");
@@ -165,8 +165,8 @@ static void test_key_escape_closes(void) {
     menu_bar_open(bar, 0);
     RetroKeyEvent esc = {.key_code = 27, .is_printable = false, .ascii = 0};
     bool consumed = menu_bar_handle_key(bar, &esc);
-    assert(consumed);
-    assert(!menu_bar_is_open(bar));
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(!menu_bar_is_open(bar));
     menu_bar_destroy(bar);
     printf("  PASS: key_escape_closes\n");
 }
@@ -176,11 +176,11 @@ static void test_key_f10_toggles(void) {
     menu_bar_add_menu(bar, "File", 'F');
     RetroKeyEvent f10 = {.key_code = RETRO_KEY_F10, .is_printable = false, .ascii = 0};
     bool consumed = menu_bar_handle_key(bar, &f10);
-    assert(consumed);
-    assert(menu_bar_is_open(bar));
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(menu_bar_is_open(bar));
     consumed = menu_bar_handle_key(bar, &f10);
-    assert(consumed);
-    assert(!menu_bar_is_open(bar));
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(!menu_bar_is_open(bar));
     menu_bar_destroy(bar);
     printf("  PASS: key_f10_toggles\n");
 }
@@ -195,29 +195,28 @@ static void test_key_arrow_navigation(void) {
 
     RetroKeyEvent f = {.key_code = 'F', .is_printable = true, .ascii = 'F'};
     menu_bar_handle_key(bar, &f);
-    assert(menu_bar_open_menu(bar) == 0);
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 0);
 
-#ifdef KEY_RIGHT
-    RetroKeyEvent right = {.key_code = KEY_RIGHT, .is_printable = false, .ascii = 0};
+    RetroKeyEvent right = {.key_code = RETRO_KEY_RIGHT, .is_printable = false, .ascii = 0};
     menu_bar_handle_key(bar, &right);
-    assert(menu_bar_open_menu(bar) == 1);
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 1);
     menu_bar_handle_key(bar, &right);
-    assert(menu_bar_open_menu(bar) == 2);
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 2);
     menu_bar_handle_key(bar, &right);
-    assert(menu_bar_open_menu(bar) == 0);  /* wrap */
-    RetroKeyEvent left = {.key_code = KEY_LEFT, .is_printable = false, .ascii = 0};
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 0);  /* wrap */
+    RetroKeyEvent left = {.key_code = RETRO_KEY_LEFT, .is_printable = false, .ascii = 0};
     menu_bar_handle_key(bar, &left);
-    assert(menu_bar_open_menu(bar) == 2);  /* wrap backward */
-#endif
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 2);  /* wrap backward */
 
-#ifdef KEY_DOWN
-    RetroKeyEvent down = {.key_code = KEY_DOWN, .is_printable = false, .ascii = 0};
+    /* Return to the populated File menu before testing item navigation. */
+    menu_bar_open(bar, 0);
+    TEST_REQUIRE(menu_bar_open_item(bar) == 0);
+    RetroKeyEvent down = {.key_code = RETRO_KEY_DOWN, .is_printable = false, .ascii = 0};
     menu_bar_handle_key(bar, &down);
-    assert(menu_bar_open_item(bar) == 1);
-    RetroKeyEvent down2 = {.key_code = KEY_DOWN, .is_printable = false, .ascii = 0};
+    TEST_REQUIRE(menu_bar_open_item(bar) == 1);
+    RetroKeyEvent down2 = {.key_code = RETRO_KEY_DOWN, .is_printable = false, .ascii = 0};
     menu_bar_handle_key(bar, &down2);
-    assert(menu_bar_open_item(bar) == 0);  /* wrap */
-#endif
+    TEST_REQUIRE(menu_bar_open_item(bar) == 0);  /* wrap */
 
     menu_bar_destroy(bar);
     printf("  PASS: key_arrow_navigation\n");
@@ -233,10 +232,10 @@ static void test_key_enter_activates(void) {
     reset_callback_state();
     RetroKeyEvent enter = {.key_code = '\n', .is_printable = false, .ascii = 0};
     bool consumed = menu_bar_handle_key(bar, &enter);
-    assert(consumed);
-    assert(g_activate_count == 1);
-    assert(g_last_user_data == &sentinel);
-    assert(!menu_bar_is_open(bar));
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(g_activate_count == 1);
+    TEST_REQUIRE(g_last_user_data == &sentinel);
+    TEST_REQUIRE(!menu_bar_is_open(bar));
     menu_bar_destroy(bar);
     printf("  PASS: key_enter_activates\n");
 }
@@ -248,19 +247,17 @@ static void test_key_skip_separators(void) {
     menu_bar_add_separator(bar, 0);
     menu_bar_add_item(bar, 0, "Quit", 'Q', on_activate, NULL);
     menu_bar_open(bar, 0);
-    assert(menu_bar_open_item(bar) == 0);
+    TEST_REQUIRE(menu_bar_open_item(bar) == 0);
 
-#ifdef KEY_DOWN
-    RetroKeyEvent down = {.key_code = KEY_DOWN, .is_printable = false, .ascii = 0};
+    RetroKeyEvent down = {.key_code = RETRO_KEY_DOWN, .is_printable = false, .ascii = 0};
     menu_bar_handle_key(bar, &down);
     /* Should skip separator and land on "Quit" (index 2). */
-    assert(menu_bar_open_item(bar) == 2);
+    TEST_REQUIRE(menu_bar_open_item(bar) == 2);
 
-    RetroKeyEvent up = {.key_code = KEY_UP, .is_printable = false, .ascii = 0};
+    RetroKeyEvent up = {.key_code = RETRO_KEY_UP, .is_printable = false, .ascii = 0};
     menu_bar_handle_key(bar, &up);
     /* Should skip separator going up and land on "Open" (index 0). */
-    assert(menu_bar_open_item(bar) == 0);
-#endif
+    TEST_REQUIRE(menu_bar_open_item(bar) == 0);
     menu_bar_destroy(bar);
     printf("  PASS: key_skip_separators\n");
 }
@@ -279,14 +276,14 @@ static void test_mouse_click_menu_opens(void) {
         .button1_clicked = true,
     };
     bool consumed = menu_bar_handle_mouse(bar, &click, 0, 0, w);
-    assert(consumed);
-    assert(menu_bar_is_open(bar));
-    assert(menu_bar_open_menu(bar) == 0);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(menu_bar_is_open(bar));
+    TEST_REQUIRE(menu_bar_open_menu(bar) == 0);
 
     /* Click same menu again closes it. */
     consumed = menu_bar_handle_mouse(bar, &click, 0, 0, w);
-    assert(consumed);
-    assert(!menu_bar_is_open(bar));
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(!menu_bar_is_open(bar));
 
     menu_bar_destroy(bar);
     printf("  PASS: mouse_click_menu_opens\n");
@@ -301,7 +298,7 @@ static void test_mouse_outside(void) {
         .button1_clicked = true,
     };
     bool consumed = menu_bar_handle_mouse(bar, &click, 0, 0, 80);
-    assert(!consumed);
+    TEST_REQUIRE(!consumed);
     menu_bar_destroy(bar);
     printf("  PASS: mouse_outside\n");
 }
@@ -327,8 +324,8 @@ static void test_render_draws_labels(void) {
             if (strcmp(cmd.text, "Edit") == 0) saw_edit = true;
         }
     }
-    assert(saw_file);
-    assert(saw_edit);
+    TEST_REQUIRE(saw_file);
+    TEST_REQUIRE(saw_edit);
     draw_list_destroy(dl);
     menu_bar_destroy(bar);
     printf("  PASS: render_draws_labels\n");
@@ -352,7 +349,7 @@ static void test_render_dropdown(void) {
     int rows = menu_bar_render_dropdown(bar, dl, 1, 0,
                                          &item_normal, &item_sel,
                                          &sep, &sc, &frame);
-    assert(rows > 0);
+    TEST_REQUIRE(rows > 0);
 
     bool saw_open = false;
     bool saw_quit = false;
@@ -366,9 +363,9 @@ static void test_render_dropdown(void) {
             if (strchr(cmd.text, '-') && strlen(cmd.text) > 2) saw_dashes = true;
         }
     }
-    assert(saw_open);
-    assert(saw_quit);
-    assert(saw_dashes);
+    TEST_REQUIRE(saw_open);
+    TEST_REQUIRE(saw_quit);
+    TEST_REQUIRE(saw_dashes);
 
     draw_list_destroy(dl);
     menu_bar_destroy(bar);
@@ -384,11 +381,11 @@ static void test_sizing(void) {
     menu_bar_add_item(bar, 0, "Save", 'S', NULL, NULL);
     int w = menu_bar_width(bar);
     /* One "File" menu: leading gap + label width + trailing gap. */
-    assert(w >= 2 + 4 + 2);
+    TEST_REQUIRE(w >= 2 + 4 + 2);
     int dw = menu_bar_dropdown_width(bar, 0);
-    assert(dw > 6); /* at least "Open..." + padding */
+    TEST_REQUIRE(dw > 6); /* at least "Open..." + padding */
     int dh = menu_bar_dropdown_height(bar, 0);
-    assert(dh >= 4); /* top + 2 items + bottom */
+    TEST_REQUIRE(dh >= 4); /* top + 2 items + bottom */
     menu_bar_destroy(bar);
     printf("  PASS: sizing\n");
 }
@@ -397,26 +394,26 @@ static void test_sizing(void) {
 
 static void test_null_safety(void) {
     menu_bar_destroy(NULL);
-    assert(menu_bar_menu_count(NULL) == 0);
-    assert(strcmp(menu_bar_menu_label(NULL, 0), "") == 0);
-    assert(menu_bar_menu_shortcut(NULL, 0) == 0);
-    assert(menu_bar_item_count(NULL, 0) == 0);
-    assert(menu_bar_open_menu(NULL) == MENU_BAR_NO_MENU);
-    assert(menu_bar_open_item(NULL) == MENU_BAR_NO_MENU);
-    assert(!menu_bar_is_open(NULL));
+    TEST_REQUIRE(menu_bar_menu_count(NULL) == 0);
+    TEST_REQUIRE(strcmp(menu_bar_menu_label(NULL, 0), "") == 0);
+    TEST_REQUIRE(menu_bar_menu_shortcut(NULL, 0) == 0);
+    TEST_REQUIRE(menu_bar_item_count(NULL, 0) == 0);
+    TEST_REQUIRE(menu_bar_open_menu(NULL) == MENU_BAR_NO_MENU);
+    TEST_REQUIRE(menu_bar_open_item(NULL) == MENU_BAR_NO_MENU);
+    TEST_REQUIRE(!menu_bar_is_open(NULL));
     menu_bar_open(NULL, 0);
     menu_bar_close(NULL);
     RetroKeyEvent k = {.key_code = 'a', .is_printable = true, .ascii = 'a'};
-    assert(!menu_bar_handle_key(NULL, &k));
+    TEST_REQUIRE(!menu_bar_handle_key(NULL, &k));
     RetroMouseEvent m = {.button1_clicked = true};
-    assert(!menu_bar_handle_mouse(NULL, &m, 0, 0, 80));
+    TEST_REQUIRE(!menu_bar_handle_mouse(NULL, &m, 0, 0, 80));
     DrawList *dl = draw_list_create();
     RenderStyle s = make_style(0, 0, false, false);
     menu_bar_render(NULL, dl, 0, 0, 80, &s, &s, &s, &s);
-    assert(menu_bar_render_dropdown(NULL, dl, 0, 0, &s, &s, &s, &s, &s) == 0);
-    assert(menu_bar_width(NULL) == 0);
-    assert(menu_bar_dropdown_width(NULL, 0) == 0);
-    assert(menu_bar_dropdown_height(NULL, 0) == 0);
+    TEST_REQUIRE(menu_bar_render_dropdown(NULL, dl, 0, 0, &s, &s, &s, &s, &s) == 0);
+    TEST_REQUIRE(menu_bar_width(NULL) == 0);
+    TEST_REQUIRE(menu_bar_dropdown_width(NULL, 0) == 0);
+    TEST_REQUIRE(menu_bar_dropdown_height(NULL, 0) == 0);
     draw_list_destroy(dl);
     printf("  PASS: null_safety\n");
 }

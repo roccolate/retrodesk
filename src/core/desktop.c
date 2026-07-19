@@ -7,6 +7,7 @@
 
 #include "app/app_runtime.h"
 #include "apps/apps.h"
+#include "core/key_chord.h"
 #include "ui/statusbar.h"
 #include "wm/window_manager.h"
 
@@ -47,6 +48,8 @@ struct Desktop {
     DesktopDiagnostics diagnostics;
     bool running;
     bool needs_redraw;
+    bool window_mode;
+    bool window_resize_mode;
     time_t last_status_tick;
     WindowId shell_window_id;
     LauncherState launcher;
@@ -58,7 +61,7 @@ struct Desktop {
 static const LauncherItem k_launcher_items[] = {
     {"Launch File Manager", LAUNCHER_ACTION_FILEMANAGER},
     {"Launch Notepad", LAUNCHER_ACTION_NOTEPAD},
-    {"Launch Terminal", LAUNCHER_ACTION_TERMINAL},
+    {"Launch Diagnostics", LAUNCHER_ACTION_TERMINAL},
     {"Close Active Window", LAUNCHER_ACTION_CLOSE_ACTIVE},
     {"Close Launcher", LAUNCHER_ACTION_CLOSE_MENU},
 };
@@ -109,8 +112,26 @@ static void app_window_event(RetroWindow *window, const RetroEvent *event, void 
     RetroAppInstance *app = (RetroAppInstance *)user_data;
     app_handle_event(app, event);
     if (app_is_close_requested(app)) {
-        retro_window_request_close(window);
+        if (!app->descriptor->can_close || app->descriptor->can_close(app)) {
+            retro_window_request_close(window);
+        } else {
+            app->close_requested = false;
+        }
     }
+}
+
+static bool desktop_request_app_close(Desktop *desktop, WindowId window_id) {
+    if (!desktop || window_id == WINDOW_ID_INVALID) return false;
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        RunningApp *running = &desktop->apps[i];
+        if (running->window_id != window_id || !running->app) continue;
+        RetroAppInstance *app = running->app;
+        if (app->descriptor->can_close && !app->descriptor->can_close(app)) return false;
+        app_request_close(app);
+        wm_close_window(desktop->wm, window_id);
+        return true;
+    }
+    return false;
 }
 
 static void desktop_launcher_close(Desktop *desktop) {
@@ -133,7 +154,7 @@ static void desktop_launcher_execute(Desktop *desktop, LauncherAction action) {
         app_launch(desktop, "notepad");
         break;
     case LAUNCHER_ACTION_TERMINAL:
-        app_launch(desktop, "terminal");
+        app_launch(desktop, "diagnostics");
         break;
     case LAUNCHER_ACTION_CLOSE_ACTIVE: {
         /* Close the launcher first so the previously-active window regains
@@ -253,7 +274,7 @@ static void shell_draw(RetroWindow *window, DrawList *draw_list, void *user_data
     draw_list_text(draw_list, 1, 2, "RetroDesk Foundation Runtime", accent);
     draw_list_text(
         draw_list, 2, 2,
-        "Hotkeys: q quit | Tab focus | m launcher | 1/2/3 apps | w close | HJKL move | Esc close app",
+        "F1/F2 launcher | F6 focus | F7 move/resize | Ctrl+W close | Ctrl+Q quit",
         text);
 
     snprintf(line, sizeof(line), "Window: %dx%d @ %d,%d", w, h, x, y);
@@ -359,7 +380,6 @@ Desktop *desktop_create(const DesktopConfig *config) {
 
     apps_register_builtin(desktop->app_registry);
     app_launch(desktop, "filemanager");
-    app_launch(desktop, "notepad");
 
     desktop->needs_redraw = true;
     return desktop;
@@ -369,11 +389,15 @@ fail:
     return NULL;
 }
 
-RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
+RetroAppInstance *app_launch_with_path(Desktop *desktop, const char *app_id,
+                                       const char *resource_path) {
     if (!desktop || !app_id) return NULL;
 
     /* If an instance of this app is already running, focus it instead. */
-    if (desktop_app_is_running(desktop, app_id)) {
+    const RetroAppDescriptor *existing_desc =
+        app_registry_find(desktop->app_registry, app_id);
+    if (existing_desc && !existing_desc->allow_multiple &&
+        desktop_app_is_running(desktop, app_id)) {
         for (size_t i = 0; i < desktop->app_count; ++i) {
             const RetroAppInstance *inst = desktop->apps[i].app;
             if (inst && inst->descriptor && inst->descriptor->app_id &&
@@ -401,6 +425,14 @@ RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
     instance->ctx.desktop = desktop;
     instance->ctx.capabilities = &desktop->capabilities;
     instance->ctx.theme = desktop->theme;
+    if (resource_path) {
+        instance->resource_path_owned = strdup(resource_path);
+        if (!instance->resource_path_owned) {
+            free(instance);
+            return NULL;
+        }
+        instance->ctx.resource_path = instance->resource_path_owned;
+    }
 
     RetroWindowSpec spec = {
         .height = desc->default_height,
@@ -416,14 +448,18 @@ RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
 
     WindowId wid = wm_create_window(desktop->wm, &spec);
     if (wid == WINDOW_ID_INVALID) {
+        free(instance->resource_path_owned);
         free(instance);
         return NULL;
     }
     instance->ctx.window_id = wid;
 
     if (desc->create && !desc->create(instance, &instance->ctx)) {
+        /* create may have acquired partial state; once invoked, destroy is
+           always the matching rollback hook, even when create reports failure. */
         if (desc->destroy) desc->destroy(instance);
         wm_close_window(desktop->wm, wid);
+        free(instance->resource_path_owned);
         free(instance);
         return NULL;
     }
@@ -431,12 +467,17 @@ RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
     if (!desktop_add_app(desktop, instance, wid)) {
         if (desc->destroy) desc->destroy(instance);
         wm_close_window(desktop->wm, wid);
+        free(instance->resource_path_owned);
         free(instance);
         return NULL;
     }
 
     desktop->needs_redraw = true;
     return instance;
+}
+
+RetroAppInstance *app_launch(Desktop *desktop, const char *app_id) {
+    return app_launch_with_path(desktop, app_id, NULL);
 }
 
 void desktop_request_redraw(Desktop *desktop) {
@@ -497,6 +538,11 @@ static void desktop_cleanup_apps(Desktop *desktop) {
         bool should_close = app_is_close_requested(slot->app);
         bool window_exists = wm_window_exists(desktop->wm, slot->window_id);
 
+        if (should_close && window_exists && slot->app->descriptor->can_close &&
+            !slot->app->descriptor->can_close(slot->app)) {
+            slot->app->close_requested = false;
+            should_close = false;
+        }
         if (should_close && window_exists) {
             wm_close_window(desktop->wm, slot->window_id);
             window_exists = false;
@@ -513,6 +559,7 @@ static void desktop_cleanup_apps(Desktop *desktop) {
 static void desktop_update_status(Desktop *desktop) {
     time_t now = time(NULL);
     if (now == desktop->last_status_tick && !desktop->needs_redraw) return;
+    bool tick_changed = now != desktop->last_status_tick;
     desktop->last_status_tick = now;
 
     desktop->diagnostics.drag_enabled = wm_drag_is_enabled(desktop->wm);
@@ -553,6 +600,7 @@ static void desktop_update_status(Desktop *desktop) {
         wm_window_count(desktop->wm), desktop->app_count,
         desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
         desktop->diagnostics.theme_name, middle, timestr);
+    if (tick_changed) desktop->needs_redraw = true;
 }
 
 static void desktop_render_frame(Desktop *desktop) {
@@ -580,66 +628,84 @@ static void desktop_render_frame(Desktop *desktop) {
 static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *key) {
     if (!desktop || !key) return false;
 
-    /* While the launcher (modal) is open, only 'q' (quit) and 'm' (toggle)
-       are handled at desktop level; everything else goes to the modal. */
+    /* Global accelerators must not consume printable text.  The previous
+       implementation stole q/m/w/1..3/HJKL from every app, making editing
+       impossible.  Control chords and function keys are unambiguous. */
     if (desktop->launcher.open) {
-        if (key->ascii == 'q') {
+        if (key->key_code == RETRO_KEY_CTRL_Q) {
             desktop->running = false;
             return true;
         }
-        if (key->ascii == 'm' || key->ascii == 'M') {
+        if (key->key_code == RETRO_KEY_F2) {
             desktop_launcher_close(desktop);
             return true;
         }
         return false;
     }
 
-    if (key->ascii == 'q') {
+    if (desktop->window_mode) {
+        if (key->key_code == RETRO_KEY_ESC) {
+            desktop->window_mode = false;
+            desktop->window_resize_mode = false;
+            desktop_request_redraw(desktop);
+            return true;
+        }
+        if (key->key_code == RETRO_KEY_TAB) {
+            desktop->window_resize_mode = !desktop->window_resize_mode;
+            desktop_request_redraw(desktop);
+            return true;
+        }
+        int dy = 0;
+        int dx = 0;
+        if (key->key_code == RETRO_KEY_UP) dy = -1;
+        if (key->key_code == RETRO_KEY_DOWN) dy = 1;
+        if (key->key_code == RETRO_KEY_LEFT) dx = -1;
+        if (key->key_code == RETRO_KEY_RIGHT) dx = 1;
+        bool changed = desktop->window_resize_mode
+                           ? wm_resize_active_window(desktop->wm, dy, dx)
+                           : wm_move_active_window(desktop->wm, dy, dx);
+        if (changed) desktop_request_redraw(desktop);
+        return true;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_Q) {
         desktop->running = false;
         return true;
     }
 
-    if (key->ascii == 'm' || key->ascii == 'M') {
+    if (key->key_code == RETRO_KEY_F2) {
         desktop_launcher_open(desktop);
         return true;
     }
 
-    if (key->key_code == '\t') {
+    if (key->key_code == RETRO_KEY_F1) {
+        desktop_launcher_open(desktop);
+        return true;
+    }
+
+    if (key->key_code == RETRO_KEY_F6) {
         wm_cycle_focus(desktop->wm);
         desktop_request_redraw(desktop);
         return true;
     }
 
-    if (key->ascii == 'H' || key->ascii == 'J' || key->ascii == 'K' ||
-        key->ascii == 'L') {
-        int dy = (key->ascii == 'J') - (key->ascii == 'K');
-        int dx = (key->ascii == 'L') - (key->ascii == 'H');
-        if (wm_move_active_window(desktop->wm, dy, dx)) {
-            desktop_request_redraw(desktop);
+    if (key->key_code == RETRO_KEY_F7) {
+        desktop->window_mode = true;
+        desktop->window_resize_mode = false;
+        desktop_request_redraw(desktop);
+        return true;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_W) {
+        WindowId active = wm_active_window(desktop->wm);
+        if (active != WINDOW_ID_INVALID && active != desktop->shell_window_id) {
+            (void)desktop_request_app_close(desktop, active);
         }
         return true;
     }
 
-    switch (key->ascii) {
-    case '1':
-        app_launch(desktop, "filemanager");
-        return true;
-    case '2':
-        app_launch(desktop, "notepad");
-        return true;
-    case '3':
-        app_launch(desktop, "terminal");
-        return true;
-    case 'w': {
-        WindowId active = wm_active_window(desktop->wm);
-        if (active != WINDOW_ID_INVALID && active != desktop->shell_window_id) {
-            wm_close_window(desktop->wm, active);
-        }
-        return true;
-    }
-    default:
-        return false;
-    }
+    /* Tab and all printable characters belong to the focused app. */
+    return false;
 }
 
 int desktop_run(Desktop *desktop) {
@@ -654,10 +720,10 @@ int desktop_run(Desktop *desktop) {
     desktop->running = true;
     while (desktop->running) {
         RetroEvent event = {0};
-        bool has_event = platform_poll_event(desktop->platform, &event,
-                                             desktop->config.input_timeout_ms);
+        RetroPollResult poll_result = platform_poll_event(
+            desktop->platform, &event, desktop->config.input_timeout_ms);
 
-        if (has_event) {
+        if (poll_result == RETRO_POLL_EVENT) {
             bool consumed = false;
             if (event.type == RETRO_EVENT_KEY) {
                 consumed = desktop_handle_key_command(desktop, &event.data.key);
@@ -667,6 +733,9 @@ int desktop_run(Desktop *desktop) {
             }
             desktop_cleanup_apps(desktop);
             desktop_request_redraw(desktop);
+        } else if (poll_result == RETRO_POLL_CLOSED || poll_result == RETRO_POLL_ERROR) {
+            desktop->running = false;
+            return poll_result == RETRO_POLL_CLOSED ? EXIT_SUCCESS : EXIT_FAILURE;
         }
 
         desktop_update_status(desktop);

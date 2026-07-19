@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -30,11 +30,11 @@ static const char *find_text_at(const DrawList *dl, int y, int x) {
 
 static void test_create_destroy(void) {
     ProgressBar *bar = progress_bar_create();
-    assert(bar != NULL);
-    assert(progress_bar_style(bar) == PROGRESS_BAR_DETERMINATE);
-    assert(progress_bar_value(bar) == 0);
-    assert(progress_bar_width(bar) == 20);
-    assert(strcmp(progress_bar_label(bar), "") == 0);
+    TEST_REQUIRE(bar != NULL);
+    TEST_REQUIRE(progress_bar_style(bar) == PROGRESS_BAR_DETERMINATE);
+    TEST_REQUIRE(progress_bar_value(bar) == 0);
+    TEST_REQUIRE(progress_bar_width(bar) == 20);
+    TEST_REQUIRE(strcmp(progress_bar_label(bar), "") == 0);
     progress_bar_destroy(bar);
     progress_bar_destroy(NULL);
     printf("  PASS: create_destroy\n");
@@ -52,17 +52,17 @@ static void test_determinate_zero(void) {
 
     int used = progress_bar_render(bar, dl, 0, 0, 0, &frame, &fill, &label);
     /* [----------] 0%  -> 1 + 10 + 1 + 3 = 15 */
-    assert(used == 15);
+    TEST_REQUIRE(used == 15);
 
     /* Fill text at x=1 should be all dashes. */
     const char *fill_text = find_text_at(dl, 0, 1);
-    assert(fill_text != NULL);
-    assert(strlen(fill_text) == 10);
-    for (int i = 0; i < 10; i++) assert(fill_text[i] == '-');
+    TEST_REQUIRE(fill_text != NULL);
+    TEST_REQUIRE(strlen(fill_text) == 10);
+    for (int i = 0; i < 10; i++) TEST_REQUIRE(fill_text[i] == '-');
 
     /* Bracket at x=0. */
     const char *bracket = find_text_at(dl, 0, 0);
-    assert(bracket && strcmp(bracket, "[") == 0);
+    TEST_REQUIRE(bracket && strcmp(bracket, "[") == 0);
 
     draw_list_destroy(dl);
     progress_bar_destroy(bar);
@@ -79,11 +79,11 @@ static void test_determinate_full(void) {
     RenderStyle label = make_style(0, 0, false, false);
     int used = progress_bar_render(bar, dl, 0, 0, 0, &frame, &fill, &label);
     /* [########] 100% -> 1 + 8 + 1 + 5 = 15 */
-    assert(used == 15);
+    TEST_REQUIRE(used == 15);
 
     const char *fill_text = find_text_at(dl, 0, 1);
-    assert(fill_text && strlen(fill_text) == 8);
-    for (int i = 0; i < 8; i++) assert(fill_text[i] == '#');
+    TEST_REQUIRE(fill_text && strlen(fill_text) == 8);
+    for (int i = 0; i < 8; i++) TEST_REQUIRE(fill_text[i] == '#');
 
     draw_list_destroy(dl);
     progress_bar_destroy(bar);
@@ -101,11 +101,11 @@ static void test_determinate_partial(void) {
     progress_bar_render(bar, dl, 0, 0, 0, &frame, &fill, &label);
 
     const char *fill_text = find_text_at(dl, 0, 1);
-    assert(fill_text != NULL);
-    assert(strlen(fill_text) == 10);
+    TEST_REQUIRE(fill_text != NULL);
+    TEST_REQUIRE(strlen(fill_text) == 10);
     /* First 5 chars should be #, last 5 should be -. */
-    for (int i = 0; i < 5; i++) assert(fill_text[i] == '#');
-    for (int i = 5; i < 10; i++) assert(fill_text[i] == '-');
+    for (int i = 0; i < 5; i++) TEST_REQUIRE(fill_text[i] == '#');
+    for (int i = 5; i < 10; i++) TEST_REQUIRE(fill_text[i] == '-');
 
     draw_list_destroy(dl);
     progress_bar_destroy(bar);
@@ -115,9 +115,9 @@ static void test_determinate_partial(void) {
 static void test_determinate_value_clamped(void) {
     ProgressBar *bar = progress_bar_create();
     progress_bar_set_value(bar, 250);
-    assert(progress_bar_value(bar) == 100);
+    TEST_REQUIRE(progress_bar_value(bar) == 100);
     progress_bar_set_value(bar, -10);
-    assert(progress_bar_value(bar) == 0);
+    TEST_REQUIRE(progress_bar_value(bar) == 0);
     progress_bar_destroy(bar);
     printf("  PASS: determinate_value_clamped\n");
 }
@@ -140,7 +140,7 @@ static void test_indeterminate_moves(void) {
         RenderStyle label = make_style(0, 0, false, false);
         progress_bar_render(bar, dl, 0, 0, 0, &frame, &fill, &label);
         const char *text = find_text_at(dl, 0, 1);
-        assert(text != NULL);
+        TEST_REQUIRE(text != NULL);
         if (snapshot == 0) strncpy(first, text, sizeof(first) - 1);
         if (snapshot == 1) strncpy(second, text, sizeof(second) - 1);
         if (snapshot == 2) strncpy(third, text, sizeof(third) - 1);
@@ -148,7 +148,7 @@ static void test_indeterminate_moves(void) {
         progress_bar_tick(bar);
     }
     /* At least two of the three snapshots must differ. */
-    assert(strcmp(first, second) != 0 || strcmp(second, third) != 0);
+    TEST_REQUIRE(strcmp(first, second) != 0 || strcmp(second, third) != 0);
     progress_bar_destroy(bar);
     printf("  PASS: indeterminate_moves\n");
 }
@@ -177,17 +177,17 @@ static void test_indeterminate_block_size(void) {
         RenderStyle label = make_style(0, 0, false, false);
         progress_bar_render(bar, dl, 0, 0, 0, &frame, &fill, &label);
         const char *text = find_text_at(dl, 0, 1);
-        assert(text && strlen(text) == 16);
+        TEST_REQUIRE(text && strlen(text) == 16);
         int block_count = 0;
         for (int i = 0; i < 16; i++) {
             if (text[i] == '=') block_count++;
         }
-        assert(block_count <= 4);
+        TEST_REQUIRE(block_count <= 4);
         if (block_count == 4) saw_full_block = 1;
         draw_list_destroy(dl);
         progress_bar_tick(bar);
     }
-    assert(saw_full_block);
+    TEST_REQUIRE(saw_full_block);
     progress_bar_destroy(bar);
     printf("  PASS: indeterminate_block_size\n");
 }
@@ -204,11 +204,11 @@ static void test_label_determinate(void) {
     RenderStyle label = make_style(0, 0, false, false);
     int used = progress_bar_render(bar, dl, 0, 0, 0, &frame, &fill, &label);
     /* [##--------] 25% -> 1 + 10 + 1 + 4 = 16 */
-    assert(used == 16);
+    TEST_REQUIRE(used == 16);
 
     /* Label " 25%" is appended starting at x=12. */
     const char *label_text = find_text_at(dl, 0, 12);
-    assert(label_text && strcmp(label_text, " 25%") == 0);
+    TEST_REQUIRE(label_text && strcmp(label_text, " 25%") == 0);
 
     draw_list_destroy(dl);
     progress_bar_destroy(bar);
@@ -226,10 +226,10 @@ static void test_label_indeterminate(void) {
     RenderStyle label = make_style(0, 0, false, false);
     int used = progress_bar_render(bar, dl, 0, 0, 0, &frame, &fill, &label);
     /* [        ] Loading... -> 1 + 8 + 1 + 11 = 21 */
-    assert(used == 21);
+    TEST_REQUIRE(used == 21);
 
     const char *label_text = find_text_at(dl, 0, 10);
-    assert(label_text && strcmp(label_text, " Loading...") == 0);
+    TEST_REQUIRE(label_text && strcmp(label_text, " Loading...") == 0);
 
     draw_list_destroy(dl);
     progress_bar_destroy(bar);
@@ -248,10 +248,10 @@ static void test_visible_width_clamps(void) {
     RenderStyle label = make_style(0, 0, false, false);
     /* visible_width too small — should clamp inner width. */
     int used = progress_bar_render(bar, dl, 0, 0, 12, &frame, &fill, &label);
-    assert(used == 12);
+    TEST_REQUIRE(used == 12);
     /* inner width 12 - 2 - 5 = 5 */
     const char *fill_text = find_text_at(dl, 0, 1);
-    assert(fill_text && strlen(fill_text) == 5);
+    TEST_REQUIRE(fill_text && strlen(fill_text) == 5);
 
     draw_list_destroy(dl);
     progress_bar_destroy(bar);
@@ -263,17 +263,17 @@ static void test_visible_width_clamps(void) {
 static void test_null_safety(void) {
     progress_bar_destroy(NULL);
     progress_bar_set_style(NULL, PROGRESS_BAR_INDETERMINATE);
-    assert(progress_bar_style(NULL) == PROGRESS_BAR_DETERMINATE);
+    TEST_REQUIRE(progress_bar_style(NULL) == PROGRESS_BAR_DETERMINATE);
     progress_bar_set_value(NULL, 50);
-    assert(progress_bar_value(NULL) == 0);
+    TEST_REQUIRE(progress_bar_value(NULL) == 0);
     progress_bar_tick(NULL);
     progress_bar_set_width(NULL, 10);
-    assert(progress_bar_width(NULL) == 0);
+    TEST_REQUIRE(progress_bar_width(NULL) == 0);
     progress_bar_set_label(NULL, "x");
-    assert(strcmp(progress_bar_label(NULL), "") == 0);
+    TEST_REQUIRE(strcmp(progress_bar_label(NULL), "") == 0);
     DrawList *dl = draw_list_create();
     RenderStyle s = make_style(0, 0, false, false);
-    assert(progress_bar_render(NULL, dl, 0, 0, 0, &s, &s, &s) == 0);
+    TEST_REQUIRE(progress_bar_render(NULL, dl, 0, 0, 0, &s, &s, &s) == 0);
     draw_list_destroy(dl);
     printf("  PASS: null_safety\n");
 }

@@ -1,4 +1,4 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <string.h>
 
 #include "render/render.h"
@@ -7,28 +7,28 @@
 int main(void) {
     StatusBar *status = statusbar_create();
     DrawList *list = draw_list_create();
-    assert(status != NULL);
-    assert(list != NULL);
+    TEST_REQUIRE(status != NULL);
+    TEST_REQUIRE(list != NULL);
 
     RenderStyle style = {RENDER_COLOR_BLACK, RENDER_COLOR_CYAN, false, false};
     statusbar_set_text(status, "retro-status");
     statusbar_render(status, list, 6, 20, &style);
 
-    assert(draw_list_count(list) == 2);
+    TEST_REQUIRE(draw_list_count(list) == 2);
 
     DrawCommandView cmd = {0};
-    assert(draw_list_get(list, 0, &cmd));
-    assert(cmd.type == DRAW_COMMAND_HLINE);
-    assert(cmd.y == 5);
-    assert(cmd.x == 0);
-    assert(cmd.len == 20);
-    assert(cmd.ch == ' ');
+    TEST_REQUIRE(draw_list_get(list, 0, &cmd));
+    TEST_REQUIRE(cmd.type == DRAW_COMMAND_HLINE);
+    TEST_REQUIRE(cmd.y == 5);
+    TEST_REQUIRE(cmd.x == 0);
+    TEST_REQUIRE(cmd.len == 20);
+    TEST_REQUIRE(cmd.ch == ' ');
 
-    assert(draw_list_get(list, 1, &cmd));
-    assert(cmd.type == DRAW_COMMAND_TEXT);
-    assert(cmd.y == 5);
-    assert(cmd.x == 1);
-    assert(strcmp(cmd.text, "retro-status") == 0);
+    TEST_REQUIRE(draw_list_get(list, 1, &cmd));
+    TEST_REQUIRE(cmd.type == DRAW_COMMAND_TEXT);
+    TEST_REQUIRE(cmd.y == 5);
+    TEST_REQUIRE(cmd.x == 1);
+    TEST_REQUIRE(strcmp(cmd.text, "retro-status") == 0);
 
     draw_list_destroy(list);
     statusbar_destroy(status);

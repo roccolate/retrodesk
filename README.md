@@ -6,66 +6,63 @@ documented contract.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Architecture: C11 / curses](https://img.shields.io/badge/C-C11%20%2F%20curses-blue.svg)]()
-[![Status: foundation hardened / v1.0 in progress](https://img.shields.io/badge/status-foundation%20hardened%20%2F%20v1.0%20in%20progress-orange.svg)]()
+[![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)]()
 
 ---
 
 ## What Is It
 
-RetroDesk is a portable terminal desktop runtime in C11. It hosts multiple
-apps inside a window manager, supports a real keyboard / mouse event flow, and
-renders either through native curses or an ANSI fallback with frame diffing.
-The runtime layers cleanly into `core`, `platform`, `render`, `wm`, `app`,
-`apps`, and `ui`, so each subsystem has a single responsibility.
+RetroDesk is an experimental terminal desktop runtime in C11. It already hosts
+multiple windows, has curses and ANSI render paths, and includes an early Linux
+preview of File Manager and Notepad workflows. It is not a stable release. The
+code is being hardened around explicit `core`, `platform`, `render`, `wm`,
+`app`, `apps`, `ui`, and `storage` layers.
 
-It is the C rewrite of [RetroTUI](https://github.com/roccolate/retrotui):
-same ideas, smaller surface, multi-window from the start, and a real
-portability policy across Linux, macOS, Windows, and DOS (DJGPP).
+It is the C rewrite of [RetroTUI](https://github.com/roccolate/retrotui), used
+as a behavior reference rather than an implementation template.
 
-## Current Status
+## Status
 
-RetroDesk is a foundation-stage runtime, not a complete desktop suite yet.
-The architectural baseline is in place: CMake-first build, explicit runtime
-layers, app descriptors, window manager ownership, dual render backends,
-capability-aware input behavior, themes, and a small widget library.
+The repository is pre-alpha. The window manager, render abstraction, themes,
+and UI widgets are functional foundations. File Manager and Notepad now cover a
+small Linux/POSIX preview path: browsing directories, opening regular text
+files, editing text, and bounded atomic saves. The diagnostics app is currently
+a read-only runtime view: it does not provide a shell or PTY.
 
-The built-in apps are intentionally minimal right now:
+Linux is the active development and validation profile. Native Windows is a
+planned Tier 1 target, but the current storage adapter is POSIX-only; Windows,
+macOS, and DOS paths are not release claims until their native gates are
+exercised and recorded.
 
-- File Manager is a keyboard-navigable stub.
-- Notepad is a single-buffer placeholder editor.
-- Terminal is a diagnostics placeholder, not a PTY / shell wrapper yet.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the v1.0 plan and
+[docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md) for the coding rules.
 
-The next product milestones are documented in
-[`docs/ROADMAP.md`](docs/ROADMAP.md): release hygiene / CI hardening, then
-turning the built-in apps into useful workflows.
+## Preview
+
+![RetroDesk Linux/POSIX preview with File Manager](docs/assets/retrodesk-preview.png)
 
 ## Features
 
-- **Window manager** — focus, z-order, close lifecycle, modals, title-bar drag
-  where supported, and keyboard window movement.
+- **Window manager** — drag, focus, z-order, modal routing, move, and close.
 - **Dual render backend** — native curses or ANSI fallback with frame diffing.
-- **Platform abstraction** — ncurses/PDCurses input plus raw TTY + ANSI input
-  where supported.
-- **Themeable** — XP, Hacker, Amiga, and Win31 themes.
-- **UI widget library** — text input, scrollable list, multi-line text buffer,
-  button, dialog, menu bar, progress bar, tab, theme, and status bar modules.
-- **Built-in app descriptors** — File Manager, Notepad, and Terminal are wired
-  through the formal app runtime.
-- **Keyboard and mouse policy** — keyboard is the baseline; mouse, drag,
-  right-click, and resize behavior are capability-gated per backend/platform.
-- **Contract tests** — unit tests, window-manager replay tests, renderer/input
-  tests, desktop runtime tests, and optional `retrocore-spec` fixture tests.
+- **Themeable** — XP, Hacker, Amiga, Win31 included.
+- **UI widget library** — text input, scrollable list, multi-line buffer,
+  button, dialog, menu bar, status bar.
+- **Built-in app preview** — File Manager, Notepad, and Diagnostics.
+- **Storage preview** — POSIX directory listing, ASCII text read, and atomic
+  save with conflict detection.
+- **Input** — keyboard baseline and capability-gated mouse behavior; terminal
+  support varies by backend and remains under test.
 
 ## Build
 
-### Requirements
+### Verified development requirements
 
-- **CMake** 3.16 or newer.
-- **Compiler** — GCC, Clang, or MSVC-compatible toolchain with C11 support.
-- **Linux / macOS** — `ncurses` (`apt install libncurses-dev` or
-  `brew install ncurses`).
-- **Windows** — PDCurses via `PDCURSES_ROOT` or vcpkg (`pdcurses:x64-windows`).
-- **DOS** — DJGPP profile via `Makefile.djgpp`.
+- **Linux** — `ncurses` (`apt install libncurses-dev`).
+- **Compiler** — GCC or Clang with C11 (`-std=c11`).
+
+Other build profiles are documented in [INSTALL.md](INSTALL.md), but are not
+release-supported yet.
 
 ### Build
 
@@ -79,14 +76,10 @@ cmake --build build
 The repository `Makefile` is a thin CMake wrapper for ergonomics:
 
 ```bash
-make                     # build via CMake
-make dev                 # Debug build, Werror disabled
-make strict              # strict warnings + Werror
-make test                # build and run ctest
-make check-build-sources # verify CMake and DJGPP source lists stay aligned
-make smoke               # interactive PTY smoke test
-make smoke-ci            # non-interactive fallback smoke profile
-make smoke-linux-vc      # TERM=linux keyboard-first smoke test
+make                # build via CMake
+make test           # build and run ctest
+make smoke          # interactive PTY smoke test
+make smoke-linux-vc # TERM=linux keyboard-first smoke test
 ```
 
 ## Usage
@@ -101,9 +94,9 @@ make smoke-linux-vc      # TERM=linux keyboard-first smoke test
 ./build/retrodesk --theme=win31
 
 # Choose backend
-./build/retrodesk --render-backend=curses   # native curses
+./build/retrodesk --render-backend=curses   # native curses (default on ttys)
 ./build/retrodesk --render-backend=ansi     # ANSI fallback
-./build/retrodesk --input-backend=curses    # ncurses/PDCurses input
+./build/retrodesk --input-backend=curses    # ncurses input (default)
 ./build/retrodesk --input-backend=tty       # raw TTY + ANSI sequences
 
 # Diagnostics
@@ -115,54 +108,50 @@ make smoke-linux-vc      # TERM=linux keyboard-first smoke test
 
 | Key | Action |
 |---|---|
-| `q` | Quit |
-| `m` | Toggle launcher |
-| `1` / `2` / `3` | Launch File Manager / Notepad / Terminal |
-| `Tab` | Cycle focus |
-| `HJKL` | Move active window |
-| `w` | Close active window |
+| `F1` | Help |
+| `F2` | Launcher |
+| `F6` | Next window |
+| `F7` | Move/resize mode |
+| `Ctrl+W` | Close active window |
+| `Ctrl+Q` | Quit |
 | `Esc` | Close focused app |
 
 ## Project Structure
 
-```text
+```
 src/
-├── main.c                       # Entry point
+├── main.c                 # Entry point
 ├── core/
-│   ├── cli.c/.h                 # Command-line parsing
-│   ├── desktop.c/.h             # Desktop lifecycle, launcher, frame loop
-│   ├── event.h                  # RetroEvent / RetroKeyEvent / RetroMouseEvent
-│   └── key_chord.c/.h           # Backend-neutral key vocabulary helpers
+│   ├── cli.c              # Command-line parsing
+│   ├── desktop.c          # Desktop runtime, launcher, frame loop
+│   └── event.h            # RetroEvent / RetroKeyEvent / RetroMouseEvent
 ├── platform/
-│   ├── platform.c/.h            # Platform abstraction facade
-│   ├── platform_backend_internal.h
-│   ├── platform_curses.c        # ncurses/PDCurses backend
-│   ├── platform_tty_raw.c       # Raw TTY + ANSI input
-│   └── tty_decoder.c/.h         # TTY escape sequence parser
+│   ├── platform.c         # Platform abstraction
+│   ├── platform_curses.c  # ncurses backend
+│   ├── platform_tty_raw.c # Raw TTY + ANSI input
+│   └── tty_decoder.c      # TTY escape sequence parser
 ├── render/
-│   ├── render.c/.h              # DrawList + curses/ANSI dispatcher
-│   └── ansi_renderer.c/.h       # ANSI renderer with frame diff
+│   ├── render.c           # curses + ANSI dispatcher
+│   └── ansi_renderer.c    # ANSI renderer with frame diff
 ├── wm/
-│   └── window_manager.c/.h      # Window manager
+│   └── window_manager.c   # Window manager
 ├── app/
-│   └── app_runtime.c/.h         # App lifecycle + registry
+│   └── app_runtime.c      # App lifecycle + registry
 ├── ui/
-│   ├── text_input.c/.h          # Single-line text input
-│   ├── text_buffer.c/.h         # Multi-line text buffer
-│   ├── scroll_list.c/.h         # Scrollable list widget
-│   ├── button.c/.h              # Button widget
-│   ├── dialog.c/.h              # Dialog system
-│   ├── menu_bar.c/.h            # Menu bar widget
-│   ├── progress_bar.c/.h        # Progress bar widget
-│   ├── tab.c/.h                 # Tab widget
-│   ├── theme.c/.h               # Theme system
-│   └── statusbar.c/.h           # Status bar
+│   ├── text_input.c       # Single-line text input
+│   ├── text_buffer.c      # Multi-line text buffer
+│   ├── scroll_list.c      # Scrollable list widget
+│   ├── button.c           # Button widget
+│   ├── dialog.c           # Dialog system
+│   ├── theme.c            # Theme system
+│   └── statusbar.c        # Status bar
+├── storage/
+│   ├── retro_fs.h         # Storage contract for file apps
+│   └── retro_fs_posix.c   # POSIX adapter used by Linux preview builds
 └── apps/
-    ├── apps.c/.h                # Built-in app registration
-    ├── apps_internal.h
-    ├── filemanager_app.c        # File Manager placeholder app
-    ├── notepad_app.c            # Notepad placeholder app
-    └── terminal_app.c           # Terminal diagnostics placeholder app
+    ├── filemanager_app.c  # File manager
+    ├── notepad_app.c      # Notepad
+    └── terminal_app.c     # Diagnostics app (not a shell)
 ```
 
 ## Development
@@ -172,15 +161,12 @@ src/
 1. Create `src/ui/mywidget.{h,c}`.
 2. Follow the patterns in `text_input.c` — lifecycle (`create` / `destroy`),
    state, events, render to `DrawList`.
-3. Add the source to `CMakeLists.txt` (`RETRODESK_SOURCES`) and keep the
-   DJGPP source list aligned when the module is DOS-compatible.
+3. Add the source to `CMakeLists.txt` (`RETRODESK_SOURCES`).
 4. Write unit tests in `tests/mywidget_test.c` and register them under
    `BUILD_TESTING`.
 5. Build with `-Werror` clean and pass `make test`.
-6. Update the relevant docs when the public contract, source structure, build
-   surface, hotkeys, tests, or platform behavior changes.
 
-### Coding Standards
+### Coding standards
 
 See [docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md). Highlights:
 
@@ -196,19 +182,21 @@ See [docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md). Highlights:
 
 ```bash
 make test
-make smoke-ci
 ```
 
-Interactive terminal validation:
+Tests run without a terminal (no `initscr`).
 
-```bash
-make smoke
-make smoke-linux-vc
-```
+## Current limitations
 
-Tests run without requiring `initscr`; interactive smoke targets require a PTY.
-When a sibling/shared `retrocore-spec` checkout is available, CMake also enables
-the optional shared fixture test.
+- File Manager and Notepad cover a Linux/POSIX preview path only.
+- File Manager has basic directory navigation and text-file open; destructive
+  filesystem operations and full scrollable-list polish are absent.
+- Notepad supports edit/open/save/Save As basics; discard dialogs and broader
+  document UX are still incomplete.
+- Destructive filesystem operations (delete, rename, copy, move) are outside v1.
+- Diagnostics is not a shell.
+- Minimize, maximize, Settings, plugins, and session persistence are absent.
+- The visible text contract is byte/ASCII oriented; Unicode is not supported.
 
 ## Troubleshooting
 
@@ -216,7 +204,7 @@ the optional shared fixture test.
 
 ```bash
 sudo apt install libncurses-dev   # Debian / Ubuntu
-brew install ncurses              # macOS
+brew install ncurses             # macOS
 make clean && make
 ```
 
@@ -237,20 +225,15 @@ TERM=xterm ./build/retrodesk
 ## Documentation
 
 - [docs/INDEX.md](docs/INDEX.md) — recommended reading order.
-- [docs/FOUNDATION_PRINCIPLES.md](docs/FOUNDATION_PRINCIPLES.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/PORTABILITY.md](docs/PORTABILITY.md)
+- [docs/FOUNDATION_PRINCIPLES.md](docs/FOUNDATION_PRINCIPLES.md)
 - [docs/BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md)
 - [docs/APP_RUNTIME.md](docs/APP_RUNTIME.md)
-- [docs/RETROCORE_SPEC.md](docs/RETROCORE_SPEC.md)
-- [docs/RETROTUI_GAP.md](docs/RETROTUI_GAP.md)
+- [docs/STORAGE.md](docs/STORAGE.md)
 - [docs/TESTING.md](docs/TESTING.md)
+- [docs/PORTABILITY.md](docs/PORTABILITY.md)
 - [docs/ROADMAP.md](docs/ROADMAP.md)
-- [docs/RELEASE_0.1_CHECKLIST.md](docs/RELEASE_0.1_CHECKLIST.md)
 - [docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md)
-- [docs/TECH_DEBT_POLICY.md](docs/TECH_DEBT_POLICY.md)
-- [docs/CORE_HARDENING_PLAN.md](docs/CORE_HARDENING_PLAN.md)
-- [docs/AGENTS.md](docs/AGENTS.md)
 
 ## License
 

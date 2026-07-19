@@ -15,6 +15,8 @@
 - `app` modules are hosted units; they never poll input directly.
 - `wm`, `app`, and `ui` produce draw lists; only `render` executes backend draw calls.
 - Visual styles must come from theme tokens, not ad-hoc hardcoded palettes in runtime loops.
+- File-app workflows must use `storage` contracts; OS-native filesystem details
+  belong in storage adapters or explicit capability gates.
 
 ## Lifecycle Rules
 
@@ -27,6 +29,8 @@
 - Platform differences are represented as capabilities, not scattered `#ifdef` in business logic.
 - Linux virtual console (`TERM=linux`) defaults to keyboard-first behavior.
 - Features unsupported by current capability profile must degrade explicitly.
+- Storage-backed apps must not be claimed on a platform without a supported
+  adapter or deterministic launch/build gating.
 
 ## Debt Rejection Rules
 

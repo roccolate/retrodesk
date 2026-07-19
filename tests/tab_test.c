@@ -1,7 +1,8 @@
-#include <assert.h>
+#include "test_harness.h"
 #include <stdio.h>
 #include <string.h>
 
+#include "core/key_chord.h"
 #include "ui/tab.h"
 
 static RenderStyle make_style(int fg, int bg, bool reverse, bool bold) {
@@ -39,9 +40,9 @@ static void reset_callback_state(void) {
 
 static void test_create_destroy(void) {
     Tab *tab = tab_create();
-    assert(tab != NULL);
-    assert(tab_count(tab) == 0);
-    assert(tab_active(tab) == (size_t)-1);
+    TEST_REQUIRE(tab != NULL);
+    TEST_REQUIRE(tab_count(tab) == 0);
+    TEST_REQUIRE(tab_active(tab) == (size_t)-1);
     tab_destroy(tab);
     tab_destroy(NULL);
     printf("  PASS: create_destroy\n");
@@ -54,17 +55,17 @@ static void test_add_tabs(void) {
     size_t i0 = tab_add(tab, "Info");
     size_t i1 = tab_add(tab, "Logs");
     size_t i2 = tab_add(tab, "Stats");
-    assert(i0 == 0);
-    assert(i1 == 1);
-    assert(i2 == 2);
-    assert(tab_count(tab) == 3);
-    assert(strcmp(tab_label(tab, 0), "Info") == 0);
-    assert(strcmp(tab_label(tab, 1), "Logs") == 0);
-    assert(strcmp(tab_label(tab, 2), "Stats") == 0);
+    TEST_REQUIRE(i0 == 0);
+    TEST_REQUIRE(i1 == 1);
+    TEST_REQUIRE(i2 == 2);
+    TEST_REQUIRE(tab_count(tab) == 3);
+    TEST_REQUIRE(strcmp(tab_label(tab, 0), "Info") == 0);
+    TEST_REQUIRE(strcmp(tab_label(tab, 1), "Logs") == 0);
+    TEST_REQUIRE(strcmp(tab_label(tab, 2), "Stats") == 0);
     /* Out of bounds. */
-    assert(strcmp(tab_label(tab, 99), "") == 0);
+    TEST_REQUIRE(strcmp(tab_label(tab, 99), "") == 0);
     /* NULL label rejected. */
-    assert(tab_add(tab, NULL) == (size_t)-1);
+    TEST_REQUIRE(tab_add(tab, NULL) == (size_t)-1);
     tab_destroy(tab);
     printf("  PASS: add_tabs\n");
 }
@@ -79,24 +80,24 @@ static void test_active_and_callback(void) {
     tab_add(tab, "B");
 
     /* Default active is 0. */
-    assert(tab_active(tab) == 0);
+    TEST_REQUIRE(tab_active(tab) == 0);
 
     reset_callback_state();
     tab_set_active(tab, 1);
-    assert(tab_active(tab) == 1);
-    assert(g_change_count == 1);
-    assert(g_old_index == 0);
-    assert(g_new_index == 1);
-    assert(g_user_data == &sentinel);
+    TEST_REQUIRE(tab_active(tab) == 1);
+    TEST_REQUIRE(g_change_count == 1);
+    TEST_REQUIRE(g_old_index == 0);
+    TEST_REQUIRE(g_new_index == 1);
+    TEST_REQUIRE(g_user_data == &sentinel);
 
     /* Setting the same active index does not fire. */
     reset_callback_state();
     tab_set_active(tab, 1);
-    assert(g_change_count == 0);
+    TEST_REQUIRE(g_change_count == 0);
 
     /* Out-of-range clamps to last. */
     tab_set_active(tab, 99);
-    assert(tab_active(tab) == 1);
+    TEST_REQUIRE(tab_active(tab) == 1);
 
     tab_destroy(tab);
     printf("  PASS: active_and_callback\n");
@@ -111,15 +112,13 @@ static void test_key_right_cycles(void) {
     tab_add(tab, "C");
     tab_set_change_callback(tab, on_change, NULL);
 
-#ifdef KEY_RIGHT
-    RetroKeyEvent r = {.key_code = KEY_RIGHT, .is_printable = false, .ascii = 0};
+    RetroKeyEvent r = {.key_code = RETRO_KEY_RIGHT, .is_printable = false, .ascii = 0};
     tab_handle_key(tab, &r);
-    assert(tab_active(tab) == 1);
+    TEST_REQUIRE(tab_active(tab) == 1);
     tab_handle_key(tab, &r);
-    assert(tab_active(tab) == 2);
+    TEST_REQUIRE(tab_active(tab) == 2);
     tab_handle_key(tab, &r); /* wraps */
-    assert(tab_active(tab) == 0);
-#endif
+    TEST_REQUIRE(tab_active(tab) == 0);
     tab_destroy(tab);
     printf("  PASS: key_right_cycles\n");
 }
@@ -131,13 +130,11 @@ static void test_key_left_wraps(void) {
     tab_add(tab, "C");
     tab_set_change_callback(tab, on_change, NULL);
 
-#ifdef KEY_LEFT
-    RetroKeyEvent l = {.key_code = KEY_LEFT, .is_printable = false, .ascii = 0};
+    RetroKeyEvent l = {.key_code = RETRO_KEY_LEFT, .is_printable = false, .ascii = 0};
     tab_handle_key(tab, &l); /* 0 -> 2 (wrap) */
-    assert(tab_active(tab) == 2);
+    TEST_REQUIRE(tab_active(tab) == 2);
     tab_handle_key(tab, &l); /* 2 -> 1 */
-    assert(tab_active(tab) == 1);
-#endif
+    TEST_REQUIRE(tab_active(tab) == 1);
     tab_destroy(tab);
     printf("  PASS: key_left_wraps\n");
 }
@@ -149,16 +146,12 @@ static void test_key_home_end(void) {
     tab_add(tab, "C");
     tab_set_active(tab, 1);
 
-#ifdef KEY_END
-    RetroKeyEvent e = {.key_code = KEY_END, .is_printable = false, .ascii = 0};
+    RetroKeyEvent e = {.key_code = RETRO_KEY_END, .is_printable = false, .ascii = 0};
     tab_handle_key(tab, &e);
-    assert(tab_active(tab) == 2);
-#endif
-#ifdef KEY_HOME
-    RetroKeyEvent h = {.key_code = KEY_HOME, .is_printable = false, .ascii = 0};
+    TEST_REQUIRE(tab_active(tab) == 2);
+    RetroKeyEvent h = {.key_code = RETRO_KEY_HOME, .is_printable = false, .ascii = 0};
     tab_handle_key(tab, &h);
-    assert(tab_active(tab) == 0);
-#endif
+    TEST_REQUIRE(tab_active(tab) == 0);
     tab_destroy(tab);
     printf("  PASS: key_home_end\n");
 }
@@ -172,15 +165,15 @@ static void test_key_number_jumps(void) {
 
     RetroKeyEvent two = {.key_code = '2', .is_printable = true, .ascii = '2'};
     bool consumed = tab_handle_key(tab, &two);
-    assert(consumed);
-    assert(tab_active(tab) == 1);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(tab_active(tab) == 1);
 
     /* Out-of-range number key does not consume. */
     reset_callback_state();
     RetroKeyEvent nine = {.key_code = '9', .is_printable = true, .ascii = '9'};
     consumed = tab_handle_key(tab, &nine);
-    assert(!consumed);
-    assert(g_change_count == 0);
+    TEST_REQUIRE(!consumed);
+    TEST_REQUIRE(g_change_count == 0);
 
     tab_destroy(tab);
     printf("  PASS: key_number_jumps\n");
@@ -202,8 +195,8 @@ static void test_mouse_click_selects(void) {
         .button1_clicked = true,
     };
     bool consumed = tab_handle_mouse(tab, &click, 0, 0, 12);
-    assert(consumed);
-    assert(tab_active(tab) == 1);
+    TEST_REQUIRE(consumed);
+    TEST_REQUIRE(tab_active(tab) == 1);
 
     /* Click on a row other than the tab row is ignored. */
     RetroMouseEvent miss = {
@@ -211,7 +204,7 @@ static void test_mouse_click_selects(void) {
         .button1_clicked = true,
     };
     consumed = tab_handle_mouse(tab, &miss, 0, 0, 12);
-    assert(!consumed);
+    TEST_REQUIRE(!consumed);
 
     tab_destroy(tab);
     printf("  PASS: mouse_click_selects\n");
@@ -226,7 +219,7 @@ static void test_mouse_no_click_ignored(void) {
         .button1_clicked = false,
     };
     bool consumed = tab_handle_mouse(tab, &move, 0, 0, 80);
-    assert(!consumed);
+    TEST_REQUIRE(!consumed);
     tab_destroy(tab);
     printf("  PASS: mouse_no_click_ignored\n");
 }
@@ -244,7 +237,7 @@ static void test_render_outputs_segments(void) {
     int used = tab_render(tab, dl, 0, 0, 80, &normal, &active);
     /* "[ Info] [Logs]" = 7 + 1 + 7 = 15. The format is "[ label]" with a
        leading space inside the brackets (same for active and inactive). */
-    assert(used == 15);
+    TEST_REQUIRE(used == 15);
 
     bool saw_info = false, saw_logs = false;
     for (size_t i = 0; i < draw_list_count(dl); i++) {
@@ -255,12 +248,12 @@ static void test_render_outputs_segments(void) {
             if (strstr(cmd.text, "Logs")) saw_logs = true;
             /* Active tab uses active_style (reverse + bold). */
             if (cmd.x == 0) {
-                assert(cmd.style.reverse == true);
+                TEST_REQUIRE(cmd.style.reverse == true);
             }
         }
     }
-    assert(saw_info);
-    assert(saw_logs);
+    TEST_REQUIRE(saw_info);
+    TEST_REQUIRE(saw_logs);
 
     draw_list_destroy(dl);
     tab_destroy(tab);
@@ -275,10 +268,46 @@ static void test_render_truncates_to_max_width(void) {
     RenderStyle normal = make_style(0, 0, false, false);
     RenderStyle active = make_style(0, 0, false, false);
     int used = tab_render(tab, dl, 0, 0, 8, &normal, &active);
-    assert(used == 8);
+    TEST_REQUIRE(used == 8);
     draw_list_destroy(dl);
     tab_destroy(tab);
     printf("  PASS: render_truncates_to_max_width\n");
+}
+
+static void test_render_boundary_widths(void) {
+    const int widths[] = {127, 128, 129};
+    char label[130];
+    memset(label, 'A', sizeof(label));
+
+    for (size_t i = 0; i < sizeof(widths) / sizeof(widths[0]); ++i) {
+        int width = widths[i];
+        label[width] = '\0';
+
+        Tab *tab = tab_create();
+        DrawList *dl = draw_list_create();
+        RenderStyle style = make_style(0, 0, false, false);
+        TEST_REQUIRE(tab != NULL);
+        TEST_REQUIRE(dl != NULL);
+        TEST_REQUIRE(tab_add(tab, label) == 0);
+        TEST_REQUIRE(tab_render(tab, dl, 0, 0, width, &style, &style) == width);
+
+        size_t rendered = 0;
+        for (size_t command_index = 0;
+             command_index < draw_list_count(dl);
+             ++command_index) {
+            DrawCommandView command = {0};
+            TEST_REQUIRE(draw_list_get(dl, command_index, &command));
+            TEST_REQUIRE(command.type == DRAW_COMMAND_TEXT);
+            TEST_REQUIRE(command.text != NULL);
+            rendered += strlen(command.text);
+        }
+        TEST_REQUIRE(rendered == (size_t)width);
+
+        draw_list_destroy(dl);
+        tab_destroy(tab);
+        memset(label, 'A', sizeof(label));
+    }
+    printf("  PASS: render_boundary_widths\n");
 }
 
 /* --- sizing --------------------------------------------------------- */
@@ -289,8 +318,8 @@ static void test_sizing(void) {
     tab_add(tab, "BB");
     tab_add(tab, "CCC");
     /* "[ A] [ BB] [ CCC]" = 4 + 5 + 6 + 2 gaps = 17 */
-    assert(tab_width(tab) == 17);
-    assert(tab_height() == 1);
+    TEST_REQUIRE(tab_width(tab) == 17);
+    TEST_REQUIRE(tab_height() == 1);
     tab_destroy(tab);
     printf("  PASS: sizing\n");
 }
@@ -299,19 +328,19 @@ static void test_sizing(void) {
 
 static void test_null_safety(void) {
     tab_destroy(NULL);
-    assert(tab_count(NULL) == 0);
-    assert(strcmp(tab_label(NULL, 0), "") == 0);
-    assert(tab_active(NULL) == (size_t)-1);
+    TEST_REQUIRE(tab_count(NULL) == 0);
+    TEST_REQUIRE(strcmp(tab_label(NULL, 0), "") == 0);
+    TEST_REQUIRE(tab_active(NULL) == (size_t)-1);
     tab_set_active(NULL, 0);
     tab_set_change_callback(NULL, NULL, NULL);
     RetroKeyEvent k = {.key_code = '1', .is_printable = true, .ascii = '1'};
-    assert(!tab_handle_key(NULL, &k));
+    TEST_REQUIRE(!tab_handle_key(NULL, &k));
     RetroMouseEvent m = {.button1_clicked = true};
-    assert(!tab_handle_mouse(NULL, &m, 0, 0, 80));
+    TEST_REQUIRE(!tab_handle_mouse(NULL, &m, 0, 0, 80));
     DrawList *dl = draw_list_create();
     RenderStyle s = make_style(0, 0, false, false);
-    assert(tab_render(NULL, dl, 0, 0, 80, &s, &s) == 0);
-    assert(tab_width(NULL) == 0);
+    TEST_REQUIRE(tab_render(NULL, dl, 0, 0, 80, &s, &s) == 0);
+    TEST_REQUIRE(tab_width(NULL) == 0);
     draw_list_destroy(dl);
     printf("  PASS: null_safety\n");
 }
@@ -329,6 +358,7 @@ int main(void) {
     test_mouse_no_click_ignored();
     test_render_outputs_segments();
     test_render_truncates_to_max_width();
+    test_render_boundary_widths();
     test_sizing();
     test_null_safety();
     printf("All tab tests passed.\n");

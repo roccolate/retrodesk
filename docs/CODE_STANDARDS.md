@@ -2,6 +2,13 @@
 
 ## Code Standards
 
+Status legend for roadmap checklists:
+
+- `[DONE]`: implemented and covered by the current contract.
+- `[PARTIAL]`: useful code exists, but release-quality UX, portability, or test
+  coverage is incomplete.
+- `[TODO]`: not implemented or not part of the current product surface.
+
 Every automated session MUST follow these rules:
 
 ### Style
@@ -45,7 +52,7 @@ Foundation widgets that all apps will use.
 - [DONE] 1.02 Scrollable list widget (selection, scroll, item count display)
 - [DONE] 1.03 Multi-line text buffer (line array, insert/delete, cursor row+col)
 - [DONE] 1.04 Button widget ([OK] [Cancel], clickeable, keyboard focusable)
-- [DONE] 1.05 Dialog system (message box, confirm, input prompt, file open/save)
+- [DONE] 1.05 Dialog system (message box, confirm, input prompt)
 - [DONE] 1.06 Menu bar widget (File|Edit|View|Help with dropdown items)
 - [DONE] 1.07 Progress bar widget (percentage, determinate/indeterminate)
 - [DONE] 1.08 Tab widget (switchable views within a window)
@@ -66,12 +73,12 @@ Make the WM feel like a real desktop.
 
 Apps that actually work. Each app uses Phase 1 widgets.
 
-- [TODO] 3.01 File Manager: real directory listing with scrollable list
-- [TODO] 3.02 File Manager: navigate dirs (Enter to open, .. to go up)
+- [PARTIAL] 3.01 File Manager: real directory listing (POSIX preview; scroll-list integration still pending)
+- [DONE] 3.02 File Manager: navigate dirs (Enter to open, Backspace/.. to go up)
 - [TODO] 3.03 File Manager: file operations (create, delete, rename) with dialogs
-- [TODO] 3.04 File Manager: open files in notepad
-- [TODO] 3.05 Notepad: multi-line editing with text buffer widget
-- [TODO] 3.06 Notepad: file open/save (Ctrl+O, Ctrl+S) with dialog
+- [PARTIAL] 3.04 File Manager: open regular files in Notepad through app runtime
+- [DONE] 3.05 Notepad: multi-line editing with text buffer widget
+- [PARTIAL] 3.06 Notepad: file open/save (resource-path open, Ctrl+S, F3 Save As; Ctrl+O/dialog pending)
 - [TODO] 3.07 Notepad: word wrap, line numbers, status line (row:col)
 - [TODO] 3.08 Terminal: PTY fork/exec shell (/bin/sh)
 - [TODO] 3.09 Terminal: ANSI color output rendering in window
@@ -96,9 +103,9 @@ Ship it.
 
 - [TODO] 5.01 Config file (~/.retrodeskrc) for persistent preferences
 - [TODO] 5.02 Window open/close animations (cascade reveal)
-- [TODO] 5.03 --version flag + version string in About
+- [PARTIAL] 5.03 --version flag exists; version string in About pending
 - [TODO] 5.04 README with GIF screenshots of the desktop in action
-- [TODO] 5.05 CI: GitHub Actions build+test matrix (Linux, macOS)
+- [PARTIAL] 5.05 CI: GitHub Actions build+test matrix for Linux/Windows; green release evidence pending
 - [TODO] 5.06 make install + packaging notes
 - [TODO] 5.07 Man page (retrodesk.1)
 - [TODO] 5.08 Final audit pass + v1.0 tag
@@ -115,11 +122,11 @@ Ship it.
 
 ## Progress
 
-| Phase | Total | Done | Remaining |
-|-------|-------|------|-----------|
-| 1 — UI Toolkit | 8 | 8 | 0 |
-| 2 — Core Runtime | 7 | 0 | 7 |
-| 3 — Apps | 12 | 0 | 12 |
-| 4 — Desktop Chrome | 6 | 0 | 6 |
-| 5 — Polish & Release | 8 | 0 | 8 |
-| **Total** | **41** | **8** | **33** |
+| Phase | Total | Done | Partial | Remaining |
+|-------|-------|------|---------|-----------|
+| 1 — UI Toolkit | 8 | 8 | 0 | 0 |
+| 2 — Core Runtime | 7 | 0 | 0 | 7 |
+| 3 — Apps | 12 | 2 | 3 | 7 |
+| 4 — Desktop Chrome | 6 | 0 | 0 | 6 |
+| 5 — Polish & Release | 8 | 0 | 2 | 6 |
+| **Total** | **41** | **10** | **5** | **26** |

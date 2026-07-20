@@ -270,6 +270,26 @@ static void remove_fixture_file(const char *directory, const char *name) {
     TEST_REQUIRE(unlink(path) == 0);
 }
 
+static void fixture_path(char *out, size_t out_size, const char *directory,
+                         const char *name) {
+    int written = snprintf(out, out_size, "%s/%s", directory, name);
+    TEST_REQUIRE(written > 0 && (size_t)written < out_size);
+}
+
+static void send_text(RetroAppInstance *instance, const char *text) {
+    TEST_REQUIRE(instance != NULL);
+    TEST_REQUIRE(text != NULL);
+    for (const char *cursor = text; *cursor; ++cursor) {
+        RetroEvent event = key_event((unsigned char)*cursor, *cursor);
+        app_handle_event(instance, &event);
+    }
+}
+
+static void submit_prompt(RetroAppInstance *instance) {
+    RetroEvent enter = key_event(RETRO_KEY_CR, '\0');
+    app_handle_event(instance, &enter);
+}
+
 static void populate_filemanager_fixture(const char *root, char *folder,
                                          size_t folder_size) {
     int folder_written = snprintf(folder, folder_size, "%s/folder", root);
@@ -343,6 +363,66 @@ static void test_filemanager_navigation_port(void) {
     TEST_REQUIRE(filemanager_item_count_for_test(&instance) == 20);
     TEST_REQUIRE(strcmp(filemanager_selected_name_for_test(&instance), "file17.txt") == 0);
 
+    RetroEvent new_file = key_event(RETRO_KEY_F8, '\0');
+    app_handle_event(&instance, &new_file);
+    send_text(&instance, "created.txt");
+    submit_prompt(&instance);
+    TEST_REQUIRE(filemanager_item_count_for_test(&instance) == 21);
+    TEST_REQUIRE(filemanager_has_item_for_test(&instance, "created.txt"));
+    TEST_REQUIRE(strcmp(filemanager_selected_name_for_test(&instance), "created.txt") == 0);
+
+    char created_path[512];
+    fixture_path(created_path, sizeof(created_path), root, "created.txt");
+    struct stat created_stat;
+    TEST_REQUIRE(lstat(created_path, &created_stat) == 0);
+    TEST_REQUIRE(S_ISREG(created_stat.st_mode));
+    TEST_REQUIRE(created_stat.st_size == 0);
+
+    RetroEvent new_directory = key_event(RETRO_KEY_F7, '\0');
+    app_handle_event(&instance, &new_directory);
+    send_text(&instance, "new-folder");
+    submit_prompt(&instance);
+    TEST_REQUIRE(filemanager_item_count_for_test(&instance) == 22);
+    TEST_REQUIRE(filemanager_has_item_for_test(&instance, "new-folder"));
+    TEST_REQUIRE(strcmp(filemanager_selected_name_for_test(&instance), "new-folder") == 0);
+
+    char new_folder_path[512];
+    fixture_path(new_folder_path, sizeof(new_folder_path), root, "new-folder");
+    struct stat folder_stat;
+    TEST_REQUIRE(lstat(new_folder_path, &folder_stat) == 0);
+    TEST_REQUIRE(S_ISDIR(folder_stat.st_mode));
+
+    RetroEvent rename = key_event(RETRO_KEY_F2, '\0');
+    app_handle_event(&instance, &rename);
+    RetroEvent clear_name = key_event(RETRO_KEY_CTRL_U, '\0');
+    app_handle_event(&instance, &clear_name);
+    send_text(&instance, "renamed-folder");
+    submit_prompt(&instance);
+    TEST_REQUIRE(filemanager_item_count_for_test(&instance) == 22);
+    TEST_REQUIRE(!filemanager_has_item_for_test(&instance, "new-folder"));
+    TEST_REQUIRE(filemanager_has_item_for_test(&instance, "renamed-folder"));
+    TEST_REQUIRE(strcmp(filemanager_selected_name_for_test(&instance),
+                        "renamed-folder") == 0);
+
+    char renamed_folder_path[512];
+    fixture_path(renamed_folder_path, sizeof(renamed_folder_path), root,
+                 "renamed-folder");
+    TEST_REQUIRE(lstat(new_folder_path, &folder_stat) < 0);
+    TEST_REQUIRE(lstat(renamed_folder_path, &folder_stat) == 0);
+    TEST_REQUIRE(S_ISDIR(folder_stat.st_mode));
+
+    /* Existing destinations must not be overwritten; Esc cancels the prompt. */
+    app_handle_event(&instance, &new_file);
+    send_text(&instance, "created.txt");
+    submit_prompt(&instance);
+    TEST_REQUIRE(filemanager_item_count_for_test(&instance) == 22);
+    TEST_REQUIRE(strcmp(filemanager_selected_name_for_test(&instance),
+                        "renamed-folder") == 0);
+    RetroEvent cancel = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &cancel);
+
+    TEST_REQUIRE(unlink(created_path) == 0);
+    TEST_REQUIRE(rmdir(renamed_folder_path) == 0);
     desc->destroy(&instance);
     TEST_REQUIRE(instance.state == NULL);
     cleanup_filemanager_fixture(root, folder);

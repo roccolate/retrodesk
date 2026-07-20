@@ -1,0 +1,30 @@
+name: Diagnose File Manager
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR head quietly
+        run: |
+          git clone -q --depth 1 --branch "${{ github.head_ref }}" \
+            https://github.com/${{ github.repository }}.git .
+
+      - name: Install analyzer quietly
+        run: |
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq cmake gcc libncurses-dev clang-tidy-18 python3 >/dev/null
+
+      - name: Configure quietly
+        run: |
+          cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug >/dev/null
+
+      - name: Analyze File Manager
+        run: |
+          clang-tidy-18 src/apps/filemanager_app.c \
+            -p build/debug \
+            --checks='-*,clang-analyzer-core.*,clang-analyzer-security.*,-clang-analyzer-core.NullDereference,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling' \
+            --warnings-as-errors='*'

@@ -315,7 +315,11 @@ RetroFsError retro_fs_create_file(const RetroFsPath *path) {
     if (!path || !path->value || !path->value[0]) return RETRO_FS_INVALID_ARGUMENT;
     int fd = open(path->value, O_WRONLY | O_CREAT | O_EXCL, 0666);
     if (fd < 0) return map_errno(errno);
-    if (close(fd) < 0) return map_errno(errno);
+    if (close(fd) < 0) {
+        int e = errno;
+        unlink(path->value);
+        return map_errno(e);
+    }
     return RETRO_FS_OK;
 }
 

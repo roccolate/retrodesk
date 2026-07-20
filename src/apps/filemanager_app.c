@@ -1,5 +1,6 @@
 #include "app/app_runtime.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,13 +9,22 @@
 #include "core/desktop.h"
 #include "core/key_chord.h"
 #include "storage/retro_fs.h"
+#include "ui/text_input.h"
 
 enum {
     FM_MAX_ENTRIES = 10000,
     FM_VISIBLE_ROWS = 12,
     FM_PAGE_STEP = 10,
     FM_SELECTED_NAME_MAX = 256,
+    FM_INPUT_MAX = 255,
 };
+
+typedef enum FileManagerPromptMode {
+    FM_PROMPT_NONE = 0,
+    FM_PROMPT_RENAME,
+    FM_PROMPT_NEW_DIRECTORY,
+    FM_PROMPT_NEW_FILE,
+} FileManagerPromptMode;
 
 typedef struct FileManagerItem {
     char *name;
@@ -30,6 +40,8 @@ typedef struct FileManagerState {
     size_t scroll_offset;
     bool show_hidden;
     RetroFsError collect_error;
+    TextInput *name_input;
+    FileManagerPromptMode prompt_mode;
     char error[160];
 } FileManagerState;
 
@@ -97,6 +109,12 @@ static void fm_set_error(FileManagerState *state, RetroFsError error) {
              retro_fs_error_string(error));
 }
 
+static void fm_set_name_error(FileManagerState *state) {
+    if (!state) return;
+    snprintf(state->error, sizeof(state->error),
+             "Invalid name: enter one filename without / or \\ characters");
+}
+
 static bool fm_copy_selected_name(const FileManagerState *state, char *out,
                                   size_t out_size) {
     if (!state || !out || out_size == 0 || state->count == 0 ||
@@ -113,6 +131,13 @@ static size_t fm_find_name(const FileManagerState *state, const char *name) {
         if (strcmp(state->items[i].name, name) == 0) return i;
     }
     return state->count;
+}
+
+static void fm_select_name(FileManagerState *state, const char *name) {
+    if (!state || !name) return;
+    size_t selected = fm_find_name(state, name);
+    if (selected < state->count) state->selected = selected;
+    fm_clamp_view(state);
 }
 
 static bool fm_reload(FileManagerState *state, bool preserve_selection) {
@@ -202,10 +227,126 @@ static bool fm_open_selected(RetroAppInstance *instance) {
     return false;
 }
 
+static void fm_cancel_prompt(FileManagerState *state) {
+    if (!state) return;
+    state->prompt_mode = FM_PROMPT_NONE;
+    text_input_clear(state->name_input);
+}
+
+static bool fm_normalize_name(const char *input, char *out, size_t out_size) {
+    if (!input || !out || out_size == 0) return false;
+
+    const char *start = input;
+    while (*start && isspace((unsigned char)*start)) start++;
+    const char *end = start + strlen(start);
+    while (end > start && isspace((unsigned char)end[-1])) end--;
+
+    size_t length = (size_t)(end - start);
+    if (length == 0 || length >= out_size) return false;
+    if ((length == 1 && start[0] == '.') ||
+        (length == 2 && start[0] == '.' && start[1] == '.')) {
+        return false;
+    }
+    for (size_t i = 0; i < length; ++i) {
+        if (start[i] == '/' || start[i] == '\\') return false;
+    }
+
+    memcpy(out, start, length);
+    out[length] = '\0';
+    return true;
+}
+
+static void fm_start_prompt(FileManagerState *state,
+                            FileManagerPromptMode prompt_mode) {
+    if (!state || !state->name_input || prompt_mode == FM_PROMPT_NONE) return;
+
+    if (prompt_mode == FM_PROMPT_RENAME) {
+        if (state->count == 0 || state->selected >= state->count ||
+            strcmp(state->items[state->selected].name, "..") == 0) {
+            snprintf(state->error, sizeof(state->error),
+                     "Select a file or folder before renaming");
+            return;
+        }
+        text_input_set_text(state->name_input,
+                            state->items[state->selected].name);
+    } else {
+        text_input_clear(state->name_input);
+    }
+
+    state->error[0] = '\0';
+    state->prompt_mode = prompt_mode;
+}
+
+static bool fm_commit_prompt(FileManagerState *state) {
+    if (!state || state->prompt_mode == FM_PROMPT_NONE) return false;
+
+    char name[FM_SELECTED_NAME_MAX];
+    if (!fm_normalize_name(text_input_text(state->name_input), name,
+                           sizeof(name))) {
+        fm_set_name_error(state);
+        return false;
+    }
+
+    RetroFsError error = RETRO_FS_INVALID_ARGUMENT;
+    RetroFsPath source = {0};
+    RetroFsPath destination = {0};
+
+    if (state->prompt_mode == FM_PROMPT_RENAME) {
+        if (state->count == 0 || state->selected >= state->count) {
+            fm_set_error(state, RETRO_FS_NOT_FOUND);
+            return false;
+        }
+        const char *old_name = state->items[state->selected].name;
+        if (strcmp(old_name, "..") == 0) {
+            fm_set_error(state, RETRO_FS_UNSUPPORTED);
+            return false;
+        }
+        if (strcmp(old_name, name) == 0) {
+            fm_cancel_prompt(state);
+            state->error[0] = '\0';
+            return true;
+        }
+
+        error = retro_fs_path_join(&state->cwd, old_name, &source);
+        if (error == RETRO_FS_OK) {
+            error = retro_fs_path_join(&state->cwd, name, &destination);
+        }
+        if (error == RETRO_FS_OK) {
+            error = retro_fs_rename(&source, &destination);
+        }
+    } else {
+        error = retro_fs_path_join(&state->cwd, name, &destination);
+        if (error == RETRO_FS_OK) {
+            error = state->prompt_mode == FM_PROMPT_NEW_DIRECTORY
+                        ? retro_fs_create_directory(&destination)
+                        : retro_fs_create_file(&destination);
+        }
+    }
+
+    retro_fs_path_destroy(&source);
+    retro_fs_path_destroy(&destination);
+    if (error != RETRO_FS_OK) {
+        fm_set_error(state, error);
+        return false;
+    }
+
+    fm_cancel_prompt(state);
+    if (!fm_reload(state, false)) return false;
+    fm_select_name(state, name);
+    state->error[0] = '\0';
+    return true;
+}
+
 static bool fm_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
     if (!instance || !ctx) return false;
     FileManagerState *state = calloc(1, sizeof(*state));
     if (!state) return false;
+
+    state->name_input = text_input_create(FM_INPUT_MAX);
+    if (!state->name_input) {
+        free(state);
+        return false;
+    }
 
     const char *home = getenv("HOME");
     const char *start = ctx->resource_path && ctx->resource_path[0]
@@ -213,6 +354,7 @@ static bool fm_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
                             : (home && *home ? home : ".");
     RetroFsError error = retro_fs_path_init(&state->cwd, start);
     if (error != RETRO_FS_OK) {
+        text_input_destroy(state->name_input);
         free(state);
         return false;
     }
@@ -225,6 +367,7 @@ static bool fm_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
             !fm_reload(state, false)) {
             fm_clear_items(state);
             retro_fs_path_destroy(&state->cwd);
+            text_input_destroy(state->name_input);
             free(state);
             instance->state = NULL;
             return false;
@@ -247,13 +390,41 @@ static void fm_move_selection(FileManagerState *state, size_t amount,
     fm_clamp_view(state);
 }
 
+static void fm_prompt_event(FileManagerState *state, const RetroEvent *event) {
+    if (!state || !event || state->prompt_mode == FM_PROMPT_NONE) return;
+    int key = event->data.key.key_code;
+    if (key == RETRO_KEY_ESC) {
+        fm_cancel_prompt(state);
+        state->error[0] = '\0';
+        return;
+    }
+    if (key == RETRO_KEY_CR || key == RETRO_KEY_LF) {
+        (void)fm_commit_prompt(state);
+        return;
+    }
+    if (text_input_handle_key(state->name_input, &event->data.key)) {
+        state->error[0] = '\0';
+    }
+}
+
 static void fm_event(RetroAppInstance *instance, const RetroEvent *event) {
     if (!instance || !instance->state || !event || event->type != RETRO_EVENT_KEY) return;
     FileManagerState *state = instance->state;
     int key = event->data.key.key_code;
     unsigned char ch = event->data.key.ascii;
 
-    if (key == RETRO_KEY_UP || ch == 'k' || ch == 'K') {
+    if (state->prompt_mode != FM_PROMPT_NONE) {
+        fm_prompt_event(state, event);
+        return;
+    }
+
+    if (key == RETRO_KEY_F2) {
+        fm_start_prompt(state, FM_PROMPT_RENAME);
+    } else if (key == RETRO_KEY_F7) {
+        fm_start_prompt(state, FM_PROMPT_NEW_DIRECTORY);
+    } else if (key == RETRO_KEY_F8) {
+        fm_start_prompt(state, FM_PROMPT_NEW_FILE);
+    } else if (key == RETRO_KEY_UP || ch == 'k' || ch == 'K') {
         fm_move_selection(state, 1, false);
     } else if (key == RETRO_KEY_DOWN || ch == 'j' || ch == 'J') {
         fm_move_selection(state, 1, true);
@@ -302,6 +473,20 @@ static size_t fm_content_count(const FileManagerState *state) {
     return strcmp(state->items[0].name, "..") == 0 ? state->count - 1 : state->count;
 }
 
+static const char *fm_prompt_label(FileManagerPromptMode prompt_mode) {
+    switch (prompt_mode) {
+    case FM_PROMPT_RENAME:
+        return "Rename to:";
+    case FM_PROMPT_NEW_DIRECTORY:
+        return "New folder:";
+    case FM_PROMPT_NEW_FILE:
+        return "New file:";
+    case FM_PROMPT_NONE:
+    default:
+        return "";
+    }
+}
+
 static void fm_render(RetroAppInstance *instance, DrawList *draw_list) {
     if (!instance || !instance->state || !draw_list || !instance->ctx.theme) return;
     FileManagerState *state = instance->state;
@@ -312,7 +497,9 @@ static void fm_render(RetroAppInstance *instance, DrawList *draw_list) {
 
     draw_list_text(draw_list, 1, 2, retro_fs_path_cstr(&state->cwd), accent);
     draw_list_text(draw_list, 2, 2,
-                   "Arrows/jk/PgUp/PgDn | Enter open | Backspace parent | F5 refresh | H hidden",
+                   "Arrows/jk/Pg move | Enter open | Backspace parent", text);
+    draw_list_text(draw_list, 3, 2,
+                   "F2 rename | F7 new folder | F8 new file | F5 refresh | H hidden",
                    text);
 
     for (size_t row = 0; row < FM_VISIBLE_ROWS; ++row) {
@@ -336,6 +523,11 @@ static void fm_render(RetroAppInstance *instance, DrawList *draw_list) {
         draw_list_text(draw_list, 5, 4, "(empty directory)", text);
     }
 
+    if (state->prompt_mode != FM_PROMPT_NONE) {
+        draw_list_text(draw_list, 16, 2, fm_prompt_label(state->prompt_mode), accent);
+        text_input_render(state->name_input, draw_list, 16, 16, 52, text, selected);
+    }
+
     if (state->error[0]) {
         draw_list_text(draw_list, 17, 2, state->error, accent);
     } else {
@@ -353,6 +545,7 @@ static void fm_destroy(RetroAppInstance *instance) {
     FileManagerState *state = instance->state;
     if (!state) return;
     fm_clear_items(state);
+    text_input_destroy(state->name_input);
     retro_fs_path_destroy(&state->cwd);
     free(state);
     instance->state = NULL;

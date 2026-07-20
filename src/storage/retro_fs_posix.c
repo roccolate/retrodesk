@@ -45,7 +45,11 @@ RetroFsError retro_fs_path_parent(const RetroFsPath *p, RetroFsPath *out) {
     char *slash=strrchr(copy,'/');
     if (!slash) { free(copy); return retro_fs_path_init(out, "."); }
     while (slash>copy+1 && slash[-1]=='/') --slash;
-    *slash='\0'; if (!*copy) strcpy(copy,"/");
+    *slash='\0';
+    if (!*copy) {
+        copy[0] = '/';
+        copy[1] = '\0';
+    }
     out->value=copy; return RETRO_FS_OK;
 }
 RetroFsError retro_fs_path_join(const RetroFsPath *b,const char *name,RetroFsPath *o) {
@@ -127,7 +131,7 @@ RetroFsError retro_fs_list(const RetroFsPath *p, size_t max_entries,
         free_entries(entries, count);
         return result;
     }
-    qsort(entries, count, sizeof(*entries), entry_compare);
+    if (count > 1) qsort(entries, count, sizeof(*entries), entry_compare);
     for (size_t i = 0; i < count; ++i) {
         if (!cb(&entries[i], u)) break;
     }

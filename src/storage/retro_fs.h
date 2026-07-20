@@ -58,7 +58,8 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *path, const char *data,
                                     size_t length, const RetroFsVersion *expected,
                                     RetroFsVersion *written);
 
-/* Creation and rename operations never replace an existing destination. */
+/* Creation and rename operations never intentionally replace an existing
+   destination. They return RETRO_FS_CONFLICT when the destination exists. */
 RetroFsError retro_fs_create_file(const RetroFsPath *path);
 RetroFsError retro_fs_create_directory(const RetroFsPath *path);
 RetroFsError retro_fs_rename(const RetroFsPath *source,

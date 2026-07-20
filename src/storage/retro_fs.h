@@ -45,18 +45,24 @@ void retro_fs_path_destroy(RetroFsPath *path);
 const char *retro_fs_path_cstr(const RetroFsPath *path);
 RetroFsError retro_fs_path_parent(const RetroFsPath *path, RetroFsPath *parent);
 RetroFsError retro_fs_path_join(const RetroFsPath *base, const char *name,
-                                RetroFsPath *joined);
+                                 RetroFsPath *joined);
 
 RetroFsError retro_fs_stat(const RetroFsPath *path, RetroFsVersion *version);
-/* Lists at most max_entries entries.  A directory larger than the limit is
+/* Lists at most max_entries entries. A directory larger than the limit is
    rejected before any partial result is delivered. */
 RetroFsError retro_fs_list(const RetroFsPath *path, size_t max_entries,
-                           RetroFsListFn callback, void *userdata);
+                            RetroFsListFn callback, void *userdata);
 RetroFsError retro_fs_read_text(const RetroFsPath *path, char **data,
-                                size_t *length, RetroFsVersion *version);
+                                 size_t *length, RetroFsVersion *version);
 RetroFsError retro_fs_write_atomic(const RetroFsPath *path, const char *data,
-                                   size_t length, const RetroFsVersion *expected,
-                                   RetroFsVersion *written);
+                                    size_t length, const RetroFsVersion *expected,
+                                    RetroFsVersion *written);
+
+/* Creation and rename operations never replace an existing destination. */
+RetroFsError retro_fs_create_file(const RetroFsPath *path);
+RetroFsError retro_fs_create_directory(const RetroFsPath *path);
+RetroFsError retro_fs_rename(const RetroFsPath *source,
+                              const RetroFsPath *destination);
 
 const char *retro_fs_error_string(RetroFsError error);
 

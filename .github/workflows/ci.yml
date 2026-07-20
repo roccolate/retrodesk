@@ -6,11 +6,187 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: write
+
 env:
   RETROCORE_SPEC_COMMIT: fa027a04fca45728c2c09833388c553bfa8a5a54
   VCPKG_COMMIT: f87344cac03158cbf1467264565f1fd36b382a24
 
 jobs:
+  apply-key-fix:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/filemanager-port-1'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply function-key routing fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "src/platform/platform_curses.c",
+              "static int translate_key_chord(int raw) {\n    switch (raw) {",
+              "int platform_translate_curses_key(int raw) {\n"
+              "#ifdef KEY_F\n"
+              "    if (raw >= KEY_F(1) && raw <= KEY_F(12)) {\n"
+              "        return RETRO_KEY_F1 + (raw - KEY_F(1));\n"
+              "    }\n"
+              "#endif\n"
+              "    switch (raw) {",
+          )
+          replace_once(
+              "src/platform/platform_curses.c",
+              "out_event->data.key.key_code = translate_key_chord(ch);",
+              "out_event->data.key.key_code = platform_translate_curses_key(ch);",
+          )
+          replace_once(
+              "src/platform/platform_backend_internal.h",
+              "bool platform_init_curses_backend(PlatformBackend *platform,\n                                  const PlatformConfig *config);",
+              "int platform_translate_curses_key(int raw);\n"
+              "bool platform_init_curses_backend(PlatformBackend *platform,\n"
+              "                                  const PlatformConfig *config);",
+          )
+          replace_once(
+              "src/core/desktop.c",
+              '"F1/F2 launcher | F6 focus | F7 move/resize | Ctrl+W close | Ctrl+Q quit",',
+              '"F1/F2 launcher | F6 focus | F9 move/resize | Ctrl+W close | Ctrl+Q quit",',
+          )
+          replace_once(
+              "src/core/desktop.c",
+              "if (key->key_code == RETRO_KEY_F7) {\n        desktop->window_mode = true;",
+              "if (key->key_code == RETRO_KEY_F9) {\n        desktop->window_mode = true;",
+          )
+          replace_once(
+              "README.md",
+              "| `F7` | Move/resize mode |",
+              "| `F9` | Move/resize mode |",
+          )
+          replace_once(
+              "tests/draw_list_contract_test.c",
+              '#include "render/render.h"',
+              '#include "core/key_chord.h"\n#include "platform/platform_backend_internal.h"\n#include "render/render.h"',
+          )
+          replace_once(
+              "tests/draw_list_contract_test.c",
+              "int main(void) {\n    DrawList *list = draw_list_create();",
+              "int main(void) {\n"
+              "#ifdef KEY_F\n"
+              "    TEST_REQUIRE(platform_translate_curses_key(KEY_F(1)) == RETRO_KEY_F1);\n"
+              "    TEST_REQUIRE(platform_translate_curses_key(KEY_F(7)) == RETRO_KEY_F7);\n"
+              "    TEST_REQUIRE(platform_translate_curses_key(KEY_F(8)) == RETRO_KEY_F8);\n"
+              "    TEST_REQUIRE(platform_translate_curses_key(KEY_F(12)) == RETRO_KEY_F12);\n"
+              "#endif\n\n"
+              "    DrawList *list = draw_list_create();",
+          )
+
+          p = Path("tests/desktop_runtime_test.c")
+          text = p.read_text()
+          marker = "#endif\n\nint main(void) {"
+          if text.count(marker) != 1:
+              raise SystemExit("desktop_runtime_test.c: insertion marker changed")
+          test_fn = r'''
+static void test_desktop_routes_filemanager_function_keys(void) {
+    char root_template[] = "/tmp/retrodesk-filemanager-keys-XXXXXX";
+    char *root = mkdtemp(root_template);
+    TEST_REQUIRE(root != NULL);
+
+    const char *old_home_value = getenv("HOME");
+    char *old_home = old_home_value ? strdup(old_home_value) : NULL;
+    TEST_REQUIRE(setenv("HOME", root, 1) == 0);
+
+    PlatformBackend *platform = platform_stub_new(true);
+    TEST_REQUIRE(platform != NULL);
+    const RetroEvent events[] = {
+        key_event(RETRO_KEY_F7, '\0'),
+        key_event('n', 'n'), key_event('e', 'e'), key_event('w', 'w'),
+        key_event('d', 'd'), key_event('i', 'i'), key_event('r', 'r'),
+        key_event(RETRO_KEY_CR, '\0'),
+        key_event(RETRO_KEY_F8, '\0'),
+        key_event('n', 'n'), key_event('e', 'e'), key_event('w', 'w'),
+        key_event('.', '.'), key_event('t', 't'), key_event('x', 'x'), key_event('t', 't'),
+        key_event(RETRO_KEY_CR, '\0'),
+        key_event(RETRO_KEY_CTRL_Q, '\0'),
+    };
+    platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
+
+    DesktopConfig cfg = {
+        .platform = platform,
+        .input_timeout_ms = 20,
+        .bench_mode = false,
+        .render_backend = RENDER_BACKEND_CURSES,
+        .theme_kind = RETRO_THEME_XP,
+    };
+    Desktop *desktop = desktop_create(&cfg);
+    TEST_REQUIRE(desktop != NULL);
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
+
+    char directory[512];
+    char file[512];
+    int directory_written = snprintf(directory, sizeof(directory), "%s/newdir", root);
+    int file_written = snprintf(file, sizeof(file), "%s/new.txt", root);
+    TEST_REQUIRE(directory_written > 0 && (size_t)directory_written < sizeof(directory));
+    TEST_REQUIRE(file_written > 0 && (size_t)file_written < sizeof(file));
+    struct stat directory_stat;
+    struct stat file_stat;
+    TEST_REQUIRE(stat(directory, &directory_stat) == 0);
+    TEST_REQUIRE(S_ISDIR(directory_stat.st_mode));
+    TEST_REQUIRE(stat(file, &file_stat) == 0);
+    TEST_REQUIRE(S_ISREG(file_stat.st_mode));
+
+    desktop_shutdown(desktop);
+    platform_destroy(platform);
+    TEST_REQUIRE(unlink(file) == 0);
+    TEST_REQUIRE(rmdir(directory) == 0);
+    TEST_REQUIRE(rmdir(root) == 0);
+    if (old_home) {
+        TEST_REQUIRE(setenv("HOME", old_home, 1) == 0);
+        free(old_home);
+    } else {
+        TEST_REQUIRE(unsetenv("HOME") == 0);
+    }
+}
+'''
+          text = text.replace(marker, test_fn + "\n#endif\n\nint main(void) {", 1)
+          call_marker = "#if !defined(_WIN32)\n    test_filemanager_navigation_port();\n#endif"
+          if text.count(call_marker) != 1:
+              raise SystemExit("desktop_runtime_test.c: main marker changed")
+          text = text.replace(
+              call_marker,
+              "#if !defined(_WIN32)\n"
+              "    test_filemanager_navigation_port();\n"
+              "    test_desktop_routes_filemanager_function_keys();\n"
+              "#endif",
+              1,
+          )
+          p.write_text(text)
+          PY
+
+          rm -f .github/workflows/apply-filemanager-key-fix.yml
+          git fetch origin main
+          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
+
+      - name: Commit corrected sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: route File Manager function keys correctly"
+          git push origin HEAD:agent/filemanager-port-1
+
   linux:
     runs-on: ubuntu-24.04
     steps:

@@ -421,6 +421,14 @@ static void test_filemanager_navigation_port(void) {
     RetroEvent cancel = key_event(RETRO_KEY_ESC, '\0');
     app_handle_event(&instance, &cancel);
 
+    /* Separators and pseudo-directory names are rejected before touching disk. */
+    app_handle_event(&instance, &new_file);
+    send_text(&instance, "bad/name");
+    submit_prompt(&instance);
+    TEST_REQUIRE(filemanager_item_count_for_test(&instance) == 22);
+    TEST_REQUIRE(!filemanager_has_item_for_test(&instance, "bad/name"));
+    app_handle_event(&instance, &cancel);
+
     TEST_REQUIRE(unlink(created_path) == 0);
     TEST_REQUIRE(rmdir(renamed_folder_path) == 0);
     desc->destroy(&instance);

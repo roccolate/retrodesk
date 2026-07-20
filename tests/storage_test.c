@@ -51,12 +51,14 @@ int main(void) {
     char path_created[512];
     char path_renamed[512];
     char path_directory[512];
+    char path_missing[512];
     TEST_REQUIRE(snprintf(path_a, sizeof(path_a), "%s/a.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_b, sizeof(path_b), "%s/b.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_new, sizeof(path_new), "%s/new.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_created, sizeof(path_created), "%s/created.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_renamed, sizeof(path_renamed), "%s/renamed.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_directory, sizeof(path_directory), "%s/docs", dir) > 0);
+    TEST_REQUIRE(snprintf(path_missing, sizeof(path_missing), "%s/missing.txt", dir) > 0);
     write_file(path_a, "one\ntwo\n");
     write_file(path_b, "b\n");
 
@@ -102,10 +104,12 @@ int main(void) {
     RetroFsPath renamed = {0};
     RetroFsPath directory = {0};
     RetroFsPath existing = {0};
+    RetroFsPath missing = {0};
     TEST_REQUIRE(retro_fs_path_init(&created, path_created) == RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_path_init(&renamed, path_renamed) == RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_path_init(&directory, path_directory) == RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_path_init(&existing, path_b) == RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_path_init(&missing, path_missing) == RETRO_FS_OK);
 
     TEST_REQUIRE(retro_fs_create_file(&created) == RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_create_file(&created) == RETRO_FS_CONFLICT);
@@ -118,12 +122,14 @@ int main(void) {
     TEST_REQUIRE(retro_fs_stat(&renamed, &version) == RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_rename(&renamed, &existing) == RETRO_FS_CONFLICT);
     TEST_REQUIRE(retro_fs_stat(&renamed, &version) == RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_rename(&missing, &created) == RETRO_FS_NOT_FOUND);
 
     TEST_REQUIRE(retro_fs_create_directory(&directory) == RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_create_directory(&directory) == RETRO_FS_CONFLICT);
     TEST_REQUIRE(retro_fs_stat(&directory, &version) == RETRO_FS_OK);
     TEST_REQUIRE(S_ISDIR(version.mode));
 
+    retro_fs_path_destroy(&missing);
     retro_fs_path_destroy(&existing);
     retro_fs_path_destroy(&directory);
     retro_fs_path_destroy(&renamed);

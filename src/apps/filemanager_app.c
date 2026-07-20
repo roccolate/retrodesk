@@ -13,6 +13,7 @@ enum {
     FM_MAX_ENTRIES = 10000,
     FM_VISIBLE_ROWS = 12,
     FM_PAGE_STEP = 10,
+    FM_SELECTED_NAME_MAX = 256,
 };
 
 typedef struct FileManagerItem {
@@ -96,9 +97,14 @@ static void fm_set_error(FileManagerState *state, RetroFsError error) {
              retro_fs_error_string(error));
 }
 
-static char *fm_selected_name_dup(const FileManagerState *state) {
-    if (!state || state->count == 0 || state->selected >= state->count) return NULL;
-    return strdup(state->items[state->selected].name);
+static bool fm_copy_selected_name(const FileManagerState *state, char *out,
+                                  size_t out_size) {
+    if (!state || !out || out_size == 0 || state->count == 0 ||
+        state->selected >= state->count || !state->items[state->selected].name) {
+        return false;
+    }
+    int written = snprintf(out, out_size, "%s", state->items[state->selected].name);
+    return written >= 0 && (size_t)written < out_size;
 }
 
 static size_t fm_find_name(const FileManagerState *state, const char *name) {
@@ -113,7 +119,10 @@ static bool fm_reload(FileManagerState *state, bool preserve_selection) {
     if (!state) return false;
 
     size_t old_selected = state->selected;
-    char *selected_name = preserve_selection ? fm_selected_name_dup(state) : NULL;
+    char selected_name[FM_SELECTED_NAME_MAX] = {0};
+    bool have_selected_name =
+        preserve_selection &&
+        fm_copy_selected_name(state, selected_name, sizeof(selected_name));
     fm_clear_items(state);
     state->error[0] = '\0';
     state->collect_error = RETRO_FS_OK;
@@ -126,12 +135,13 @@ static bool fm_reload(FileManagerState *state, bool preserve_selection) {
     if (error != RETRO_FS_OK) {
         fm_clear_items(state);
         fm_set_error(state, error);
-        free(selected_name);
         return false;
     }
 
     if (state->count > 0 && preserve_selection) {
-        size_t restored = fm_find_name(state, selected_name);
+        size_t restored = have_selected_name
+                              ? fm_find_name(state, selected_name)
+                              : state->count;
         state->selected = restored < state->count
                               ? restored
                               : (old_selected < state->count
@@ -139,7 +149,6 @@ static bool fm_reload(FileManagerState *state, bool preserve_selection) {
                                      : state->count - 1);
     }
     fm_clamp_view(state);
-    free(selected_name);
     return true;
 }
 
@@ -224,13 +233,12 @@ static bool fm_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
     return true;
 }
 
-static void fm_move_selection(FileManagerState *state, int delta) {
-    if (!state || state->count == 0 || delta == 0) return;
-    if (delta < 0) {
-        size_t amount = (size_t)(-delta);
+static void fm_move_selection(FileManagerState *state, size_t amount,
+                              bool forward) {
+    if (!state || state->count == 0 || amount == 0) return;
+    if (!forward) {
         state->selected = amount > state->selected ? 0 : state->selected - amount;
     } else {
-        size_t amount = (size_t)delta;
         size_t last = state->count - 1;
         state->selected = amount > last - state->selected
                               ? last
@@ -246,13 +254,13 @@ static void fm_event(RetroAppInstance *instance, const RetroEvent *event) {
     unsigned char ch = event->data.key.ascii;
 
     if (key == RETRO_KEY_UP || ch == 'k' || ch == 'K') {
-        fm_move_selection(state, -1);
+        fm_move_selection(state, 1, false);
     } else if (key == RETRO_KEY_DOWN || ch == 'j' || ch == 'J') {
-        fm_move_selection(state, 1);
+        fm_move_selection(state, 1, true);
     } else if (key == RETRO_KEY_PPAGE) {
-        fm_move_selection(state, -FM_PAGE_STEP);
+        fm_move_selection(state, FM_PAGE_STEP, false);
     } else if (key == RETRO_KEY_NPAGE) {
-        fm_move_selection(state, FM_PAGE_STEP);
+        fm_move_selection(state, FM_PAGE_STEP, true);
     } else if (key == RETRO_KEY_HOME) {
         state->selected = 0;
         fm_clamp_view(state);
@@ -274,6 +282,7 @@ static void fm_event(RetroAppInstance *instance, const RetroEvent *event) {
 }
 
 static void fm_format_size(off_t size, char *out, size_t out_size) {
+    if (!out || out_size == 0) return;
     static const char *const units[] = {"B", "K", "M", "G", "T"};
     double value = size < 0 ? 0.0 : (double)size;
     size_t unit = 0;
@@ -294,7 +303,7 @@ static size_t fm_content_count(const FileManagerState *state) {
 }
 
 static void fm_render(RetroAppInstance *instance, DrawList *draw_list) {
-    if (!instance || !instance->state || !draw_list) return;
+    if (!instance || !instance->state || !draw_list || !instance->ctx.theme) return;
     FileManagerState *state = instance->state;
     const RetroTheme *theme = instance->ctx.theme;
     const RenderStyle *text = &theme->window_body;

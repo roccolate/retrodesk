@@ -22,9 +22,16 @@ jobs:
         run: |
           cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug >/dev/null
 
-      - name: Analyze File Manager
+      - name: Find first analyzer failure
         run: |
-          clang-tidy-18 src/apps/filemanager_app.c \
-            -p build/debug \
-            --checks='-*,clang-analyzer-core.*,clang-analyzer-security.*,-clang-analyzer-core.NullDereference,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling' \
-            --warnings-as-errors='*'
+          set -eu
+          checks='-*,clang-analyzer-core.*,clang-analyzer-security.*,-clang-analyzer-core.NullDereference,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling'
+          for file in $(find src -name '*.c' | sort); do
+            if ! clang-tidy-18 "$file" -p build/debug \
+              --checks="$checks" --warnings-as-errors='*' >tidy.log 2>&1; then
+              echo "FAILED_FILE=$file"
+              cat tidy.log
+              exit 1
+            fi
+          done
+          echo "ALL_SOURCE_FILES_PASS"

@@ -6,8 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if !defined(_WIN32)
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
 
 #include "app/app_runtime.h"
 #include "apps/apps_internal.h"
@@ -250,6 +252,7 @@ static void test_repeat_create_run_shutdown(void) {
     }
 }
 
+#if !defined(_WIN32)
 static void create_fixture_file(const char *directory, const char *name) {
     char path[512];
     int written = snprintf(path, sizeof(path), "%s/%s", directory, name);
@@ -267,16 +270,11 @@ static void remove_fixture_file(const char *directory, const char *name) {
     TEST_REQUIRE(unlink(path) == 0);
 }
 
-static void test_filemanager_navigation_port(void) {
-    char root_template[] = "/tmp/retrodesk-filemanager-XXXXXX";
-    char *root = mkdtemp(root_template);
-    TEST_REQUIRE(root != NULL);
-
-    char folder[512];
-    int folder_written = snprintf(folder, sizeof(folder), "%s/folder", root);
-    TEST_REQUIRE(folder_written > 0 && (size_t)folder_written < sizeof(folder));
+static void populate_filemanager_fixture(const char *root, char *folder,
+                                         size_t folder_size) {
+    int folder_written = snprintf(folder, folder_size, "%s/folder", root);
+    TEST_REQUIRE(folder_written > 0 && (size_t)folder_written < folder_size);
     TEST_REQUIRE(mkdir(folder, 0700) == 0);
-
     for (int i = 0; i < 18; ++i) {
         char name[32];
         int name_written = snprintf(name, sizeof(name), "file%02d.txt", i);
@@ -284,6 +282,26 @@ static void test_filemanager_navigation_port(void) {
         create_fixture_file(root, name);
     }
     create_fixture_file(root, ".hidden");
+}
+
+static void cleanup_filemanager_fixture(const char *root, const char *folder) {
+    remove_fixture_file(root, ".hidden");
+    for (int i = 0; i < 18; ++i) {
+        char name[32];
+        int name_written = snprintf(name, sizeof(name), "file%02d.txt", i);
+        TEST_REQUIRE(name_written > 0 && (size_t)name_written < sizeof(name));
+        remove_fixture_file(root, name);
+    }
+    TEST_REQUIRE(rmdir(folder) == 0);
+    TEST_REQUIRE(rmdir(root) == 0);
+}
+
+static void test_filemanager_navigation_port(void) {
+    char root_template[] = "/tmp/retrodesk-filemanager-XXXXXX";
+    char *root = mkdtemp(root_template);
+    TEST_REQUIRE(root != NULL);
+    char folder[512];
+    populate_filemanager_fixture(root, folder, sizeof(folder));
 
     const RetroAppDescriptor *desc = filemanager_app_descriptor();
     TEST_REQUIRE(desc != NULL);
@@ -292,13 +310,9 @@ static void test_filemanager_navigation_port(void) {
         .theme = retro_theme_get(RETRO_THEME_XP),
         .resource_path = root,
     };
-    RetroAppInstance instance = {
-        .descriptor = desc,
-        .ctx = ctx,
-    };
+    RetroAppInstance instance = {.descriptor = desc, .ctx = ctx};
     TEST_REQUIRE(desc->create(&instance, &ctx));
 
-    /* Parent + folder + 18 visible files. Hidden entries are off initially. */
     TEST_REQUIRE(filemanager_item_count_for_test(&instance) == 20);
     TEST_REQUIRE(!filemanager_show_hidden_for_test(&instance));
     TEST_REQUIRE(!filemanager_has_item_for_test(&instance, ".hidden"));
@@ -307,7 +321,6 @@ static void test_filemanager_navigation_port(void) {
     RetroEvent page_down = key_event(RETRO_KEY_NPAGE, '\0');
     app_handle_event(&instance, &page_down);
     TEST_REQUIRE(strcmp(filemanager_selected_name_for_test(&instance), "file08.txt") == 0);
-
     app_handle_event(&instance, &page_down);
     TEST_REQUIRE(strcmp(filemanager_selected_name_for_test(&instance), "file17.txt") == 0);
     TEST_REQUIRE(filemanager_scroll_offset_for_test(&instance) == 8);
@@ -332,23 +345,17 @@ static void test_filemanager_navigation_port(void) {
 
     desc->destroy(&instance);
     TEST_REQUIRE(instance.state == NULL);
-
-    remove_fixture_file(root, ".hidden");
-    for (int i = 0; i < 18; ++i) {
-        char name[32];
-        int name_written = snprintf(name, sizeof(name), "file%02d.txt", i);
-        TEST_REQUIRE(name_written > 0 && (size_t)name_written < sizeof(name));
-        remove_fixture_file(root, name);
-    }
-    TEST_REQUIRE(rmdir(folder) == 0);
-    TEST_REQUIRE(rmdir(root) == 0);
+    cleanup_filemanager_fixture(root, folder);
 }
+#endif
 
 int main(void) {
     test_capability_rejection();
     test_failed_create_calls_destroy();
     test_launch_and_clean_close();
     test_repeat_create_run_shutdown();
+#if !defined(_WIN32)
     test_filemanager_navigation_port();
+#endif
     return 0;
 }

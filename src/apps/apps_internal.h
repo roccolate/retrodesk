@@ -29,5 +29,8 @@ size_t notepad_cursor_col_for_test(const RetroAppInstance *instance);
 size_t notepad_cursor_row_for_test(const RetroAppInstance *instance);
 bool notepad_search_mode_for_test(const RetroAppInstance *instance);
 bool notepad_wrap_mode_for_test(const RetroAppInstance *instance);
+bool notepad_menu_open_for_test(const RetroAppInstance *instance);
+bool notepad_open_path_for_test(const RetroAppInstance *instance);
+size_t notepad_view_columns_for_test(const RetroAppInstance *instance);
 
 #endif

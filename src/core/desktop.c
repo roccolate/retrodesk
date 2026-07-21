@@ -134,8 +134,11 @@ static void desktop_remove_app_at(Desktop *desktop, size_t index) {
 }
 
 static void app_window_draw(RetroWindow *window, DrawList *draw_list, void *user_data) {
-    (void)window;
     RetroAppInstance *app = (RetroAppInstance *)user_data;
+    if (!app) return;
+    retro_window_get_geometry(window, NULL, NULL,
+                    &app->ctx.window_height,
+                    &app->ctx.window_width);
     app_render(app, draw_list);
 }
 
@@ -487,6 +490,10 @@ RetroAppInstance *app_launch_with_path(Desktop *desktop, const char *app_id,
         return NULL;
     }
     instance->ctx.window_id = wid;
+    RetroWindow *host_window = wm_window(desktop->wm, wid);
+    retro_window_get_geometry(host_window, NULL, NULL,
+                    &instance->ctx.window_height,
+                    &instance->ctx.window_width);
 
     if (desc->create && !desc->create(instance, &instance->ctx)) {
         /* create may have acquired partial state; once invoked, destroy is

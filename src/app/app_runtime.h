@@ -38,6 +38,10 @@ typedef struct RetroAppContext {
     Desktop *desktop;
     RetroClipboard *clipboard; /* borrowed from Desktop */
     WindowId window_id;
+    /* Full hosted-window geometry, maintained by Desktop. Apps use these
+       values for responsive layout without querying a renderer/backend. */
+    int window_height;
+    int window_width;
     const DesktopCapabilities *capabilities;
     const RetroTheme *theme;
     /* Optional resource selected by a launcher (currently a filesystem path).

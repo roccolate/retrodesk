@@ -40,6 +40,11 @@ adapter.
 Implemented workflows:
 
 - open regular text files from File Manager;
+- native `File`, `Edit`, and `View` menus using the shared RetroDesk menu widget;
+- safe `New` and `Open` commands that launch another Notepad instance rather
+  than replacing unsaved work in the current document;
+- a viewport that follows the hosted window size, with a line/column, UTF-8,
+  wrap, and modified-state status row;
 - UTF-8-safe cursor movement, insertion, Backspace, and Delete;
 - display-cell-aware rendering for accented and wide characters;
 - multiline selection with Shift+arrows;

@@ -89,6 +89,10 @@ Inside a rename/create prompt, `Enter` confirms and `Esc` cancels.
 | --- | --- |
 | Arrow keys | Move cursor |
 | `Shift` + arrows | Extend or shrink selection |
+| `F11` | Open or close the native Notepad menu bar |
+| `Alt+F` / `Alt+E` / `Alt+V` | Open File, Edit, or View when the backend reports Alt reliably |
+| `Ctrl+N` | Open a new untitled Notepad window |
+| `Ctrl+O` | Prompt for a UTF-8 text path and open it in a new Notepad window |
 | `Ctrl+A` | Select all |
 | `Ctrl+C` | Copy selection |
 | `Ctrl+X` | Cut selection |
@@ -102,7 +106,9 @@ Inside a rename/create prompt, `Enter` confirms and `Esc` cancels.
 | `Esc` | Cancel the active prompt/search or clear a selection |
 | `Ctrl+W` | Close; dirty documents show Save/Discard/Cancel |
 
-The close prompt accepts `S` to save, `D` to discard, and `Esc` to cancel.
+`F10` remains the global RetroDesk Launcher shortcut; Notepad uses `F11`
+so application menus do not weaken the desktop routing contract. The close
+prompt accepts `S` to save, `D` to discard, and `Esc` to cancel.
 Find is case-insensitive for ASCII and Latin letter case, but accents remain
 significant: `árbol` matches `ÁRBOL`, not `ARBOL`.
 

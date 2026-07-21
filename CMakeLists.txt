@@ -430,6 +430,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         ${RETRODESK_STORAGE_SOURCE}
         src/ui/text_buffer.c
         src/ui/text_input.c
+        src/ui/menu_bar.c
         src/wm/window_manager.c
         src/ui/statusbar.c
         src/ui/theme.c
@@ -462,6 +463,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             ${RETRODESK_STORAGE_SOURCE}
             src/ui/text_buffer.c
             src/ui/text_input.c
+            src/ui/menu_bar.c
             src/wm/window_manager.c
             src/ui/statusbar.c
             src/ui/theme.c

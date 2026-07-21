@@ -683,6 +683,75 @@ static void test_notepad_word_wrap_navigation(void) {
     retro_clipboard_destroy(clipboard);
 }
 
+static void test_notepad_native_menu_preserves_printable_text(void) {
+    RetroAppInstance instance = create_untitled_notepad();
+    type_notepad_char(&instance, 'f');
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "f") == 0);
+
+    RetroEvent menu = key_event(RETRO_KEY_F11, '\0');
+    app_handle_event(&instance, &menu);
+    TEST_REQUIRE(notepad_menu_open_for_test(&instance));
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &escape);
+    TEST_REQUIRE(!notepad_menu_open_for_test(&instance));
+
+    type_notepad_char(&instance, 'v');
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "fv") == 0);
+    instance.descriptor->destroy(&instance);
+}
+
+static void test_notepad_menu_open_path_is_non_destructive(void) {
+    RetroAppInstance instance = create_untitled_notepad();
+    type_notepad_char(&instance, 'x');
+    TEST_REQUIRE(notepad_dirty_for_test(&instance));
+
+    RetroEvent menu = key_event(RETRO_KEY_F11, '\0');
+    RetroEvent down = key_event(RETRO_KEY_DOWN, '\0');
+    RetroEvent enter = key_event(RETRO_KEY_CR, '\0');
+    app_handle_event(&instance, &menu);
+    app_handle_event(&instance, &down);
+    app_handle_event(&instance, &enter);
+
+    TEST_REQUIRE(notepad_open_path_for_test(&instance));
+    TEST_REQUIRE(notepad_dirty_for_test(&instance));
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "x") == 0);
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &escape);
+    TEST_REQUIRE(!notepad_open_path_for_test(&instance));
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "x") == 0);
+    instance.descriptor->destroy(&instance);
+}
+
+static void test_notepad_responsive_wrap_uses_host_width(void) {
+    const RetroAppDescriptor *desc = notepad_app_descriptor();
+    TEST_REQUIRE(desc != NULL);
+    RetroAppContext ctx = {
+        .desktop = NULL,
+        .clipboard = NULL,
+        .theme = retro_theme_get(RETRO_THEME_XP),
+        .window_height = 12,
+        .window_width = 40,
+    };
+    RetroAppInstance instance = {.descriptor = desc, .ctx = ctx};
+    TEST_REQUIRE(desc->create(&instance, &ctx));
+    TEST_REQUIRE(notepad_view_columns_for_test(&instance) == 36);
+
+    RetroEvent toggle = key_event(RETRO_KEY_F4, '\0');
+    app_handle_event(&instance, &toggle);
+    for (int index = 0; index < 50; ++index) {
+        type_notepad_char(&instance, 'a');
+    }
+    RetroEvent up = key_event(RETRO_KEY_UP, '\0');
+    app_handle_event(&instance, &up);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 14);
+
+    instance.ctx.window_width = 24;
+    TEST_REQUIRE(notepad_view_columns_for_test(&instance) == 20);
+    desc->destroy(&instance);
+}
+
 static void test_notepad_shift_selection_replacement(void) {
     RetroAppInstance instance = create_untitled_notepad();
     type_notepad_char(&instance, 'n');
@@ -1181,6 +1250,9 @@ int main(void) {
     test_notepad_selection_clipboard_between_instances();
     test_notepad_utf8_find();
     test_notepad_word_wrap_navigation();
+    test_notepad_native_menu_preserves_printable_text();
+    test_notepad_menu_open_path_is_non_destructive();
+    test_notepad_responsive_wrap_uses_host_width();
     test_notepad_shift_selection_replacement();
     test_desktop_clipboards_are_isolated();
     test_desktop_f2_reaches_focused_app();

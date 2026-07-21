@@ -178,22 +178,24 @@ RetroPollResult platform_poll_event(PlatformBackend *platform,
     memset(out_event, 0, sizeof(*out_event));
     out_event->type = RETRO_EVENT_NONE;
 
-    bool produced_event = false;
+    RetroPollResult result = RETRO_POLL_TIMEOUT;
 #if !defined(_WIN32) && !defined(__DJGPP__)
     if (platform->features.input_backend == INPUT_BACKEND_TTY_RAW) {
-        if (platform->tty_signal_pending) return RETRO_POLL_CLOSED;
-        produced_event =
-            platform_poll_event_tty_raw(platform, out_event, timeout_ms);
+        result = platform_poll_event_tty_raw(
+            platform, out_event, timeout_ms);
     } else
 #endif
     {
-        produced_event =
-            platform_poll_event_curses(platform, out_event, timeout_ms);
+        result = platform_poll_event_curses(
+                     platform, out_event, timeout_ms)
+                     ? RETRO_POLL_EVENT
+                     : RETRO_POLL_TIMEOUT;
     }
 
-    if (!produced_event) return RETRO_POLL_TIMEOUT;
-    platform_normalize_pointer_activation(platform, out_event);
-    return RETRO_POLL_EVENT;
+    if (result == RETRO_POLL_EVENT) {
+        platform_normalize_pointer_activation(platform, out_event);
+    }
+    return result;
 }
 
 const PlatformFeatures *platform_features(const PlatformBackend *platform) {

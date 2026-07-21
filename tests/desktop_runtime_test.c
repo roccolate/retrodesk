@@ -1,6 +1,7 @@
 #define RETRODESK_ENABLE_TEST_HOOKS
 
 #include "test_harness.h"
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -25,11 +26,17 @@ struct PlatformBackend {
     const RetroEvent *events;
     size_t event_count;
     size_t event_index;
+    size_t poll_count;
+    int last_timeout_ms;
+    int minimum_timeout_ms;
+    bool close_when_exhausted;
 };
 
 static int g_failing_create_calls;
 static int g_failing_destroy_calls;
 static int g_failing_state_marker;
+static size_t g_service_calls;
+static size_t g_service_budget;
 
 static void platform_stub_update_mask(PlatformFeatures *features) {
     if (!features) return;
@@ -59,6 +66,7 @@ static PlatformBackend *platform_stub_new(bool keyboard_basic) {
     platform->features.double_click = false;
     platform->features.right_click = false;
     platform->features.linux_tty_keyboard_only = false;
+    platform->minimum_timeout_ms = INT_MAX;
     platform_stub_update_mask(&platform->features);
     return platform;
 }
@@ -117,11 +125,56 @@ static const RetroAppDescriptor k_failing_create_descriptor = {
     .destroy = failing_destroy,
 };
 
+static bool service_create(RetroAppInstance *instance,
+                           const RetroAppContext *ctx) {
+    TEST_REQUIRE(instance != NULL);
+    TEST_REQUIRE(ctx != NULL);
+    instance->state = &g_service_calls;
+    return true;
+}
+
+static RetroAppServiceResult service_tick(RetroAppInstance *instance,
+                                          size_t work_budget) {
+    TEST_REQUIRE(instance != NULL);
+    TEST_REQUIRE(instance->state == &g_service_calls);
+    TEST_REQUIRE(work_budget > 0);
+    g_service_calls++;
+    g_service_budget = work_budget;
+    return RETRO_APP_SERVICE_REDRAW;
+}
+
+static void service_destroy(RetroAppInstance *instance) {
+    TEST_REQUIRE(instance != NULL);
+    instance->state = NULL;
+}
+
+static const RetroAppDescriptor k_service_descriptor = {
+    .app_id = "test-service",
+    .display_name = "Service",
+    .required_capabilities = 0,
+    .default_height = 6,
+    .default_width = 24,
+    .default_y = 2,
+    .default_x = 4,
+    .window_flags = WINDOW_FLAG_APP_OWNED,
+    .create = service_create,
+    .on_service = service_tick,
+    .destroy = service_destroy,
+};
+
 RetroPollResult platform_poll_event(PlatformBackend *platform, RetroEvent *out_event,
                                     int timeout_ms) {
-    (void)timeout_ms;
     if (!platform || !out_event) return RETRO_POLL_ERROR;
-    if (platform->event_index >= platform->event_count) return RETRO_POLL_TIMEOUT;
+    platform->poll_count++;
+    platform->last_timeout_ms = timeout_ms;
+    if (timeout_ms < platform->minimum_timeout_ms) {
+        platform->minimum_timeout_ms = timeout_ms;
+    }
+    if (platform->event_index >= platform->event_count) {
+        return platform->close_when_exhausted
+                   ? RETRO_POLL_CLOSED
+                   : RETRO_POLL_TIMEOUT;
+    }
     *out_event = platform->events[platform->event_index++];
     return RETRO_POLL_EVENT;
 }
@@ -264,6 +317,52 @@ static void test_repeat_create_run_shutdown(void) {
         desktop_shutdown(desktop);
         platform_destroy(platform);
     }
+}
+
+static void test_app_service_tick_contract(void) {
+    PlatformBackend *plain_platform = platform_stub_new(true);
+    TEST_REQUIRE(plain_platform != NULL);
+    plain_platform->close_when_exhausted = true;
+    DesktopConfig plain_cfg = {
+        .platform = plain_platform,
+        .input_timeout_ms = 100,
+        .bench_mode = false,
+        .render_backend = RENDER_BACKEND_CURSES,
+        .theme_kind = RETRO_THEME_XP,
+    };
+    Desktop *plain_desktop = desktop_create(&plain_cfg);
+    TEST_REQUIRE(plain_desktop != NULL);
+    TEST_REQUIRE(desktop_run(plain_desktop) == EXIT_SUCCESS);
+    TEST_REQUIRE(plain_platform->poll_count == 1);
+    TEST_REQUIRE(plain_platform->last_timeout_ms == 100);
+    desktop_shutdown(plain_desktop);
+    platform_destroy(plain_platform);
+
+    PlatformBackend *service_platform = platform_stub_new(true);
+    TEST_REQUIRE(service_platform != NULL);
+    service_platform->close_when_exhausted = true;
+    DesktopConfig service_cfg = {
+        .platform = service_platform,
+        .input_timeout_ms = 100,
+        .bench_mode = false,
+        .render_backend = RENDER_BACKEND_CURSES,
+        .theme_kind = RETRO_THEME_XP,
+    };
+    Desktop *service_desktop = desktop_create(&service_cfg);
+    TEST_REQUIRE(service_desktop != NULL);
+    TEST_REQUIRE(desktop_register_app_for_test(
+        service_desktop, &k_service_descriptor));
+    g_service_calls = 0;
+    g_service_budget = 0;
+    TEST_REQUIRE(app_launch(service_desktop, "test-service") != NULL);
+    TEST_REQUIRE(desktop_run(service_desktop) == EXIT_SUCCESS);
+    TEST_REQUIRE(g_service_calls == 1);
+    TEST_REQUIRE(g_service_budget == 8192);
+    TEST_REQUIRE(service_platform->poll_count == 1);
+    TEST_REQUIRE(service_platform->last_timeout_ms == 16);
+    TEST_REQUIRE(service_platform->minimum_timeout_ms == 16);
+    desktop_shutdown(service_desktop);
+    platform_destroy(service_platform);
 }
 
 static RetroAppInstance create_untitled_notepad_with_clipboard(
@@ -1104,6 +1203,7 @@ int main(void) {
     test_failed_create_calls_destroy();
     test_launch_and_clean_close();
     test_repeat_create_run_shutdown();
+    test_app_service_tick_contract();
     test_notepad_escape_does_not_close();
     test_notepad_close_cancel_and_discard();
     test_notepad_untitled_save_routes_to_save_as();

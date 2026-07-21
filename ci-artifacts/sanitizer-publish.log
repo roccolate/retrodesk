@@ -1,0 +1,32 @@
+=== STATUS BEFORE ADD ===
+ M .github/workflows/ci.yml
+ D .github/workflows/materialize-sanitizer-baseline.yml
+ M CMakeLists.txt
+ M Makefile
+ D ci-artifacts/sanitizer-apply.log
+ M docs/RELEASE_0.1_CHECKLIST.md
+ M docs/TESTING.md
+ D tools/materialize_sanitizer_baseline.py
+ D tools/repair_sanitizer_materializer.py
+=== CACHED DIFF ===
+ .github/workflows/ci.yml                           |  15 ++
+ .../workflows/materialize-sanitizer-baseline.yml   | 131 -----------
+ CMakeLists.txt                                     |  16 ++
+ Makefile                                           |  12 +-
+ ci-artifacts/sanitizer-apply.log                   |   1 -
+ docs/RELEASE_0.1_CHECKLIST.md                      |   2 +
+ docs/TESTING.md                                    |  11 +
+ tools/materialize_sanitizer_baseline.py            | 259 ---------------------
+ tools/repair_sanitizer_materializer.py             |  48 ----
+ 9 files changed, 54 insertions(+), 441 deletions(-)
+=== COMMIT ===
+[core/sanitizer-baseline ab5c4d4] core: add sanitizer and startup-smoke gates
+ 9 files changed, 54 insertions(+), 441 deletions(-)
+ delete mode 100644 .github/workflows/materialize-sanitizer-baseline.yml
+ delete mode 100644 ci-artifacts/sanitizer-apply.log
+ delete mode 100644 tools/materialize_sanitizer_baseline.py
+ delete mode 100644 tools/repair_sanitizer_materializer.py
+=== PUSH ===
+To https://github.com/roccolate/retrodesk
+ ! [remote rejected] HEAD -> core/sanitizer-baseline (refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)
+error: failed to push some refs to 'https://github.com/roccolate/retrodesk'

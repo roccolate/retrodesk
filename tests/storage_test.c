@@ -152,7 +152,8 @@ int main(void) {
     TEST_REQUIRE(retro_fs_create_file(&created) == RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_create_file(&created) == RETRO_FS_CONFLICT);
     TEST_REQUIRE(retro_fs_stat(&created, &version) == RETRO_FS_OK);
-    TEST_REQUIRE(S_ISREG(version.mode));
+    TEST_REQUIRE(version.valid);
+    TEST_REQUIRE(version.kind == RETRO_FS_KIND_REGULAR);
     TEST_REQUIRE(version.size == 0);
 
     TEST_REQUIRE(retro_fs_rename(&created, &renamed) == RETRO_FS_OK);
@@ -165,7 +166,8 @@ int main(void) {
     TEST_REQUIRE(retro_fs_create_directory(&directory) == RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_create_directory(&directory) == RETRO_FS_CONFLICT);
     TEST_REQUIRE(retro_fs_stat(&directory, &version) == RETRO_FS_OK);
-    TEST_REQUIRE(S_ISDIR(version.mode));
+    TEST_REQUIRE(version.valid);
+    TEST_REQUIRE(version.kind == RETRO_FS_KIND_DIRECTORY);
 
     retro_fs_path_destroy(&invalid);
     retro_fs_path_destroy(&utf8);

@@ -22,10 +22,10 @@ jobs:
       - name: Checkout RetroDesk
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Install DOSBox-X runtime
+      - name: Install DOS build/runtime dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq dosbox-x xvfb >/dev/null
+          sudo apt-get install -y -qq dosbox-x xvfb libfl2 >/dev/null
 
       - name: Install pinned DJGPP toolchain
         shell: bash

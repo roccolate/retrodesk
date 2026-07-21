@@ -4,8 +4,9 @@ import re
 
 path = Path(__file__).with_name("materialize_safe_global_shutdown.py")
 text = path.read_text(encoding="utf-8")
-pattern = r"def update_notepad\(text: str\) -> str:\n.*?\n\ndef update_desktop_h"
-replacement = r'''def update_notepad(text: str) -> str:
+
+notepad_pattern = r"def update_notepad\(text: str\) -> str:\n.*?\n\ndef update_desktop_h"
+notepad_replacement = r'''def update_notepad(text: str) -> str:
     text = replace_once(
         text,
         "    state->force_close = true;\n    app_request_close(instance);\n",
@@ -25,8 +26,30 @@ replacement = r'''def update_notepad(text: str) -> str:
 
 
 def update_desktop_h'''
-updated, count = re.subn(pattern, lambda match: replacement,
-                         text, count=1, flags=re.S)
+text, count = re.subn(notepad_pattern, lambda match: notepad_replacement,
+                      text, count=1, flags=re.S)
 if count != 1:
     raise SystemExit(f"repair expected one update_notepad function, found {count}")
-path.write_text(updated, encoding="utf-8")
+
+header_pattern = r"def update_desktop_h\(text: str\) -> str:\n.*?\n\ndef update_desktop\(text: str\) -> str:"
+header_replacement = r'''def update_desktop_h(text: str) -> str:
+    marker = """RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
+                                                 const char *app_id);
+#endif
+"""
+    replacement = """RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
+                                                 const char *app_id);
+bool desktop_shutdown_pending_for_test(const Desktop *desktop);
+#endif
+"""
+    return replace_once(text, marker, replacement,
+                        "desktop shutdown test hook")
+
+
+def update_desktop(text: str) -> str:'''
+text, count = re.subn(header_pattern, lambda match: header_replacement,
+                      text, count=1, flags=re.S)
+if count != 1:
+    raise SystemExit(f"repair expected one update_desktop_h function, found {count}")
+
+path.write_text(text, encoding="utf-8")

@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths:
       - scripts/apply_notepad_find.py
+      - scripts/fix_notepad_find_apply.py
       - scripts/run_notepad_find_ci.sh
       - .github/workflows/notepad-find-bootstrap.yml
 
@@ -39,6 +40,7 @@ jobs:
       - name: Publish verified find port
         run: |
           rm -f scripts/apply_notepad_find.py
+          rm -f scripts/fix_notepad_find_apply.py
           rm -f scripts/run_notepad_find_ci.sh
           rm -rf ci-artifacts
           rm -f .github/workflows/notepad-find-bootstrap.yml

@@ -2,50 +2,100 @@
 
 ## Layered Strategy
 
-- Unit tests for pure runtime logic (`core`, `wm`, app registry, widgets,
-  storage helpers).
-- Integration tests for backend event translation, render contracts, app
-  lifecycle, and desktop runtime behavior.
-- Fixture tests for shared retrocore behavior when `RETROCORE_SPEC_DIR` is
+- Unit tests cover pure runtime logic, widgets, UTF-8 helpers, clipboard,
+  storage, and parsers.
+- Integration tests cover backend event translation, rendering, app lifecycle,
+  and desktop behavior.
+- Fixture tests cover shared retrocore behavior when `RETROCORE_SPEC_DIR` is
   available or required.
-- Smoke tests per claimed platform profile.
+- PTY smoke tests cover terminal behavior that headless tests cannot prove.
 
 ## Test Oracle Policy
 
-Tests must use always-active oracles from `tests/test_harness.h`.
+Tests use always-active oracles from `tests/test_harness.h`.
 
-- Do not include `<assert.h>` in tests.
-- Do not use `assert(...)`; Release builds may compile it out.
-- Run `python3 scripts/check_test_oracles.py` before release evidence is
-  collected.
+- Do not include `<assert.h>` or use `assert(...)`.
+- Run `python3 scripts/check_test_oracles.py` before collecting release evidence.
+- Prefer public behavior checks over private-state coupling.
 
-## Mandatory Scenarios
+## Required Runtime Coverage
 
-- desktop create/run/shutdown lifecycle.
-- init rollback on partial failure.
-- focus and z-order transitions.
-- drag on supported capabilities and fallback when unsupported.
-- resize handling where available.
-- capability-based app launch rejection.
-- app close lifecycle releases window ownership cleanly.
-- dirty app close rejection without nested loops.
-- single-flush-per-tick enforcement.
-- CLI/backend flag combination validation.
-- POSIX storage list/read/write/conflict behavior while it is the active storage
-  adapter.
-- File Manager and Notepad open/save flows for the Linux preview.
+- desktop create/run/shutdown and partial-init rollback;
+- capability-based app rejection and create-failure cleanup;
+- focus, z-order, drag, move, resize, modal routing, and close lifecycle;
+- interactive taskbar rendering, hit testing, launch, focus, and instance cycling;
+- one renderer flush per frame;
+- CLI/backend option validation.
 
-## Platform Smoke Matrix
+## Required Input Coverage
 
-- Linux active profile: keyboard baseline always; mouse as capability.
-- Windows planned Tier 1: PDCurses + storage adapter/gating required before any
-  release claim.
-- macOS experimental: compile and keyboard baseline only when validated.
-- DOS experimental: compile/reduced feature baseline only when validated.
-- Interactive smoke gate: `make smoke` (PTY required).
-- Interactive Linux VC gate: `make smoke-linux-vc` (PTY required, expects
-  `linux_tty_keyboard_only: true` under `TERM=linux`).
-- Non-interactive fallback smoke: `make smoke-ci`.
+- curses and raw-TTY key normalization;
+- ordinary and modified navigation sequences;
+- fragmented and invalid escape-sequence handling;
+- mouse decoding remaining unaffected by keyboard parser changes;
+- editor control keys reaching applications;
+- restoration of the original terminal mode.
+
+## Required UTF-8 and Notepad Coverage
+
+- accented-character insertion and roundtrip;
+- malformed UTF-8 rejection without data loss;
+- codepoint-safe cursor movement, Backspace, and Delete;
+- display-cell-aware vertical navigation and rendering;
+- multiline selection and replacement;
+- shared clipboard behavior between Notepad instances;
+- undoable cut/paste and bounded undo/redo history;
+- dirty state relative to the last successful save;
+- Find wraparound, case folding, accent significance, and byte-accurate ranges;
+- Word Wrap visual navigation without changing logical text;
+- Save/Discard/Cancel close handling.
+
+## Required Storage and File Manager Coverage
+
+- path, parent, and join behavior;
+- bounded and empty directory listing;
+- validated UTF-8 read/write roundtrip;
+- invalid text and control-character rejection;
+- exclusive file/directory creation and destination conflict;
+- rename success and no-overwrite behavior;
+- atomic save and stale-version conflict;
+- File Manager viewport, hidden toggle, refresh, open, create, rename, and prompt
+  cancellation.
+
+## Main Product-Slice Tests
+
+- `utf8_test`
+- `clipboard_test`
+- `text_buffer_test`
+- `text_input_test`
+- `storage_test`
+- `tty_decoder_test`
+- `statusbar_drawlist_test`
+- `desktop_runtime_test`
+
+Window Manager, renderer, CLI, app registry, lifecycle, and retrocore fixture tests
+remain part of the complete matrix.
+
+## CI Matrix
+
+Current CI validates:
+
+- Linux static analysis;
+- Linux Debug build and tests;
+- Linux Release build and tests;
+- Debug/Release test-manifest comparison;
+- DJGPP/DOS source-manifest synchronization;
+- Windows Debug build and tests with PDCurses;
+- Windows Release build and tests with PDCurses.
+
+A green portable Windows build is not a native Windows storage-support claim.
+
+## Smoke Matrix
+
+- `make smoke` — interactive PTY smoke test.
+- `make smoke-linux-vc` — keyboard-first `TERM=linux` gate.
+- `make smoke-ci` — non-interactive smoke path.
+- Windows, macOS, and DOS interaction claims require profile-specific evidence.
 
 ## Local Commands
 
@@ -56,21 +106,29 @@ make test-all
 make smoke-ci
 ```
 
-`make test` configures with CMake and requires curses development headers.
-Remove stale build directories before collecting evidence if they were created
-from another absolute checkout path.
+Strict CMake validation:
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DENABLE_TESTS=ON \
+  -DENABLE_STRICT_WARNINGS=ON \
+  -DENABLE_WERROR=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
 
 ## Regression Rules
 
-- Any interface-level change must update related docs.
-- Any bug fix around input/focus/resize/storage must add a reproducible
-  scenario.
-- CI strict jobs must remain warning-clean.
-- `wm` focus/z-order/drag/close behavior must be covered by event replay tests.
-- tty raw decoder changes must be covered by parser unit tests.
-- app-runtime changes must cover lifecycle, launch rejection, and close cleanup.
+- Interface changes update related documentation.
+- Input, focus, resize, storage, UTF-8, or close-flow fixes add regressions.
+- Parser changes test complete, fragmented, and invalid input.
+- App-runtime changes test launch rejection, rollback, close, and cleanup.
+- File-app changes test both lower-level behavior and app event flows.
+- Interactive terminal behavior is not release-verified solely by headless tests.
 
 ## Release Gate Reference
 
-`v0.1.0` test sign-off follows
-[RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md).
+Release sign-off follows
+[RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md) and must attach evidence to
+the exact candidate commit.

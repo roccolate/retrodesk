@@ -93,9 +93,10 @@ static void test_notepad_untitled_save_routes_to_save_as(void) {
 '''
 
 if "test_notepad_close_cancel_and_discard" not in text:
+    marker = "#if !defined(_WIN32)\nstatic void create_fixture_file"
     replace_once(
-        "#if !defined(_WIN32)\n",
-        common_tests + "#if !defined(_WIN32)\n",
+        marker,
+        common_tests + marker,
         "cross-platform Notepad tests",
     )
 

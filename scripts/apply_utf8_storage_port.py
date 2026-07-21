@@ -86,16 +86,20 @@ if "static bool valid_text_content" not in storage:
 if "if (!valid_text_content(buf, got))" not in storage:
     storage = sub_once(
         storage,
+        r"    buf\[got\] = 0;\n"
         r"    bool saw_lf = false;\n"
         r".*?"
         r"    if \(saw_lf && saw_crlf\) \{\n"
         r"        free\(buf\);\n"
         r"        return RETRO_FS_INVALID_TEXT;\n"
-        r"    \}\n",
+        r"    \}\n"
+        r"    \*out = buf;\n",
+        "    buf[got] = 0;\n"
         "    if (!valid_text_content(buf, got)) {\n"
         "        free(buf);\n"
         "        return RETRO_FS_INVALID_TEXT;\n"
-        "    }\n",
+        "    }\n"
+        "    *out = buf;\n",
         "storage read validation",
     )
 

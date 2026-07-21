@@ -4,7 +4,63 @@
 #include <string.h>
 #include <wchar.h>
 
+#if !defined(_WIN32) && !defined(__DJGPP__)
+#include <unistd.h>
+#endif
+
 #include "core/key_chord.h"
+
+#if !defined(_WIN32) && !defined(__DJGPP__)
+static cc_t platform_disabled_control_character(void) {
+#ifdef _POSIX_VDISABLE
+    return (cc_t)_POSIX_VDISABLE;
+#else
+    return (cc_t)0;
+#endif
+}
+
+static bool platform_save_curses_shell_mode(PlatformBackend *platform) {
+    if (!platform) return false;
+    if (tcgetattr(STDIN_FILENO, &platform->curses_saved_mode) != 0) {
+        return false;
+    }
+    platform->curses_has_saved_mode = true;
+    return true;
+}
+
+static bool platform_enable_editor_controls(void) {
+    struct termios mode = {0};
+    if (tcgetattr(STDIN_FILENO, &mode) != 0) return false;
+
+    mode.c_iflag &= (tcflag_t)~(IXON | IXOFF);
+#ifdef IXANY
+    mode.c_iflag &= (tcflag_t)~IXANY;
+#endif
+
+    cc_t disabled = platform_disabled_control_character();
+#ifdef VINTR
+    mode.c_cc[VINTR] = disabled;
+#endif
+#ifdef VSUSP
+    mode.c_cc[VSUSP] = disabled;
+#endif
+#ifdef VDSUSP
+    mode.c_cc[VDSUSP] = disabled;
+#endif
+#ifdef VLNEXT
+    mode.c_cc[VLNEXT] = disabled;
+#endif
+
+    return tcsetattr(STDIN_FILENO, TCSANOW, &mode) == 0;
+}
+
+static void platform_restore_curses_shell_mode(PlatformBackend *platform) {
+    if (!platform || !platform->curses_has_saved_mode) return;
+    (void)tcsetattr(STDIN_FILENO, TCSANOW,
+                    &platform->curses_saved_mode);
+    platform->curses_has_saved_mode = false;
+}
+#endif
 
 static bool translate_modified_key(int raw, int *key_code,
                                    unsigned int *modifiers) {
@@ -161,14 +217,29 @@ static bool normalize_mouse(const MEVENT *raw, PlatformBackend *platform,
 bool platform_init_curses_backend(PlatformBackend *platform,
                                   const PlatformConfig *config) {
     if (!platform) return false;
-    if (initscr() == NULL) return false;
+#if !defined(_WIN32) && !defined(__DJGPP__)
+    if (!platform_save_curses_shell_mode(platform)) return false;
+#endif
+    if (initscr() == NULL) {
+#if !defined(_WIN32) && !defined(__DJGPP__)
+        platform_restore_curses_shell_mode(platform);
+#endif
+        return false;
+    }
 
+    platform->uses_curses = true;
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
     mouseinterval(0);
 
-    platform->uses_curses = true;
+#if !defined(_WIN32) && !defined(__DJGPP__)
+    if (!platform_enable_editor_controls()) {
+        platform_destroy_curses_backend(platform);
+        return false;
+    }
+#endif
+
     platform->features.keyboard_basic = true;
     platform->features.color = has_colors();
     platform->features.unicode_basic = true;
@@ -317,4 +388,15 @@ bool platform_poll_event_curses(PlatformBackend *platform,
         codepoint <= 0xffu ? (unsigned char)codepoint : (unsigned char)0;
     out_event->data.key.text_codepoint = printable ? codepoint : 0;
     return true;
+}
+
+void platform_destroy_curses_backend(PlatformBackend *platform) {
+    if (!platform) return;
+    if (platform->uses_curses) {
+        endwin();
+        platform->uses_curses = false;
+    }
+#if !defined(_WIN32) && !defined(__DJGPP__)
+    platform_restore_curses_shell_mode(platform);
+#endif
 }

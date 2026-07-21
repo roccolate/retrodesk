@@ -113,6 +113,7 @@ jobs:
           name: retrodesk-dos-djgpp
           path: |
             build/dos/retrodesk.exe
+            build/dos/FSTEST.EXE
             build/dos/CWSDPMI.EXE
             build/dos/README.TXT
             build/dos/SHA256SUMS

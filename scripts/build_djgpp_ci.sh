@@ -57,10 +57,16 @@ if [[ ! -s retrodesk.exe ]]; then
     echo "build_djgpp_ci: retrodesk.exe was not produced" >&2
     exit 1
 fi
+if [[ ! -s fstest.exe ]]; then
+    echo "build_djgpp_ci: fstest.exe was not produced" >&2
+    exit 1
+fi
 
 "$strip" retrodesk.exe
+"$strip" fstest.exe
 mkdir -p "$out_dir"
 cp retrodesk.exe "$out_dir/retrodesk.exe"
+cp fstest.exe "$out_dir/FSTEST.EXE"
 cp "$CWSDPMI_EXE" "$out_dir/CWSDPMI.EXE"
 cat >"$out_dir/README.TXT" <<'TXT'
 RetroDesk 0.2.0-alpha - DOS/DJGPP build
@@ -78,13 +84,18 @@ Diagnostic startup check:
 
   RETRODESK.EXE --diagnose
 
-This alpha build uses the PDCurses DOS backend. Native filesystem operations
-are not implemented yet; File Manager shows an unavailable-storage view and
-untitled Notepad documents remain in memory only.
+This build uses the PDCurses DOS backend and a native DJGPP filesystem
+adapter. File Manager and Notepad support ASCII DOS path names and validated
+UTF-8 text content. Writes use same-directory temporary and backup files to
+preserve the previous document if a replacement fails.
+
+Storage self-test:
+
+  FSTEST.EXE
 TXT
 (
     cd "$out_dir"
-    sha256sum retrodesk.exe CWSDPMI.EXE > SHA256SUMS
+    sha256sum retrodesk.exe FSTEST.EXE CWSDPMI.EXE > SHA256SUMS
 )
 
 printf 'Built %s\n' "$out_dir/retrodesk.exe"

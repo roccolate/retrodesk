@@ -16,7 +16,7 @@ done
 cat >"$dos_dir/SMOKE.BAT" <<'BAT'
 @echo off
 if exist SMOKE.OK del SMOKE.OK
-if exist SMOKE.FAIL del SMOKE.FAIL
+if exist SMOKE.BAD del SMOKE.BAD
 FSTEST.EXE
 if errorlevel 1 goto failed
 RETRODESK.EXE --diagnose
@@ -24,12 +24,12 @@ if errorlevel 1 goto failed
 echo RETRODESK_DOS_SMOKE_OK>SMOKE.OK
 goto finished
 :failed
-echo RETRODESK_DOS_SMOKE_FAILED>SMOKE.FAIL
+echo RETRODESK_DOS_SMOKE_FAILED>SMOKE.BAD
 :finished
 exit
 BAT
 
-rm -f "$dos_dir/SMOKE.OK" "$dos_dir/SMOKE.FAIL" "$dosbox_log"
+rm -f "$dos_dir/SMOKE.OK" "$dos_dir/SMOKE.BAD" "$dosbox_log"
 
 # DOSBox-X requires a display even for an automated text-mode run. xvfb keeps
 # the smoke test non-interactive; timeout prevents a hung DOS executable from
@@ -50,8 +50,8 @@ if [[ $dosbox_rc -ne 0 ]]; then
     echo "run_dosbox_smoke: DOSBox-X exited with status $dosbox_rc" >&2
     tail -n 120 "$dosbox_log" >&2 || true
 fi
-if [[ -f "$dos_dir/SMOKE.FAIL" ]]; then
-    cat "$dos_dir/SMOKE.FAIL" >&2
+if [[ -f "$dos_dir/SMOKE.BAD" ]]; then
+    cat "$dos_dir/SMOKE.BAD" >&2
     exit 1
 fi
 if [[ ! -f "$dos_dir/SMOKE.OK" ]]; then

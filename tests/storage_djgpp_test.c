@@ -77,6 +77,9 @@ static void remove_directory_if_present(const char *path) {
 }
 
 int main(void) {
+    FILE *log_file = freopen("FSTEST.LOG", "w", stderr);
+    TEST_REQUIRE(log_file != NULL);
+    setvbuf(stderr, NULL, _IONBF, 0);
     char root_name[9];
     unsigned long suffix =
         ((unsigned long)getpid() ^ (unsigned long)clock()) & 0xFFFFFu;

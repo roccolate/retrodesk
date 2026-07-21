@@ -356,59 +356,82 @@ static bool reserve_entries(RetroFsEntry **entries, size_t *capacity,
     return true;
 }
 
-RetroFsError retro_fs_list(const RetroFsPath *path, size_t max_entries,
-                           RetroFsListFn callback, void *userdata) {
+static RetroFsError append_entry(RetroFsEntry **entries, size_t *count,
+                                 size_t *capacity, size_t max_entries,
+                                 const char *name,
+                                 const RetroFsPath *entry_path) {
+    if (!entries || !count || !capacity || !name || !entry_path ||
+        !entry_path->value) {
+        return RETRO_FS_INVALID_ARGUMENT;
+    }
+    if (*count == max_entries) return RETRO_FS_TOO_LARGE;
+    struct stat metadata;
+    if (stat(entry_path->value, &metadata) < 0) return map_errno(errno);
+    RetroFsEntry entry = {0};
+    entry.name = duplicate_string(name);
+    if (!entry.name) return RETRO_FS_OOM;
+    RetroFsError status =
+        fill_version(entry_path->value, &metadata, &entry.version);
+    if (status != RETRO_FS_OK) {
+        free(entry.name);
+        return status;
+    }
+    entry.kind = entry.version.kind;
+    entry.size = entry.version.size;
+    if (!reserve_entries(entries, capacity, *count + 1)) {
+        free(entry.name);
+        return RETRO_FS_OOM;
+    }
+    (*entries)[(*count)++] = entry;
+    return RETRO_FS_OK;
+}
+
+RetroFsError retro_fs_list(
+    const RetroFsPath *path, size_t max_entries,
+    RetroFsListFn callback, void *userdata) {
     if (!path || !path->value || !callback || max_entries == 0) {
         return RETRO_FS_INVALID_ARGUMENT;
+    }
+    RetroFsVersion directory_version = {0};
+    RetroFsError status = retro_fs_stat(path, &directory_version);
+    if (status != RETRO_FS_OK) return status;
+    if (directory_version.kind != RETRO_FS_KIND_DIRECTORY) {
+        return RETRO_FS_UNSUPPORTED;
     }
     DIR *directory = opendir(path->value);
     if (!directory) return map_errno(errno);
     RetroFsEntry *entries = NULL;
     size_t count = 0;
     size_t capacity = 0;
-    RetroFsError status = RETRO_FS_OK;
+
+    RetroFsPath parent = {0};
+    status = retro_fs_path_parent(path, &parent);
+    if (status == RETRO_FS_OK) {
+        status = append_entry(&entries, &count, &capacity,
+                              max_entries, "..", &parent);
+    }
+    retro_fs_path_destroy(&parent);
+
     errno = 0;
     struct dirent *native_entry = NULL;
-    while ((native_entry = readdir(directory)) != NULL) {
-        if (strcmp(native_entry->d_name, ".") == 0) continue;
+    while (status == RETRO_FS_OK &&
+           (native_entry = readdir(directory)) != NULL) {
+        if (strcmp(native_entry->d_name, ".") == 0 ||
+            strcmp(native_entry->d_name, "..") == 0) {
+            continue;
+        }
         if (!valid_dos_component(native_entry->d_name)) {
             status = RETRO_FS_UNSUPPORTED;
             break;
         }
-        if (count == max_entries) {
-            status = RETRO_FS_TOO_LARGE;
-            break;
-        }
         RetroFsPath child = {0};
         status = retro_fs_path_join(path, native_entry->d_name, &child);
-        if (status != RETRO_FS_OK) break;
-        struct stat metadata;
-        if (stat(child.value, &metadata) < 0) {
-            status = map_errno(errno);
-            retro_fs_path_destroy(&child);
-            break;
+        if (status == RETRO_FS_OK) {
+            status = append_entry(&entries, &count, &capacity,
+                                  max_entries, native_entry->d_name,
+                                  &child);
         }
-        RetroFsEntry entry = {0};
-        entry.name = duplicate_string(native_entry->d_name);
-        if (!entry.name) {
-            retro_fs_path_destroy(&child);
-            status = RETRO_FS_OOM;
-            break;
-        }
-        status = fill_version(child.value, &metadata, &entry.version);
         retro_fs_path_destroy(&child);
-        if (status != RETRO_FS_OK) {
-            free(entry.name);
-            break;
-        }
-        entry.kind = entry.version.kind;
-        entry.size = entry.version.size;
-        if (!reserve_entries(&entries, &capacity, count + 1)) {
-            free(entry.name);
-            status = RETRO_FS_OOM;
-            break;
-        }
-        entries[count++] = entry;
         errno = 0;
     }
     if (status == RETRO_FS_OK && errno != 0) status = map_errno(errno);

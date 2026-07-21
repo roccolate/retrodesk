@@ -8,6 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_STRICT_WARNINGS "Enable strict compiler warnings" ON)
 option(ENABLE_WERROR "Treat warnings as errors" ON)
+option(ENABLE_SANITIZERS "Enable Address and UndefinedBehavior sanitizers" OFF)
 option(ENABLE_TESTS "Build lightweight unit tests" ON)
 option(RETROCORE_SPEC_REQUIRED "Fail when shared retrocore fixtures are missing" OFF)
 set(PDCURSES_ROOT "" CACHE PATH "Path to PDCurses root")
@@ -101,6 +102,21 @@ function(retrodesk_apply_quality target)
             $<$<C_COMPILER_ID:MSVC>:/WX>
             $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Werror>
         )
+    endif()
+    if (ENABLE_SANITIZERS)
+        if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target} PRIVATE
+                -fsanitize=address,undefined
+                -fno-omit-frame-pointer
+            )
+            target_link_options(${target} PRIVATE
+                -fsanitize=address,undefined
+                -fno-omit-frame-pointer
+            )
+        else()
+            message(FATAL_ERROR
+                "ENABLE_SANITIZERS requires a GCC- or Clang-compatible compiler")
+        endif()
     endif()
 endfunction()
 

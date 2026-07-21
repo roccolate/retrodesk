@@ -43,6 +43,16 @@ jobs:
               -DRETROCORE_SPEC_REQUIRED=ON
           done
 
+      - name: Configure sanitizer build
+        run: |
+          cmake -S . -B build/sanitizers \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DRETROCORE_SPEC_DIR="$PWD/retrocore-spec" \
+            -DRETROCORE_SPEC_REQUIRED=ON \
+            -DENABLE_SANITIZERS=ON \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DENABLE_WERROR=ON
+
       - name: Static analysis
         run: |
           find src -name '*.c' -print0 | xargs -0 -n1 clang-tidy-18 \
@@ -60,11 +70,22 @@ jobs:
           cmake --build build/release --parallel
           ctest --test-dir build/release --output-on-failure
 
+      - name: Build and test with sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          cmake --build build/sanitizers --parallel
+          ctest --test-dir build/sanitizers --output-on-failure
+
       - name: Compare test manifests
         run: python3 scripts/compare_ctest_manifests.py build/debug build/release
 
       - name: Check DOS source manifest
         run: python3 scripts/check_djgpp_sources.py
+
+      - name: Non-interactive startup smoke
+        run: make smoke-ci BUILD_DIR=build/debug CONFIG=Debug STRICT=ON WERROR=ON
 
   windows:
     runs-on: windows-2025
@@ -94,11 +115,15 @@ jobs:
       - name: Configure, build, and test
         shell: powershell
         run: |
+          $ErrorActionPreference = "Stop"
           $toolchain = "$PWD\vcpkg\scripts\buildsystems\vcpkg.cmake"
           cmake -S . -B build `
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DRETROCORE_SPEC_DIR="$PWD\retrocore-spec" `
             -DRETROCORE_SPEC_REQUIRED=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build --config ${{ matrix.config }} --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir build --output-on-failure -C ${{ matrix.config }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

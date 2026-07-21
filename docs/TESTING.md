@@ -83,6 +83,8 @@ Current CI validates:
 - Linux static analysis;
 - Linux Debug build and tests;
 - Linux Release build and tests;
+- Linux AddressSanitizer, UndefinedBehaviorSanitizer, and leak checks;
+- non-interactive startup smoke validation;
 - Debug/Release test-manifest comparison;
 - DJGPP/DOS source-manifest synchronization;
 - Windows Debug build and tests with PDCurses;
@@ -103,6 +105,7 @@ A green portable Windows build is not a native Windows storage-support claim.
 make check-test-oracles
 make test
 make test-all
+make test-sanitize
 make smoke-ci
 ```
 
@@ -117,6 +120,14 @@ cmake -S . -B build \
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
+
+## Sanitizer Contract
+
+`make test-sanitize` configures a dedicated Debug tree with AddressSanitizer and
+UndefinedBehaviorSanitizer. On supported Linux toolchains, ASan also performs
+leak detection. Sanitizer findings are fatal and run against the same CTest
+manifest as the ordinary Debug/Release matrix. This gate does not replace the
+interactive PTY smoke tests.
 
 ## Regression Rules
 

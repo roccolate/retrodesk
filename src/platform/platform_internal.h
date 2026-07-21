@@ -1,6 +1,14 @@
 #ifndef RETRODESK_PLATFORM_PLATFORM_INTERNAL_H
 #define RETRODESK_PLATFORM_PLATFORM_INTERNAL_H
 
+#if defined(_WIN32)
+#include <windows.h>
+/* Windows and PDCurses both publish MOUSE_MOVED. Let curses own the token used
+   by the terminal backend, while windows.h remains protected by its include guard. */
+#ifdef MOUSE_MOVED
+#undef MOUSE_MOVED
+#endif
+#endif
 #include <curses.h>
 
 #include "platform/platform.h"

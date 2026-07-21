@@ -232,6 +232,11 @@ void platform_disable_xterm_mouse_tracking(void) {
 #endif
 
 PlatformBackend *platform_create(const PlatformConfig *config) {
+    if (config &&
+        !platform_input_backend_supported(config->requested_input_backend)) {
+        return NULL;
+    }
+
     PlatformBackend *platform = calloc(1, sizeof(*platform));
     if (!platform) return NULL;
 

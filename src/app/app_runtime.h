@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "core/compat.h"
 #include "core/clipboard.h"
 #include "core/event.h"
 #include "platform/platform.h"

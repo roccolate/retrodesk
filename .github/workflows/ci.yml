@@ -117,9 +117,11 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $toolchain = "$PWD\vcpkg\scripts\buildsystems\vcpkg.cmake"
+          $pdcursesRoot = "$PWD\vcpkg\installed\x64-windows"
           cmake -S . -B build `
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DPDCURSES_ROOT="$pdcursesRoot" `
             -DRETROCORE_SPEC_DIR="$PWD\retrocore-spec" `
             -DRETROCORE_SPEC_REQUIRED=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -24,36 +24,40 @@ jobs:
           persist-credentials: true
           show-progress: false
 
-      - name: Repair temporary materializer marker
-        run: python3 scripts/fix_notepad_selection_apply.py
-
-      - name: Apply selection and clipboard integration
-        run: python3 scripts/apply_notepad_selection_clipboard.py
-
-      - name: Install dependencies
+      - name: Build and test selection integration
+        shell: bash
         run: |
+          set -u
+
+          run_logged() {
+            local label="$1"
+            shift
+            local log="/tmp/${label}.log"
+            if ! "$@" >"$log" 2>&1; then
+              local summary
+              summary=$(grep -m1 -E 'Test +#[0-9]+:.*\*\*\*Failed|TEST_REQUIRE|FAILED|Failure|Errors while running CTest|error:' "$log" || tail -n 1 "$log")
+              echo "::error title=${label}::${summary}"
+              tail -n 80 "$log"
+              exit 1
+            fi
+          }
+
+          python3 scripts/fix_notepad_selection_apply.py
+          python3 scripts/apply_notepad_selection_clipboard.py
+
           sudo apt-get update -qq >/dev/null
           sudo apt-get install -y -qq cmake gcc libncurses-dev python3 >/dev/null
 
-      - name: Run source guards
-        run: |
-          git diff --check
-          python3 scripts/check_test_oracles.py
-          python3 scripts/check_djgpp_sources.py
-
-      - name: Configure
-        run: |
-          cmake -S . -B build \
+          run_logged diff-check git diff --check
+          run_logged oracle-guard python3 scripts/check_test_oracles.py
+          run_logged djgpp-guard python3 scripts/check_djgpp_sources.py
+          run_logged configure cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug \
             -DENABLE_TESTS=ON \
             -DENABLE_STRICT_WARNINGS=ON \
             -DENABLE_WERROR=ON
-
-      - name: Build
-        run: cmake --build build --parallel
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
+          run_logged build cmake --build build --parallel
+          run_logged tests ctest --test-dir build --output-on-failure
 
       - name: Publish verified integration
         run: |

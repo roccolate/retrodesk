@@ -111,6 +111,12 @@ fail:
     g_signal_platform = NULL;
     return false;
 }
+
+static void platform_disable_forced_mouse_tracking(PlatformBackend *platform) {
+    if (!platform || !platform->xterm_mouse_tracking_forced) return;
+    platform_disable_xterm_mouse_tracking();
+    platform->xterm_mouse_tracking_forced = false;
+}
 #endif
 
 bool platform_is_linux_virtual_console(void) {
@@ -247,6 +253,7 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
     if (requested_backend == INPUT_BACKEND_TTY_RAW) {
         if (!platform_init_tty_raw_backend(platform) ||
             !platform_install_signal_handlers(platform)) {
+            platform_disable_forced_mouse_tracking(platform);
             platform_destroy_tty_raw_backend(platform);
             free(platform);
             return NULL;
@@ -263,6 +270,7 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
     }
 #if !defined(_WIN32) && !defined(__DJGPP__)
     if (!platform_install_signal_handlers(platform)) {
+        platform_disable_forced_mouse_tracking(platform);
         platform_destroy_curses_backend(platform);
         free(platform);
         return NULL;
@@ -323,9 +331,7 @@ void platform_destroy(PlatformBackend *platform) {
     if (!platform) return;
 
 #if !defined(_WIN32) && !defined(__DJGPP__)
-    if (platform->xterm_mouse_tracking_forced) {
-        platform_disable_xterm_mouse_tracking();
-    }
+    platform_disable_forced_mouse_tracking(platform);
     platform_destroy_tty_raw_backend(platform);
 #endif
 

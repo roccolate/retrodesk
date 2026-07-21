@@ -69,4 +69,18 @@ if text.count(old_init) != 1:
     raise SystemExit(f"repair expected one shutdown initialization block, found {text.count(old_init)}")
 text = text.replace(old_init, new_init, 1)
 
+hook_pattern = r"\n    hook = '''RetroAppInstance \*desktop_app_instance_for_test.*?        \"shutdown test probe\",\n    \)\n"
+hook_replacement = r'''
+    return replace_once(
+        text,
+        "\nint desktop_run(Desktop *desktop) {\n",
+        "\nbool desktop_shutdown_pending_for_test(const Desktop *desktop) {\n    return desktop && desktop->shutdown_requested;\n}\n\nint desktop_run(Desktop *desktop) {\n",
+        "shutdown test probe",
+    )
+'''
+text, count = re.subn(hook_pattern, lambda match: hook_replacement,
+                      text, count=1, flags=re.S)
+if count != 1:
+    raise SystemExit(f"repair expected one shutdown hook block, found {count}")
+
 path.write_text(text, encoding="utf-8")

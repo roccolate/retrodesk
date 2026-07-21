@@ -432,7 +432,7 @@ static void np_finish_close(RetroAppInstance *instance,
     state->close_prompt = false;
     state->close_after_save = false;
     state->force_close = true;
-    app_request_close(instance);
+    app_resolve_close(instance, RETRO_CLOSE_ALLOWED);
 }
 
 static void np_handle_close_prompt(RetroAppInstance *instance,
@@ -446,6 +446,7 @@ static void np_handle_close_prompt(RetroAppInstance *instance,
         state->close_prompt = false;
         state->close_after_save = false;
         state->error[0] = '\0';
+        app_resolve_close(instance, RETRO_CLOSE_CANCELLED);
         return;
     }
 
@@ -523,9 +524,13 @@ static void np_handle_save_as(RetroAppInstance *instance,
     int code = key->key_code;
 
     if (code == RETRO_KEY_ESC) {
+        bool was_closing = state->close_after_save;
         state->save_as = false;
         state->close_after_save = false;
         state->error[0] = '\0';
+        if (was_closing) {
+            app_resolve_close(instance, RETRO_CLOSE_CANCELLED);
+        }
         return;
     }
 
@@ -555,6 +560,9 @@ static void np_handle_save_as(RetroAppInstance *instance,
             if (should_close) np_finish_close(instance, state);
         } else {
             state->close_after_save = false;
+            if (should_close) {
+                app_resolve_close(instance, RETRO_CLOSE_CANCELLED);
+            }
         }
         return;
     }

@@ -61,5 +61,11 @@ if [[ $dosbox_rc -ne 0 ]]; then
     exit "$dosbox_rc"
 fi
 
-grep -Fxq 'RETRODESK_DOS_SMOKE_OK' "$dos_dir/SMOKE.OK"
-printf 'DOSBox-X smoke passed: %s\n' "$(cat "$dos_dir/SMOKE.OK")"
+# COMMAND.COM writes CRLF. Normalize the DOS marker before comparing it on the
+# Linux host so a successful run is not rejected solely for line endings.
+marker=$(tr -d '\r\n' <"$dos_dir/SMOKE.OK")
+if [[ "$marker" != "RETRODESK_DOS_SMOKE_OK" ]]; then
+    echo "run_dosbox_smoke: unexpected marker: $marker" >&2
+    exit 1
+fi
+printf 'DOSBox-X smoke passed: %s\n' "$marker"

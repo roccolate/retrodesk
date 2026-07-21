@@ -14,6 +14,7 @@ env:
   DJGPP_ARCHIVE: djgpp-linux64-gcc1220.tar.bz2
   PDCURSES_COMMIT: 6c1f95c4fa9f9f105879c2d99dd72a5bf335c046
   CWSDPMI_URL: https://www.delorie.com/pub/djgpp/current/v2misc/csdpmi7b.zip
+  CWSDPMI_SHA256: deacda0488e1cdd7c4a9f32fab45662b34c0ed6b2d7d4d13bc07041b62004a8c
 
 jobs:
   djgpp-dosbox:
@@ -32,11 +33,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          archive="$RUNNER_TEMP/$DJGPP_ARCHIVE"
           url="https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/${DJGPP_ARCHIVE}"
           curl --fail --silent --show-error --location --retry 3 \
-            --output "$RUNNER_TEMP/$DJGPP_ARCHIVE" "$url"
-          sha256sum "$RUNNER_TEMP/$DJGPP_ARCHIVE"
-          tar -xjf "$RUNNER_TEMP/$DJGPP_ARCHIVE" -C "$GITHUB_WORKSPACE"
+            --output "$archive" "$url"
+          sha256sum "$archive" | tee djgpp-toolchain.sha256
+          tar -xjf "$archive" -C "$GITHUB_WORKSPACE"
           test -x "$GITHUB_WORKSPACE/djgpp/bin/i586-pc-msdosdjgpp-gcc"
           echo "DJGPP_ROOT=$GITHUB_WORKSPACE/djgpp" >> "$GITHUB_ENV"
           echo "$GITHUB_WORKSPACE/djgpp/bin" >> "$GITHUB_PATH"
@@ -49,6 +51,7 @@ jobs:
           runtime="$RUNNER_TEMP/CWSDPMI.EXE"
           curl --fail --silent --show-error --location --retry 3 \
             --output "$archive" "$CWSDPMI_URL"
+          echo "$CWSDPMI_SHA256  $archive" | sha256sum -c -
           sha256sum "$archive" | tee cwsdpmi.sha256
           unzip -p "$archive" bin/CWSDPMI.EXE > "$runtime"
           test -s "$runtime"
@@ -83,6 +86,7 @@ jobs:
           name: retrodesk-dos-build-log
           path: |
             dos-build.log
+            djgpp-toolchain.sha256
             cwsdpmi.sha256
           if-no-files-found: error
 
@@ -97,6 +101,7 @@ jobs:
           name: retrodesk-dosbox-smoke-state
           path: |
             build/dos
+            djgpp-toolchain.sha256
             cwsdpmi.sha256
           if-no-files-found: error
 
@@ -106,5 +111,6 @@ jobs:
           name: retrodesk-dos-djgpp
           path: |
             build/dos
+            djgpp-toolchain.sha256
             cwsdpmi.sha256
           if-no-files-found: error

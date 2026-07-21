@@ -107,10 +107,20 @@ jobs:
       - name: Install pinned vcpkg
         shell: powershell
         run: |
-          git clone https://github.com/microsoft/vcpkg.git vcpkg
-          git -C vcpkg checkout --detach $env:VCPKG_COMMIT
-          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-          .\vcpkg\vcpkg.exe install pdcurses:x64-windows
+          $ErrorActionPreference = "Stop"
+          git clone --quiet https://github.com/microsoft/vcpkg.git vcpkg
+          git -C vcpkg checkout --quiet --detach $env:VCPKG_COMMIT
+          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics *> vcpkg-bootstrap.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content vcpkg-bootstrap.log -Tail 120
+            exit $LASTEXITCODE
+          }
+          .\vcpkg\vcpkg.exe install pdcurses:x64-windows *> vcpkg-install.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content vcpkg-install.log -Tail 120
+            exit $LASTEXITCODE
+          }
+          Get-Content vcpkg-install.log -Tail 12
 
       - name: Configure
         shell: powershell
@@ -123,19 +133,31 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DPDCURSES_ROOT="$pdcursesRoot" `
             -DRETROCORE_SPEC_DIR="$PWD\retrocore-spec" `
-            -DRETROCORE_SPEC_REQUIRED=ON
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            -DRETROCORE_SPEC_REQUIRED=ON *> configure.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content configure.log -Tail 160
+            exit $LASTEXITCODE
+          }
+          Get-Content configure.log -Tail 20
 
       - name: Build
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          cmake --build build --config ${{ matrix.config }} --parallel
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config ${{ matrix.config }} --parallel *> build.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content build.log -Tail 200
+            exit $LASTEXITCODE
+          }
+          Get-Content build.log -Tail 20
 
       - name: Test
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          ctest --test-dir build --output-on-failure -C ${{ matrix.config }}
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build --output-on-failure -C ${{ matrix.config }} *> test.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content test.log -Tail 200
+            exit $LASTEXITCODE
+          }
+          Get-Content test.log -Tail 40

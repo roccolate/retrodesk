@@ -14,4 +14,10 @@ size_t filemanager_scroll_offset_for_test(const RetroAppInstance *instance);
 bool filemanager_show_hidden_for_test(const RetroAppInstance *instance);
 bool filemanager_has_item_for_test(const RetroAppInstance *instance, const char *name);
 
+/* Notepad close-flow probes used by the runtime tests. */
+bool notepad_dirty_for_test(const RetroAppInstance *instance);
+bool notepad_close_prompt_for_test(const RetroAppInstance *instance);
+bool notepad_save_as_for_test(const RetroAppInstance *instance);
+bool notepad_close_after_save_for_test(const RetroAppInstance *instance);
+
 #endif

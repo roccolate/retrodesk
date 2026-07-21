@@ -125,7 +125,7 @@ make smoke-ci       # non-interactive smoke path
 
 | Key | Action |
 | --- | --- |
-| `F1` or `F2` | Open the Launcher |
+| `F1` or `F10` | Open the Launcher |
 | `F6` | Focus the next window |
 | `F9` | Enter move/resize mode |
 | `Ctrl+W` | Request close of the active app window |

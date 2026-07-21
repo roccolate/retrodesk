@@ -107,6 +107,10 @@ runtime_replacement = r'''def update_runtime_test(text: str) -> str:
         "TEST_REQUIRE(!instance.descriptor->can_close(&instance));",
         "TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);",
     )
+    text = text.replace(
+        "TEST_REQUIRE(!desc->can_close(&instance));",
+        "TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);",
+    )
     text = replace_once(
         text,
         """    app_request_close(diagnostics);

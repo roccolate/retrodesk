@@ -51,8 +51,28 @@ jobs:
 
       - name: Build and test
         run: |
-          cmake --build build/core-hardening --parallel
-          ctest --test-dir build/core-hardening --output-on-failure
+          set +e
+          cmake --build build/core-hardening --parallel > /tmp/core-build.log 2>&1
+          build_status=$?
+          ctest --test-dir build/core-hardening --output-on-failure > /tmp/core-tests.log 2>&1
+          test_status=$?
+          cat /tmp/core-build.log
+          cat /tmp/core-tests.log
+          if [ "$build_status" -ne 0 ] || [ "$test_status" -ne 0 ]; then
+            mkdir -p ci-artifacts
+            {
+              echo "=== BUILD ==="
+              cat /tmp/core-build.log
+              echo "=== TESTS ==="
+              cat /tmp/core-tests.log
+            } > ci-artifacts/core-hardening-tests.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add ci-artifacts/core-hardening-tests.log
+            git commit -m "chore: capture core hardening test failure"
+            git push origin HEAD:${{ github.head_ref }}
+            exit 1
+          fi
 
       - name: Publish verified source tree
         run: |

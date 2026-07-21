@@ -120,7 +120,9 @@ RetroFsError retro_fs_path_join(const RetroFsPath *b, const char *name,
     }
     size_t n = strlen(b->value);
     size_t m = strlen(name);
-    if (n > SIZE_MAX - m - 2) return RETRO_FS_TOO_LARGE;
+    if (m > SIZE_MAX - 2 || n > SIZE_MAX - m - 2) {
+        return RETRO_FS_TOO_LARGE;
+    }
     char *s = malloc(n + m + 2);
     if (!s) return RETRO_FS_OOM;
     memcpy(s, b->value, n);
@@ -426,10 +428,11 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *p, const char *data, size_
 
     mode_t mode = existed ? original.st_mode & 07777 : 0666;
     if (fchmod(fd, mode) < 0) {
+        int e = errno;
         cleanup_temporary(temporary, fd);
         free(temporary);
         retro_fs_path_destroy(&parent);
-        return map_errno(errno);
+        return map_errno(e);
     }
 
     size_t offset = 0;
@@ -518,7 +521,13 @@ RetroFsError retro_fs_create_file(const RetroFsPath *path) {
     if (!path || !path->value || !path->value[0]) return RETRO_FS_INVALID_ARGUMENT;
     int fd = open(path->value, O_WRONLY | O_CREAT | O_EXCL, 0666);
     if (fd < 0) return map_errno(errno);
-    if (fsync(fd) < 0 || close(fd) < 0) {
+    if (fsync(fd) < 0) {
+        int e = errno;
+        (void)close(fd);
+        (void)unlink(path->value);
+        return map_errno(e);
+    }
+    if (close(fd) < 0) {
         int e = errno;
         (void)unlink(path->value);
         return map_errno(e);

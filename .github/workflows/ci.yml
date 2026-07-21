@@ -94,37 +94,25 @@ jobs:
       matrix:
         config: [Debug, Release]
     steps:
-      - name: Checkout pinned sources quietly
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          git init --quiet .
-          git remote add origin "https://github.com/${{ github.repository }}.git"
-          git fetch --quiet --no-tags --depth=1 origin "+${{ github.ref }}:refs/remotes/origin/ci"
-          git checkout --quiet --detach refs/remotes/origin/ci
-          git clone --quiet --no-checkout https://github.com/roccolate/retrocore-spec.git retrocore-spec
-          git -C retrocore-spec fetch --quiet --depth=1 origin $env:RETROCORE_SPEC_COMMIT
-          git -C retrocore-spec checkout --quiet --detach $env:RETROCORE_SPEC_COMMIT
+      - name: Checkout RetroDesk
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Checkout pinned retrocore-spec fixtures
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: roccolate/retrocore-spec
+          ref: ${{ env.RETROCORE_SPEC_COMMIT }}
+          path: retrocore-spec
 
       - name: Install pinned vcpkg
         shell: powershell
         run: |
-          $ErrorActionPreference = "Stop"
-          git clone --quiet https://github.com/microsoft/vcpkg.git vcpkg
-          git -C vcpkg checkout --quiet --detach $env:VCPKG_COMMIT
-          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics *> vcpkg-bootstrap.log
-          if ($LASTEXITCODE -ne 0) {
-            Get-Content vcpkg-bootstrap.log -Tail 120
-            exit $LASTEXITCODE
-          }
-          .\vcpkg\vcpkg.exe install pdcurses:x64-windows *> vcpkg-install.log
-          if ($LASTEXITCODE -ne 0) {
-            Get-Content vcpkg-install.log -Tail 120
-            exit $LASTEXITCODE
-          }
-          Get-Content vcpkg-install.log -Tail 12
+          git clone https://github.com/microsoft/vcpkg.git vcpkg
+          git -C vcpkg checkout --detach $env:VCPKG_COMMIT
+          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          .\vcpkg\vcpkg.exe install pdcurses:x64-windows
 
-      - name: Configure
+      - name: Configure, build, and test
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -135,31 +123,9 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DPDCURSES_ROOT="$pdcursesRoot" `
             -DRETROCORE_SPEC_DIR="$PWD\retrocore-spec" `
-            -DRETROCORE_SPEC_REQUIRED=ON *> configure.log
-          if ($LASTEXITCODE -ne 0) {
-            Get-Content configure.log -Tail 160
-            exit $LASTEXITCODE
-          }
-          Get-Content configure.log -Tail 20
-
-      - name: Build
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          cmake --build build --config ${{ matrix.config }} --parallel *> build.log
-          if ($LASTEXITCODE -ne 0) {
-            Get-Content build.log -Tail 200
-            exit $LASTEXITCODE
-          }
-          Get-Content build.log -Tail 20
-
-      - name: Test
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          ctest --test-dir build --output-on-failure -C ${{ matrix.config }} *> test.log
-          if ($LASTEXITCODE -ne 0) {
-            Get-Content test.log -Tail 200
-            exit $LASTEXITCODE
-          }
-          Get-Content test.log -Tail 40
+            -DRETROCORE_SPEC_REQUIRED=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config ${{ matrix.config }} --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build --output-on-failure -C ${{ matrix.config }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

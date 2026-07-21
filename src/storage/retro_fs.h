@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(_WIN32) || defined(__DJGPP__)
+#if defined(__DJGPP__)
 #include <stdlib.h>
 #include <string.h>
 #endif
@@ -58,19 +58,12 @@ typedef struct RetroFsEntry {
 
 typedef bool (*RetroFsListFn)(const RetroFsEntry *entry, void *userdata);
 
-#if defined(_WIN32) || defined(__DJGPP__)
+#if defined(__DJGPP__)
 
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4505)
-#endif
-
-/* Windows and DOS do not have a native storage adapter yet. Keep the API
-   link-complete and fail every mutating/read operation explicitly instead of
-   silently linking the POSIX implementation or leaving unresolved symbols.
-   Directory listing returns an empty view whose path label states that storage
-   is unavailable, allowing the desktop and editor to remain usable. */
-#define RETRO_FS_UNAVAILABLE_PATH "[storage unavailable on Windows/DOS]"
+/* DOS remains link-complete while its native adapter is developed. Directory
+   listing returns an empty view whose label makes the limitation explicit;
+   all real filesystem operations fail with RETRO_FS_UNSUPPORTED. */
+#define RETRO_FS_UNAVAILABLE_PATH "[storage unavailable on DOS]"
 
 static inline RetroFsError retro_fs_path_init(RetroFsPath *path,
                                                const char *value) {
@@ -178,10 +171,6 @@ static inline const char *retro_fs_error_string(RetroFsError error) {
     };
     return error <= RETRO_FS_INVALID_ARGUMENT ? messages[error] : "unknown";
 }
-
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#endif
 
 #else
 

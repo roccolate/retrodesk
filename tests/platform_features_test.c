@@ -6,7 +6,7 @@
 #include "platform/platform.h"
 #include "storage/retro_fs.h"
 
-#if defined(_WIN32) || defined(__DJGPP__)
+#if defined(__DJGPP__)
 static bool unsupported_list_callback(const RetroFsEntry *entry, void *userdata) {
     (void)entry;
     (void)userdata;
@@ -32,7 +32,11 @@ int main(void) {
     TEST_REQUIRE(platform_input_backend_supported(INPUT_BACKEND_PDCURSES));
 #if defined(_WIN32) || defined(__DJGPP__)
     TEST_REQUIRE(!platform_input_backend_supported(INPUT_BACKEND_TTY_RAW));
+#else
+    TEST_REQUIRE(platform_input_backend_supported(INPUT_BACKEND_TTY_RAW));
+#endif
 
+#if defined(__DJGPP__)
     RetroFsPath path = {0};
     TEST_REQUIRE(retro_fs_path_init(&path, ".") == RETRO_FS_OK);
     TEST_REQUIRE(strstr(retro_fs_path_cstr(&path), "storage unavailable") != NULL);
@@ -42,8 +46,6 @@ int main(void) {
     TEST_REQUIRE(retro_fs_write_atomic(&path, "", 0, NULL, NULL) ==
                  RETRO_FS_UNSUPPORTED);
     retro_fs_path_destroy(&path);
-#else
-    TEST_REQUIRE(platform_input_backend_supported(INPUT_BACKEND_TTY_RAW));
 #endif
 
     return 0;

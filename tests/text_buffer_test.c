@@ -601,6 +601,74 @@ static void test_selection_render_overlay(void) {
     printf("  PASS: selection_render_overlay\n");
 }
 
+static void test_utf8_wrapped_render_and_navigation(void) {
+    TextBuffer *tb = text_buffer_create();
+    DrawList *list = draw_list_create();
+    TEST_REQUIRE(tb != NULL);
+    TEST_REQUIRE(list != NULL);
+    TEST_REQUIRE(text_buffer_set_text(tb, "abñcdEF"));
+    text_buffer_set_cursor(tb, 0, 8);
+
+    TEST_REQUIRE(text_buffer_visual_row_count(tb, 4) == 2);
+    TEST_REQUIRE(text_buffer_cursor_visual_row(tb, 4) == 1);
+
+    RetroKeyEvent shift_up = key_modified(RETRO_KEY_UP, RETRO_MOD_SHIFT);
+    TEST_REQUIRE(text_buffer_handle_key_wrapped(tb, &shift_up, 4));
+    TEST_REQUIRE(text_buffer_cursor_row(tb) == 0);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 4);
+    TEST_REQUIRE(text_buffer_cursor_visual_row(tb, 4) == 0);
+    TEST_REQUIRE(text_buffer_has_selection(tb));
+
+    size_t selected_length = 0;
+    char *selected = text_buffer_selected_text(tb, &selected_length);
+    TEST_REQUIRE(selected != NULL);
+    TEST_REQUIRE(selected_length == 4);
+    TEST_REQUIRE(strcmp(selected, "cdEF") == 0);
+    free(selected);
+
+    RenderStyle style = {
+        RENDER_COLOR_WHITE, RENDER_COLOR_BLACK, false, false
+    };
+    RenderStyle cursor = {
+        RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, true, false
+    };
+    RenderStyle selection = {
+        .fg = RENDER_COLOR_BLACK,
+        .bg = RENDER_COLOR_CYAN,
+        .reverse = true,
+        .bold = false,
+    };
+    text_buffer_render_wrapped_with_selection(
+        tb, list, 0, 0, 2, 4, &style, &cursor, &selection);
+    TEST_REQUIRE(draw_list_count(list) == 5);
+
+    DrawCommandView command = {0};
+    TEST_REQUIRE(draw_list_get(list, 0, &command));
+    TEST_REQUIRE(strcmp(command.text, "abñc") == 0);
+    TEST_REQUIRE(draw_list_get(list, 1, &command));
+    TEST_REQUIRE(command.x == 3);
+    TEST_REQUIRE(strcmp(command.text, "c") == 0);
+    TEST_REQUIRE(draw_list_get(list, 2, &command));
+    TEST_REQUIRE(strcmp(command.text, "dEF ") == 0);
+    TEST_REQUIRE(draw_list_get(list, 3, &command));
+    TEST_REQUIRE(command.x == 0);
+    TEST_REQUIRE(strcmp(command.text, "dEF") == 0);
+    TEST_REQUIRE(draw_list_get(list, 4, &command));
+    TEST_REQUIRE(command.y == 0);
+    TEST_REQUIRE(command.x == 3);
+    TEST_REQUIRE(strcmp(command.text, "c") == 0);
+
+    RetroKeyEvent down = key_code(RETRO_KEY_DOWN);
+    TEST_REQUIRE(text_buffer_handle_key_wrapped(tb, &down, 4));
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 8);
+    TEST_REQUIRE(text_buffer_cursor_visual_row(tb, 4) == 1);
+    TEST_REQUIRE(!text_buffer_has_selection(tb));
+
+    draw_list_destroy(list);
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_wrapped_render_and_navigation\n");
+}
+
 static void test_utf8_find_next_and_wrap(void) {
     TextBuffer *tb = text_buffer_create();
     TEST_REQUIRE(tb != NULL);
@@ -668,6 +736,9 @@ static void test_null_safety(void) {
     TEST_REQUIRE(!text_buffer_delete_backward(NULL));
     TEST_REQUIRE(!text_buffer_delete_forward(NULL));
     TEST_REQUIRE(!text_buffer_handle_key(NULL, NULL));
+    TEST_REQUIRE(!text_buffer_handle_key_wrapped(NULL, NULL, 4));
+    TEST_REQUIRE(text_buffer_visual_row_count(NULL, 4) == 0);
+    TEST_REQUIRE(text_buffer_cursor_visual_row(NULL, 4) == 0);
     TEST_REQUIRE(!text_buffer_set_text(NULL, "test"));
     TextBufferMatch match = {0};
     TEST_REQUIRE(!text_buffer_find_next(NULL, "x", 1, true,
@@ -731,6 +802,7 @@ int main(void) {
     test_select_all_and_atomic_insert();
     test_collapsed_shift_selection_stays_collapsed();
     test_selection_render_overlay();
+    test_utf8_wrapped_render_and_navigation();
     test_utf8_find_next_and_wrap();
     test_null_safety();
     test_render_basic();

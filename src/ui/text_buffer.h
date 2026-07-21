@@ -73,6 +73,15 @@ bool text_buffer_delete_forward(TextBuffer *buf);
 
 /* Event handling — returns true if the key was consumed. */
 bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key);
+/* Wrapped handling changes Up/Down to move across visual rows. */
+bool text_buffer_handle_key_wrapped(TextBuffer *buf,
+                                    const RetroKeyEvent *key,
+                                    size_t wrap_columns);
+/* Visual-row probes use terminal cell columns and preserve UTF-8 boundaries. */
+size_t text_buffer_visual_row_count(const TextBuffer *buf,
+                                    size_t wrap_columns);
+size_t text_buffer_cursor_visual_row(const TextBuffer *buf,
+                                     size_t wrap_columns);
 
 /* Compatibility renderer without selection highlighting. */
 void text_buffer_render(const TextBuffer *buf, DrawList *draw_list,
@@ -82,6 +91,12 @@ void text_buffer_render(const TextBuffer *buf, DrawList *draw_list,
 
 /* Selection-aware renderer used by editors. */
 void text_buffer_render_with_selection(
+    const TextBuffer *buf, DrawList *draw_list,
+    int y, int x, int visible_rows, int visible_cols,
+    const RenderStyle *style, const RenderStyle *cursor_style,
+    const RenderStyle *selection_style);
+/* Soft-wrap renderer; logical text and saved bytes remain unchanged. */
+void text_buffer_render_wrapped_with_selection(
     const TextBuffer *buf, DrawList *draw_list,
     int y, int x, int visible_rows, int visible_cols,
     const RenderStyle *style, const RenderStyle *cursor_style,

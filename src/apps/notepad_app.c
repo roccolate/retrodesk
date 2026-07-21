@@ -13,6 +13,7 @@
 enum {
     NP_HISTORY_MAX_STATES = 100,
     NP_HISTORY_MAX_BYTES = 1024 * 1024,
+    NP_WRAP_COLUMNS = 64,
 };
 
 typedef struct NotepadHistoryEntry {
@@ -36,6 +37,7 @@ typedef struct NotepadState {
     bool save_as;
     bool search_mode;
     bool search_has_match;
+    bool wrap_mode;
     bool close_prompt;
     bool close_after_save;
     bool force_close;
@@ -264,7 +266,10 @@ static void np_handle_editor_key(NotepadState *state,
         if (!captured) np_clear_history(state);
     }
 
-    bool consumed = text_buffer_handle_key(state->buffer, key);
+    bool consumed = state->wrap_mode
+                        ? text_buffer_handle_key_wrapped(
+                              state->buffer, key, NP_WRAP_COLUMNS)
+                        : text_buffer_handle_key(state->buffer, key);
     if (!consumed) {
         np_history_entry_destroy(&before);
         return;
@@ -640,6 +645,12 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
         return;
     }
 
+    if (key->key_code == RETRO_KEY_F4) {
+        state->wrap_mode = !state->wrap_mode;
+        state->error[0] = '\0';
+        return;
+    }
+
     if (key->key_code == RETRO_KEY_ESC) {
         if (text_buffer_has_selection(state->buffer)) {
             text_buffer_clear_selection(state->buffer);
@@ -649,6 +660,24 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
     }
 
     np_handle_editor_key(state, key);
+}
+
+static void np_render_buffer(const NotepadState *state,
+                             DrawList *draw_list,
+                             int y, int rows,
+                             const RenderStyle *text,
+                             const RenderStyle *cursor,
+                             const RenderStyle *selection) {
+    if (!state || !draw_list || !text || !cursor || !selection) return;
+    if (state->wrap_mode) {
+        text_buffer_render_wrapped_with_selection(
+            state->buffer, draw_list, y, 2, rows, NP_WRAP_COLUMNS,
+            text, cursor, selection);
+    } else {
+        text_buffer_render_with_selection(
+            state->buffer, draw_list, y, 2, rows, NP_WRAP_COLUMNS,
+            text, cursor, selection);
+    }
 }
 
 static void np_render_close_prompt(const NotepadState *state,
@@ -685,15 +714,16 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
                    "Ctrl+S save | F3 Save As | Ctrl+Z/Y undo/redo | Ctrl+W close",
                    text);
     if (!state->save_as && !state->close_prompt && !state->search_mode) {
-        draw_list_text(draw_list, 3, 2,
-                       "Shift+arrows select | Ctrl+A/C/X/V | Ctrl+F find",
-                       text);
+        char edit_hint[128];
+        snprintf(edit_hint, sizeof(edit_hint),
+                 "Shift+arrows select | Ctrl+A/C/X/V | Ctrl+F | F4 wrap:%s",
+                 state->wrap_mode ? "on" : "off");
+        draw_list_text(draw_list, 3, 2, edit_hint, text);
     }
 
     if (state->close_prompt) {
-        text_buffer_render_with_selection(
-            state->buffer, draw_list, 4, 2, 11, 64,
-            text, cursor, &selection);
+        np_render_buffer(state, draw_list, 4, 11,
+                         text, cursor, &selection);
         np_render_close_prompt(state, draw_list, text, accent, cursor);
     } else if (state->save_as) {
         draw_list_text(draw_list, 3, 2,
@@ -705,13 +735,11 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
                        "Find (Enter next, Esc close):", accent);
         text_input_render(state->path_input, draw_list, 4, 2, 64,
                           text, cursor);
-        text_buffer_render_with_selection(
-            state->buffer, draw_list, 6, 2, 9, 64,
-            text, cursor, &selection);
+        np_render_buffer(state, draw_list, 6, 9,
+                         text, cursor, &selection);
     } else {
-        text_buffer_render_with_selection(
-            state->buffer, draw_list, 4, 2, 11, 64,
-            text, cursor, &selection);
+        np_render_buffer(state, draw_list, 4, 11,
+                         text, cursor, &selection);
     }
 
     if (state->error[0]) {
@@ -801,6 +829,12 @@ bool notepad_search_mode_for_test(const RetroAppInstance *instance) {
     if (!instance || !instance->state) return false;
     const NotepadState *state = instance->state;
     return state->search_mode;
+}
+
+bool notepad_wrap_mode_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->wrap_mode;
 }
 
 const RetroAppDescriptor *notepad_app_descriptor(void) {

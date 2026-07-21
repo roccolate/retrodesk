@@ -542,6 +542,63 @@ static void test_notepad_utf8_find(void) {
     retro_clipboard_clear();
 }
 
+static void test_notepad_word_wrap_navigation(void) {
+    RetroAppInstance instance = create_untitled_notepad();
+    TEST_REQUIRE(!notepad_wrap_mode_for_test(&instance));
+    TEST_REQUIRE(!notepad_dirty_for_test(&instance));
+    TEST_REQUIRE(notepad_undo_count_for_test(&instance) == 0);
+
+    RetroEvent toggle = key_event(RETRO_KEY_F4, '\0');
+    app_handle_event(&instance, &toggle);
+    TEST_REQUIRE(notepad_wrap_mode_for_test(&instance));
+    TEST_REQUIRE(!notepad_dirty_for_test(&instance));
+    TEST_REQUIRE(notepad_undo_count_for_test(&instance) == 0);
+
+    for (int index = 0; index < 70; ++index) {
+        type_notepad_char(&instance, 'a');
+    }
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 70);
+    size_t history_before_navigation = notepad_undo_count_for_test(&instance);
+
+    RetroEvent up = key_event(RETRO_KEY_UP, '\0');
+    app_handle_event(&instance, &up);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 6);
+    TEST_REQUIRE(notepad_undo_count_for_test(&instance) ==
+                 history_before_navigation);
+
+    RetroEvent down = key_event(RETRO_KEY_DOWN, '\0');
+    app_handle_event(&instance, &down);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 70);
+    TEST_REQUIRE(notepad_undo_count_for_test(&instance) ==
+                 history_before_navigation);
+
+    RetroEvent shift_up = modified_key_event(
+        RETRO_KEY_UP, RETRO_MOD_SHIFT);
+    app_handle_event(&instance, &shift_up);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 6);
+    RetroEvent copy = key_event(RETRO_KEY_CTRL_C, '\0');
+    app_handle_event(&instance, &copy);
+    TEST_REQUIRE(retro_clipboard_has_text());
+    TEST_REQUIRE(strlen(retro_clipboard_text(NULL)) == 64);
+    TEST_REQUIRE(notepad_undo_count_for_test(&instance) ==
+                 history_before_navigation);
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &escape);
+    app_handle_event(&instance, &down);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 70);
+
+    app_handle_event(&instance, &toggle);
+    TEST_REQUIRE(!notepad_wrap_mode_for_test(&instance));
+    app_handle_event(&instance, &up);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 70);
+    TEST_REQUIRE(notepad_undo_count_for_test(&instance) ==
+                 history_before_navigation);
+
+    instance.descriptor->destroy(&instance);
+    retro_clipboard_clear();
+}
+
 static void test_notepad_shift_selection_replacement(void) {
     RetroAppInstance instance = create_untitled_notepad();
     type_notepad_char(&instance, 'n');
@@ -853,6 +910,7 @@ int main(void) {
     test_notepad_history_limit_and_noop();
     test_notepad_selection_clipboard_between_instances();
     test_notepad_utf8_find();
+    test_notepad_word_wrap_navigation();
     test_notepad_shift_selection_replacement();
 #if !defined(_WIN32)
     test_notepad_saved_baseline_tracks_undo();

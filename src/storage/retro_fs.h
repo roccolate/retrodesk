@@ -52,6 +52,8 @@ RetroFsError retro_fs_stat(const RetroFsPath *path, RetroFsVersion *version);
    rejected before any partial result is delivered. */
 RetroFsError retro_fs_list(const RetroFsPath *path, size_t max_entries,
                             RetroFsListFn callback, void *userdata);
+/* Text operations use validated UTF-8. They reject malformed sequences,
+   embedded NUL/ESC, disallowed C0/C1 controls, and mixed LF/CRLF files. */
 RetroFsError retro_fs_read_text(const RetroFsPath *path, char **data,
                                  size_t *length, RetroFsVersion *version);
 RetroFsError retro_fs_write_atomic(const RetroFsPath *path, const char *data,

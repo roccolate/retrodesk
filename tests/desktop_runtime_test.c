@@ -225,14 +225,20 @@ static void test_launch_and_clean_close(void) {
     TEST_REQUIRE(desktop_app_count(desktop) == base_apps + 1);
     TEST_REQUIRE(desktop_window_count(desktop) == base_windows + 1);
 
-    app_request_close(diagnostics);
+    RetroEvent close = key_event(RETRO_KEY_CTRL_W, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &close));
+
+    /* A normal close removes only the active Diagnostics instance. */
+    TEST_REQUIRE(desktop_app_count(desktop) == base_apps);
+    TEST_REQUIRE(desktop_window_count(desktop) == base_windows);
+
     const RetroEvent events[] = {key_event(RETRO_KEY_CTRL_Q, '\0')};
     platform_stub_set_events(platform, events, 1);
     TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
 
-    /* Close request should have removed terminal app/window before exit. */
-    TEST_REQUIRE(desktop_app_count(desktop) == base_apps);
-    TEST_REQUIRE(desktop_window_count(desktop) == base_windows);
+    /* A clean global shutdown commits every app close atomically. */
+    TEST_REQUIRE(desktop_app_count(desktop) == 0);
+    TEST_REQUIRE(desktop_window_count(desktop) == base_windows - base_apps);
 
     desktop_shutdown(desktop);
     platform_destroy(platform);
@@ -302,7 +308,7 @@ static void test_notepad_close_cancel_and_discard(void) {
     type_notepad_char(&instance, 'x');
     TEST_REQUIRE(notepad_dirty_for_test(&instance));
 
-    TEST_REQUIRE(!instance.descriptor->can_close(&instance));
+    TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);
     TEST_REQUIRE(notepad_close_prompt_for_test(&instance));
 
     RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
@@ -311,7 +317,7 @@ static void test_notepad_close_cancel_and_discard(void) {
     TEST_REQUIRE(notepad_dirty_for_test(&instance));
     TEST_REQUIRE(!app_is_close_requested(&instance));
 
-    TEST_REQUIRE(!instance.descriptor->can_close(&instance));
+    TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);
     RetroEvent discard = key_event('d', 'd');
     app_handle_event(&instance, &discard);
     TEST_REQUIRE(!notepad_close_prompt_for_test(&instance));
@@ -326,7 +332,7 @@ static void test_notepad_untitled_save_routes_to_save_as(void) {
     RetroAppInstance instance = create_untitled_notepad();
     type_notepad_char(&instance, 'x');
 
-    TEST_REQUIRE(!instance.descriptor->can_close(&instance));
+    TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);
     RetroEvent save = key_event('s', 's');
     app_handle_event(&instance, &save);
     TEST_REQUIRE(!notepad_close_prompt_for_test(&instance));
@@ -684,6 +690,53 @@ static const RetroAppDescriptor k_key_sink_descriptor = {
     .destroy = key_sink_destroy,
 };
 
+static void test_ctrl_q_cancel_preserves_all_apps(void) {
+    PlatformBackend *platform = NULL;
+    Desktop *desktop = create_test_desktop(&platform);
+    TEST_REQUIRE(desktop != NULL);
+
+    RetroAppInstance *notepad = app_launch(desktop, "notepad");
+    TEST_REQUIRE(notepad != NULL);
+    type_notepad_char(notepad, 'x');
+    size_t app_count = desktop_app_count(desktop);
+
+    RetroEvent quit = key_event(RETRO_KEY_CTRL_Q, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &quit));
+    TEST_REQUIRE(desktop_shutdown_pending_for_test(desktop));
+    TEST_REQUIRE(notepad_close_prompt_for_test(notepad));
+    TEST_REQUIRE(desktop_app_count(desktop) == app_count);
+
+    RetroEvent cancel = key_event(RETRO_KEY_ESC, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &cancel));
+    TEST_REQUIRE(!desktop_shutdown_pending_for_test(desktop));
+    TEST_REQUIRE(desktop_app_count(desktop) == app_count);
+    TEST_REQUIRE(notepad_dirty_for_test(notepad));
+
+    destroy_test_desktop(desktop, platform);
+}
+
+static void test_ctrl_q_discard_commits_shutdown(void) {
+    PlatformBackend *platform = NULL;
+    Desktop *desktop = create_test_desktop(&platform);
+    TEST_REQUIRE(desktop != NULL);
+
+    RetroAppInstance *notepad = app_launch(desktop, "notepad");
+    TEST_REQUIRE(notepad != NULL);
+    type_notepad_char(notepad, 'x');
+
+    RetroEvent quit = key_event(RETRO_KEY_CTRL_Q, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &quit));
+    TEST_REQUIRE(desktop_shutdown_pending_for_test(desktop));
+    TEST_REQUIRE(desktop_app_count(desktop) >= 2);
+
+    RetroEvent discard = key_event('d', 'd');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &discard));
+    TEST_REQUIRE(!desktop_shutdown_pending_for_test(desktop));
+    TEST_REQUIRE(desktop_app_count(desktop) == 0);
+
+    destroy_test_desktop(desktop, platform);
+}
+
 static void test_desktop_f2_reaches_focused_app(void) {
     PlatformBackend *platform = NULL;
     Desktop *desktop = create_test_desktop(&platform);
@@ -859,7 +912,7 @@ static void test_notepad_save_before_close(void) {
 
     type_notepad_char(&instance, 'x');
     TEST_REQUIRE(notepad_dirty_for_test(&instance));
-    TEST_REQUIRE(!desc->can_close(&instance));
+    TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);
     TEST_REQUIRE(notepad_close_prompt_for_test(&instance));
 
     RetroEvent save = key_event('s', 's');
@@ -1016,6 +1069,8 @@ int main(void) {
     test_notepad_shift_selection_replacement();
     test_desktop_f2_reaches_focused_app();
     test_launcher_close_respects_dirty_notepad();
+    test_ctrl_q_cancel_preserves_all_apps();
+    test_ctrl_q_discard_commits_shutdown();
 #if !defined(_WIN32)
     test_notepad_saved_baseline_tracks_undo();
     test_notepad_save_before_close();

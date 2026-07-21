@@ -42,6 +42,23 @@ jobs:
               line[10:] if line.startswith('          ') else line
               for line in embedded.splitlines()
           )
+          brittle = '''if old not in text:
+    raise SystemExit("notepad editor handler signature changed")
+text = text.replace(old, new, 1)'''
+          structural = '''if old not in text:
+    import re
+    text, replaced = re.subn(
+        r"static void np_handle_editor_key\\(NotepadState \\*state,\\n[ \\t]+const RetroKeyEvent \\*key\\) \\{\\n[ \\t]+if \\(!state \\|\\| !key\\) return;\\n",
+        old,
+        text,
+        count=1,
+    )
+    if replaced != 1:
+        raise SystemExit("notepad editor handler signature changed")
+text = text.replace(old, new, 1)'''
+          if brittle not in payload:
+              raise SystemExit('materializer signature guard not found')
+          payload = payload.replace(brittle, structural, 1)
           exec(compile(payload, str(workflow), 'exec'), {})
           PY
           status=$?

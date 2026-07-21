@@ -1,0 +1,258 @@
+name: Agent Fix DJGPP Storage
+
+on:
+  push:
+    branches: [agent/native-djgpp-storage]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: agent/native-djgpp-storage
+          fetch-depth: 0
+
+      - name: Apply DOS runtime fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              return text.replace(old, new, 1)
+
+          source_path = Path("src/storage/retro_fs_djgpp.c")
+          source = source_path.read_text()
+          marker = '''static bool reserve_entries(RetroFsEntry **entries, size_t *capacity,
+                              size_t wanted) {
+              if (!entries || !capacity) return false;
+              if (wanted <= *capacity) return true;
+              size_t next = *capacity ? *capacity : 32;
+              while (next < wanted) {
+                  if (next > SIZE_MAX / 2) {
+                      next = wanted;
+                      break;
+                  }
+                  next *= 2;
+              }
+              if (next > SIZE_MAX / sizeof(**entries)) return false;
+              RetroFsEntry *grown = realloc(*entries, next * sizeof(*grown));
+              if (!grown) return false;
+              *entries = grown;
+              *capacity = next;
+              return true;
+          }
+          '''
+          helper = marker + '''
+          static RetroFsError append_entry(RetroFsEntry **entries, size_t *count,
+                                           size_t *capacity, size_t max_entries,
+                                           const char *name,
+                                           const RetroFsPath *entry_path) {
+              if (!entries || !count || !capacity || !name || !entry_path ||
+                  !entry_path->value) {
+                  return RETRO_FS_INVALID_ARGUMENT;
+              }
+              if (*count == max_entries) return RETRO_FS_TOO_LARGE;
+              struct stat metadata;
+              if (stat(entry_path->value, &metadata) < 0) return map_errno(errno);
+              RetroFsEntry entry = {0};
+              entry.name = duplicate_string(name);
+              if (!entry.name) return RETRO_FS_OOM;
+              RetroFsError status =
+                  fill_version(entry_path->value, &metadata, &entry.version);
+              if (status != RETRO_FS_OK) {
+                  free(entry.name);
+                  return status;
+              }
+              entry.kind = entry.version.kind;
+              entry.size = entry.version.size;
+              if (!reserve_entries(entries, capacity, *count + 1)) {
+                  free(entry.name);
+                  return RETRO_FS_OOM;
+              }
+              (*entries)[(*count)++] = entry;
+              return RETRO_FS_OK;
+          }
+          '''
+          source = replace_once(source, marker, helper, "append helper")
+
+          old_list = '''RetroFsError retro_fs_list(const RetroFsPath *path, size_t max_entries,
+                                     RetroFsListFn callback, void *userdata) {
+              if (!path || !path->value || !callback || max_entries == 0) {
+                  return RETRO_FS_INVALID_ARGUMENT;
+              }
+              DIR *directory = opendir(path->value);
+              if (!directory) return map_errno(errno);
+              RetroFsEntry *entries = NULL;
+              size_t count = 0;
+              size_t capacity = 0;
+              RetroFsError status = RETRO_FS_OK;
+              errno = 0;
+              struct dirent *native_entry = NULL;
+              while ((native_entry = readdir(directory)) != NULL) {
+                  if (strcmp(native_entry->d_name, ".") == 0) continue;
+                  if (!valid_dos_component(native_entry->d_name)) {
+                      status = RETRO_FS_UNSUPPORTED;
+                      break;
+                  }
+                  if (count == max_entries) {
+                      status = RETRO_FS_TOO_LARGE;
+                      break;
+                  }
+                  RetroFsPath child = {0};
+                  status = retro_fs_path_join(path, native_entry->d_name, &child);
+                  if (status != RETRO_FS_OK) break;
+                  struct stat metadata;
+                  if (stat(child.value, &metadata) < 0) {
+                      status = map_errno(errno);
+                      retro_fs_path_destroy(&child);
+                      break;
+                  }
+                  RetroFsEntry entry = {0};
+                  entry.name = duplicate_string(native_entry->d_name);
+                  if (!entry.name) {
+                      retro_fs_path_destroy(&child);
+                      status = RETRO_FS_OOM;
+                      break;
+                  }
+                  status = fill_version(child.value, &metadata, &entry.version);
+                  retro_fs_path_destroy(&child);
+                  if (status != RETRO_FS_OK) {
+                      free(entry.name);
+                      break;
+                  }
+                  entry.kind = entry.version.kind;
+                  entry.size = entry.version.size;
+                  if (!reserve_entries(&entries, &capacity, count + 1)) {
+                      free(entry.name);
+                      status = RETRO_FS_OOM;
+                      break;
+                  }
+                  entries[count++] = entry;
+                  errno = 0;
+              }
+              if (status == RETRO_FS_OK && errno != 0) status = map_errno(errno);
+              if (closedir(directory) < 0 && status == RETRO_FS_OK) {
+                  status = map_errno(errno);
+              }
+              if (status != RETRO_FS_OK) {
+                  free_entries(entries, count);
+                  return status;
+              }
+              if (count > 1) qsort(entries, count, sizeof(*entries), entry_compare);
+              for (size_t index = 0; index < count; ++index) {
+                  if (!callback(&entries[index], userdata)) break;
+              }
+              free_entries(entries, count);
+              return RETRO_FS_OK;
+          }
+          '''
+          new_list = '''RetroFsError retro_fs_list(const RetroFsPath *path, size_t max_entries,
+                                     RetroFsListFn callback, void *userdata) {
+              if (!path || !path->value || !callback || max_entries == 0) {
+                  return RETRO_FS_INVALID_ARGUMENT;
+              }
+              RetroFsVersion directory_version = {0};
+              RetroFsError status = retro_fs_stat(path, &directory_version);
+              if (status != RETRO_FS_OK) return status;
+              if (directory_version.kind != RETRO_FS_KIND_DIRECTORY) {
+                  return RETRO_FS_UNSUPPORTED;
+              }
+              DIR *directory = opendir(path->value);
+              if (!directory) return map_errno(errno);
+              RetroFsEntry *entries = NULL;
+              size_t count = 0;
+              size_t capacity = 0;
+
+              RetroFsPath parent = {0};
+              status = retro_fs_path_parent(path, &parent);
+              if (status == RETRO_FS_OK) {
+                  status = append_entry(&entries, &count, &capacity, max_entries,
+                                        "..", &parent);
+              }
+              retro_fs_path_destroy(&parent);
+
+              errno = 0;
+              struct dirent *native_entry = NULL;
+              while (status == RETRO_FS_OK &&
+                     (native_entry = readdir(directory)) != NULL) {
+                  if (strcmp(native_entry->d_name, ".") == 0 ||
+                      strcmp(native_entry->d_name, "..") == 0) {
+                      continue;
+                  }
+                  if (!valid_dos_component(native_entry->d_name)) {
+                      status = RETRO_FS_UNSUPPORTED;
+                      break;
+                  }
+                  RetroFsPath child = {0};
+                  status = retro_fs_path_join(path, native_entry->d_name, &child);
+                  if (status == RETRO_FS_OK) {
+                      status = append_entry(&entries, &count, &capacity,
+                                            max_entries, native_entry->d_name,
+                                            &child);
+                  }
+                  retro_fs_path_destroy(&child);
+                  errno = 0;
+              }
+              if (status == RETRO_FS_OK && errno != 0) status = map_errno(errno);
+              if (closedir(directory) < 0 && status == RETRO_FS_OK) {
+                  status = map_errno(errno);
+              }
+              if (status != RETRO_FS_OK) {
+                  free_entries(entries, count);
+                  return status;
+              }
+              if (count > 1) qsort(entries, count, sizeof(*entries), entry_compare);
+              for (size_t index = 0; index < count; ++index) {
+                  if (!callback(&entries[index], userdata)) break;
+              }
+              free_entries(entries, count);
+              return RETRO_FS_OK;
+          }
+          '''
+          source = replace_once(source, old_list, new_list, "DOS list contract")
+          source_path.write_text(source)
+
+          test_path = Path("tests/storage_djgpp_test.c")
+          test = test_path.read_text()
+          test = replace_once(
+              test,
+              '''int main(void) {
+              char root_name[9];
+          ''',
+              '''int main(void) {
+              FILE *log_file = freopen("FSTEST.LOG", "w", stderr);
+              TEST_REQUIRE(log_file != NULL);
+              setvbuf(stderr, NULL, _IONBF, 0);
+              char root_name[9];
+          ''',
+              "persistent test log",
+          )
+          test_path.write_text(test)
+
+          smoke_path = Path("scripts/run_dosbox_smoke.sh")
+          smoke = smoke_path.read_text()
+          smoke = smoke.replace("SMOKE.FAIL", "SMOKE.BAD")
+          smoke_path.write_text(smoke)
+          PY
+
+      - name: Commit fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/storage/retro_fs_djgpp.c tests/storage_djgpp_test.c \
+            scripts/run_dosbox_smoke.sh
+          git diff --cached --check
+          git commit -m "fix: honor DOS storage listing and smoke contracts"
+          git push origin HEAD:agent/native-djgpp-storage

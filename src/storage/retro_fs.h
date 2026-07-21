@@ -31,8 +31,10 @@ typedef struct RetroFsPath {
 } RetroFsPath;
 
 /* Adapter-neutral optimistic-concurrency token. Applications may retain and
-   return this value, but must not infer platform semantics from the identity
-   fields. Zero initialization produces an invalid/no-version token. */
+   return this value, but must not infer platform semantics from volume_id or
+   file_id. Zero initialization produces an invalid/no-version token. Kind,
+   size, and modified_ns describe the observed object at capture time; only the
+   storage adapter decides whether a later object is the same version. */
 typedef struct RetroFsVersion {
     bool valid;
     RetroFsKind kind;

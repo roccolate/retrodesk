@@ -33,17 +33,12 @@ if count != 1:
 
 header_pattern = r"def update_desktop_h\(text: str\) -> str:\n.*?\n\ndef update_desktop\(text: str\) -> str:"
 header_replacement = r'''def update_desktop_h(text: str) -> str:
-    marker = """RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
-                                                 const char *app_id);
-#endif
-"""
-    replacement = """RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
-                                                 const char *app_id);
-bool desktop_shutdown_pending_for_test(const Desktop *desktop);
-#endif
-"""
-    return replace_once(text, marker, replacement,
-                        "desktop shutdown test hook")
+    return replace_once(
+        text,
+        "#endif\nvoid desktop_shutdown(Desktop *desktop);\n",
+        "bool desktop_shutdown_pending_for_test(const Desktop *desktop);\n#endif\nvoid desktop_shutdown(Desktop *desktop);\n",
+        "desktop shutdown test hook",
+    )
 
 
 def update_desktop(text: str) -> str:'''

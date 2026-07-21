@@ -1,0 +1,136 @@
+name: Agent Apply DJGPP Storage
+
+on:
+  push:
+    branches: [agent/native-djgpp-storage]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: agent/native-djgpp-storage
+          fetch-depth: 0
+
+      - name: Patch build and DOS smoke
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              return text.replace(old, new, 1)
+
+          cmake_path = Path("CMakeLists.txt")
+          cmake = cmake_path.read_text()
+          cmake = replace_once(
+              cmake,
+              "    src/core/utf8.c\n    src/platform/platform.c\n",
+              "    src/core/utf8.c\n    src/storage/retro_fs_djgpp.c\n    src/platform/platform.c\n",
+              "CMake DJGPP source",
+          )
+          cmake = replace_once(
+              cmake,
+              "# Select the native storage adapter for each supported host. DOS keeps the\n# header-only unsupported adapter until its dedicated implementation lands.\n",
+              "# Select the native storage adapter for each supported host. DJGPP uses its\n# dedicated DOS adapter; Linux and Windows retain their native implementations.\n",
+              "CMake storage comment",
+          )
+          cmake = replace_once(
+              cmake,
+              "if (WIN32)\n    set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_win32.c)\nelseif (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL \"DOS\")\n    set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_posix.c)\nendif()\n",
+              "if (WIN32)\n    set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_win32.c)\nelseif (CMAKE_SYSTEM_NAME STREQUAL \"DOS\")\n    set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_djgpp.c)\nelseif (UNIX)\n    set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_posix.c)\nendif()\n",
+              "CMake storage selection",
+          )
+          cmake_path.write_text(cmake)
+
+          makefile_path = Path("Makefile.djgpp")
+          makefile = makefile_path.read_text()
+          makefile = replace_once(
+              makefile,
+              "\tsrc/core/utf8.c \\\n\tsrc/platform/platform.c \\\n",
+              "\tsrc/core/utf8.c \\\n\tsrc/storage/retro_fs_djgpp.c \\\n\tsrc/platform/platform.c \\\n",
+              "Makefile DJGPP source",
+          )
+          makefile = replace_once(
+              makefile,
+              "OBJS = $(SRCS:.c=.o)\nTARGET ?= retrodesk.exe\n\n.PHONY: all clean check-sources\nall: check-sources $(TARGET)\n\n$(TARGET): $(OBJS)\n\t$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)\n",
+              "OBJS = $(SRCS:.c=.o)\nTARGET ?= retrodesk.exe\nSTORAGE_TEST_TARGET ?= fstest.exe\nSTORAGE_TEST_OBJS = \\\n\ttests/storage_djgpp_test.o \\\n\tsrc/storage/retro_fs_djgpp.o \\\n\tsrc/core/utf8.o\n\n.PHONY: all clean check-sources storage-test\nall: check-sources $(TARGET) $(STORAGE_TEST_TARGET)\n\n$(TARGET): $(OBJS)\n\t$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)\n\n$(STORAGE_TEST_TARGET): $(STORAGE_TEST_OBJS)\n\t$(CC) $(LDFLAGS) -o $@ $^\n\nstorage-test: $(STORAGE_TEST_TARGET)\n",
+              "Makefile storage target",
+          )
+          makefile = replace_once(
+              makefile,
+              "clean:\n\t$(RM) $(OBJS) $(TARGET)\n",
+              "clean:\n\t$(RM) $(OBJS) tests/storage_djgpp_test.o $(TARGET) $(STORAGE_TEST_TARGET)\n",
+              "Makefile clean",
+          )
+          makefile_path.write_text(makefile)
+
+          build_path = Path("scripts/build_djgpp_ci.sh")
+          build = build_path.read_text()
+          build = replace_once(
+              build,
+              "if [[ ! -s retrodesk.exe ]]; then\n    echo \"build_djgpp_ci: retrodesk.exe was not produced\" >&2\n    exit 1\nfi\n\n\"$strip\" retrodesk.exe\nmkdir -p \"$out_dir\"\ncp retrodesk.exe \"$out_dir/retrodesk.exe\"\n",
+              "if [[ ! -s retrodesk.exe ]]; then\n    echo \"build_djgpp_ci: retrodesk.exe was not produced\" >&2\n    exit 1\nfi\nif [[ ! -s fstest.exe ]]; then\n    echo \"build_djgpp_ci: fstest.exe was not produced\" >&2\n    exit 1\nfi\n\n\"$strip\" retrodesk.exe\n\"$strip\" fstest.exe\nmkdir -p \"$out_dir\"\ncp retrodesk.exe \"$out_dir/retrodesk.exe\"\ncp fstest.exe \"$out_dir/FSTEST.EXE\"\n",
+              "DJGPP build outputs",
+          )
+          build = replace_once(
+              build,
+              "This alpha build uses the PDCurses DOS backend. Native filesystem operations\nare not implemented yet; File Manager shows an unavailable-storage view and\nuntitled Notepad documents remain in memory only.\n",
+              "This build uses the PDCurses DOS backend and a native DJGPP filesystem\nadapter. File Manager and Notepad support ASCII DOS path names and validated\nUTF-8 text content. Writes use same-directory temporary and backup files to\npreserve the previous document if a replacement fails.\n\nStorage self-test:\n\n  FSTEST.EXE\n",
+              "DJGPP README storage note",
+          )
+          build = replace_once(
+              build,
+              "    sha256sum retrodesk.exe CWSDPMI.EXE > SHA256SUMS\n",
+              "    sha256sum retrodesk.exe FSTEST.EXE CWSDPMI.EXE > SHA256SUMS\n",
+              "DJGPP checksums",
+          )
+          build_path.write_text(build)
+
+          smoke_path = Path("scripts/run_dosbox_smoke.sh")
+          smoke = smoke_path.read_text()
+          smoke = replace_once(
+              smoke,
+              "for file in retrodesk.exe CWSDPMI.EXE; do\n",
+              "for file in retrodesk.exe FSTEST.EXE CWSDPMI.EXE; do\n",
+              "DOSBox required files",
+          )
+          smoke = replace_once(
+              smoke,
+              "if exist SMOKE.FAIL del SMOKE.FAIL\nRETRODESK.EXE --diagnose\n",
+              "if exist SMOKE.FAIL del SMOKE.FAIL\nFSTEST.EXE\nif errorlevel 1 goto failed\nRETRODESK.EXE --diagnose\n",
+              "DOSBox storage test",
+          )
+          smoke_path.write_text(smoke)
+
+          workflow_path = Path(".github/workflows/dos.yml")
+          workflow = workflow_path.read_text()
+          workflow = replace_once(
+              workflow,
+              "            build/dos/retrodesk.exe\n            build/dos/CWSDPMI.EXE\n",
+              "            build/dos/retrodesk.exe\n            build/dos/FSTEST.EXE\n            build/dos/CWSDPMI.EXE\n",
+              "DOS artifact storage test",
+          )
+          workflow_path.write_text(workflow)
+          PY
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CMakeLists.txt Makefile.djgpp scripts/build_djgpp_ci.sh \
+            scripts/run_dosbox_smoke.sh .github/workflows/dos.yml
+          git diff --cached --check
+          git commit -m "build: integrate native DJGPP storage"
+          git push origin HEAD:agent/native-djgpp-storage

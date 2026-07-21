@@ -1,6 +1,7 @@
 #include "test_harness.h"
 #include <string.h>
 
+#include "core/utf8.h"
 #include "render/render.h"
 
 int main(void) {
@@ -50,6 +51,19 @@ int main(void) {
     draw_list_reset(list);
     TEST_REQUIRE(draw_list_count(list) == 0);
     TEST_REQUIRE(!draw_list_get(list, 0, &cmd));
+
+    char long_utf8[261];
+    for (size_t i = 0; i < 130; ++i) {
+        long_utf8[i * 2] = (char)0xc3;
+        long_utf8[i * 2 + 1] = (char)0xa9;
+    }
+    long_utf8[260] = '\0';
+
+    TEST_REQUIRE(draw_list_text(list, 0, 0, long_utf8, &body));
+    TEST_REQUIRE(draw_list_get(list, 0, &cmd));
+    size_t clipped_length = strlen(cmd.text);
+    TEST_REQUIRE(clipped_length == 254);
+    TEST_REQUIRE(retro_utf8_validate(cmd.text, clipped_length));
 
     draw_list_destroy(list);
     return 0;

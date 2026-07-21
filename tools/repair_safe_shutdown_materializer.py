@@ -47,4 +47,26 @@ text, count = re.subn(header_pattern, lambda match: header_replacement,
 if count != 1:
     raise SystemExit(f"repair expected one update_desktop_h function, found {count}")
 
+old_init = r'''    text = replace_once(
+        text,
+        "    desktop->launcher.window_id = WINDOW_ID_INVALID;\n",
+        "    desktop->launcher.window_id = WINDOW_ID_INVALID;\n    desktop->shutdown_waiting_window = WINDOW_ID_INVALID;\n",
+        "shutdown initialization",
+    )
+'''
+new_init = r'''    create_start = text.index("Desktop *desktop_create(")
+    create_end = text.index("RetroAppInstance *app_launch_with_path(", create_start)
+    create_body = text[create_start:create_end]
+    create_body = replace_once(
+        create_body,
+        "    desktop->launcher.window_id = WINDOW_ID_INVALID;\n",
+        "    desktop->launcher.window_id = WINDOW_ID_INVALID;\n    desktop->shutdown_waiting_window = WINDOW_ID_INVALID;\n",
+        "shutdown initialization",
+    )
+    text = text[:create_start] + create_body + text[create_end:]
+'''
+if text.count(old_init) != 1:
+    raise SystemExit(f"repair expected one shutdown initialization block, found {text.count(old_init)}")
+text = text.replace(old_init, new_init, 1)
+
 path.write_text(text, encoding="utf-8")

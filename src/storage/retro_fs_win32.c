@@ -703,7 +703,9 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *path, const char *data,
     if (!path || !path->value || (!data && length != 0)) {
         return RETRO_FS_INVALID_ARGUMENT;
     }
-    if (written) *written = (RetroFsVersion){0};
+    /* expected and written may intentionally alias (the POSIX adapter and
+       callers use this to replace a retained token in place). Do not mutate
+       written until every expected-version comparison has completed. */
     if (length > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;
     if (!valid_text_content(data, length)) return RETRO_FS_INVALID_TEXT;
 

@@ -24,15 +24,16 @@ jobs:
 
       - name: Install DOSBox-X runtime
         run: |
-          sudo apt-get update
-          sudo apt-get install -y dosbox-x xvfb
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dosbox-x xvfb >/dev/null
 
       - name: Install pinned DJGPP toolchain
         shell: bash
         run: |
           set -euo pipefail
           url="https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/${DJGPP_ARCHIVE}"
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/$DJGPP_ARCHIVE" "$url"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$RUNNER_TEMP/$DJGPP_ARCHIVE" "$url"
           sha256sum "$RUNNER_TEMP/$DJGPP_ARCHIVE"
           tar -xjf "$RUNNER_TEMP/$DJGPP_ARCHIVE" -C "$GITHUB_WORKSPACE"
           test -x "$GITHUB_WORKSPACE/djgpp/bin/i586-pc-msdosdjgpp-gcc"
@@ -53,8 +54,13 @@ jobs:
       - name: Build DJGPP executable
         shell: bash
         run: |
+          set -o pipefail
           chmod +x scripts/build_djgpp_ci.sh scripts/run_dosbox_smoke.sh
-          scripts/build_djgpp_ci.sh
+          if ! scripts/build_djgpp_ci.sh >dos-build.log 2>&1; then
+            tail -n 180 dos-build.log
+            exit 1
+          fi
+          tail -n 40 dos-build.log
 
       - name: Smoke test in DOSBox-X
         shell: bash

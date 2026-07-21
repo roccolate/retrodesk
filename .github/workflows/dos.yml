@@ -13,6 +13,7 @@ env:
   DJGPP_RELEASE: v3.4
   DJGPP_ARCHIVE: djgpp-linux64-gcc1220.tar.bz2
   PDCURSES_COMMIT: 6c1f95c4fa9f9f105879c2d99dd72a5bf335c046
+  CWSDPMI_URL: https://www.delorie.com/pub/djgpp/current/v2misc/csdpmi7b.zip
 
 jobs:
   djgpp-dosbox:
@@ -25,7 +26,7 @@ jobs:
       - name: Install DOS build/runtime dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq dosbox-x xvfb libfl2 >/dev/null
+          sudo apt-get install -y -qq dosbox-x xvfb libfl2 unzip >/dev/null
 
       - name: Install pinned DJGPP toolchain
         shell: bash
@@ -39,6 +40,19 @@ jobs:
           test -x "$GITHUB_WORKSPACE/djgpp/bin/i586-pc-msdosdjgpp-gcc"
           echo "DJGPP_ROOT=$GITHUB_WORKSPACE/djgpp" >> "$GITHUB_ENV"
           echo "$GITHUB_WORKSPACE/djgpp/bin" >> "$GITHUB_PATH"
+
+      - name: Install official CWSDPMI runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/csdpmi7b.zip"
+          runtime="$RUNNER_TEMP/CWSDPMI.EXE"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$archive" "$CWSDPMI_URL"
+          sha256sum "$archive" | tee cwsdpmi.sha256
+          unzip -p "$archive" bin/CWSDPMI.EXE > "$runtime"
+          test -s "$runtime"
+          echo "CWSDPMI_EXE=$runtime" >> "$GITHUB_ENV"
 
       - name: Checkout pinned PDCurses
         shell: bash
@@ -67,7 +81,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: retrodesk-dos-build-log
-          path: dos-build.log
+          path: |
+            dos-build.log
+            cwsdpmi.sha256
           if-no-files-found: error
 
       - name: Smoke test in DOSBox-X
@@ -78,5 +94,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: retrodesk-dos-djgpp
-          path: build/dos
+          path: |
+            build/dos
+            cwsdpmi.sha256
           if-no-files-found: error

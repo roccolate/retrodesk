@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$repo_root"
+
+: "${PDCURSES_DIR:?PDCURSES_DIR must point to a pinned PDCurses checkout}"
+
+cross_prefix=${DJGPP_CROSS_PREFIX:-i586-pc-msdosdjgpp-}
+cc=${DJGPP_CC:-${cross_prefix}gcc}
+ar=${DJGPP_AR:-${cross_prefix}ar}
+strip=${DJGPP_STRIP:-${cross_prefix}strip}
+out_dir=${DOS_OUT_DIR:-$repo_root/build/dos}
+
+for tool in "$cc" "$ar" "$strip" make python3; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "build_djgpp_ci: missing required tool: $tool" >&2
+        exit 2
+    }
+done
+
+if [[ ! -f "$PDCURSES_DIR/dos/Makefile" ]]; then
+    echo "build_djgpp_ci: invalid PDCURSES_DIR: $PDCURSES_DIR" >&2
+    exit 2
+fi
+
+python3 scripts/check_djgpp_sources.py
+
+# PDCurses 3.9's DOS makefile defaults to native DJGPP tool names and the DOS
+# `del` command. Override those boundaries for a Linux-hosted cross build.
+make -C "$PDCURSES_DIR/dos" -f Makefile \
+    PDCURSES_SRCDIR="$PDCURSES_DIR" \
+    CC="$cc" LINK="$cc" LIBEXE="$ar" RM="rm -f" clean
+make -C "$PDCURSES_DIR/dos" -f Makefile \
+    PDCURSES_SRCDIR="$PDCURSES_DIR" \
+    CC="$cc" LINK="$cc" LIBEXE="$ar" RM="rm -f" libs
+
+pdc_lib="$PDCURSES_DIR/dos/pdcurses.a"
+if [[ ! -s "$pdc_lib" ]]; then
+    echo "build_djgpp_ci: PDCurses library was not produced: $pdc_lib" >&2
+    exit 1
+fi
+
+make -f Makefile.djgpp clean \
+    CC="$cc" RM="rm -f" \
+    PDC_DIR="$PDCURSES_DIR" PDC_LIB="$pdc_lib"
+make -f Makefile.djgpp \
+    CC="$cc" RM="rm -f" \
+    PDC_DIR="$PDCURSES_DIR" PDC_LIB="$pdc_lib"
+
+if [[ ! -s retrodesk.exe ]]; then
+    echo "build_djgpp_ci: retrodesk.exe was not produced" >&2
+    exit 1
+fi
+
+"$strip" retrodesk.exe
+mkdir -p "$out_dir"
+cp retrodesk.exe "$out_dir/retrodesk.exe"
+
+# DJGPP protected-mode programs need a DPMI host. The prebuilt toolchain ships
+# CWSDPMI; keep it beside the executable so DOSBox and real DOS use the same
+# distribution layout.
+if [[ -n "${DJGPP_ROOT:-}" ]]; then
+    cwsdpmi=$(find "$DJGPP_ROOT" -type f -iname 'cwsdpmi.exe' -print -quit)
+else
+    cwsdpmi=""
+fi
+if [[ -z "$cwsdpmi" ]]; then
+    echo "build_djgpp_ci: CWSDPMI.EXE not found below DJGPP_ROOT" >&2
+    exit 1
+fi
+cp "$cwsdpmi" "$out_dir/CWSDPMI.EXE"
+
+printf 'Built %s\n' "$out_dir/retrodesk.exe"
+"$cc" --version | head -n 1
+sha256sum "$out_dir/retrodesk.exe" "$out_dir/CWSDPMI.EXE"

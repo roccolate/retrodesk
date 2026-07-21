@@ -68,7 +68,6 @@ struct RetroAppInstance {
     void *state;
     bool close_requested;
     bool close_pending;
-    bool emergency_shutdown;
     RetroCloseResult close_result;
     char *resource_path_owned;
 };
@@ -86,8 +85,6 @@ const RetroAppDescriptor *app_registry_descriptor_at(const AppRegistry *registry
 void app_handle_event(RetroAppInstance *app, const RetroEvent *event);
 void app_render(RetroAppInstance *app, DrawList *draw_list);
 void app_destroy(RetroAppInstance *app);
-void app_prepare_emergency_shutdown(RetroAppInstance *app);
-bool app_is_emergency_shutdown(const RetroAppInstance *app);
 RetroCloseResult app_request_close(RetroAppInstance *app);
 void app_resolve_close(RetroAppInstance *app, RetroCloseResult result);
 void app_reset_close_request(RetroAppInstance *app);

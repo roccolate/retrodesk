@@ -462,6 +462,86 @@ static void test_notepad_selection_clipboard_between_instances(void) {
     retro_clipboard_clear();
 }
 
+static void test_notepad_utf8_find(void) {
+    retro_clipboard_clear();
+    RetroAppInstance instance = create_untitled_notepad();
+
+    type_notepad_codepoint(&instance, 0x00C1u);
+    type_notepad_char(&instance, 'r');
+    type_notepad_char(&instance, 'b');
+    type_notepad_char(&instance, 'o');
+    type_notepad_char(&instance, 'l');
+    RetroEvent enter = key_event(RETRO_KEY_CR, '\0');
+    app_handle_event(&instance, &enter);
+    type_notepad_char(&instance, 'n');
+    type_notepad_char(&instance, 'i');
+    type_notepad_codepoint(&instance, 0x00F1u);
+    type_notepad_char(&instance, 'o');
+    type_notepad_char(&instance, ' ');
+    type_notepad_codepoint(&instance, 0x00E1u);
+    type_notepad_char(&instance, 'r');
+    type_notepad_char(&instance, 'b');
+    type_notepad_char(&instance, 'o');
+    type_notepad_char(&instance, 'l');
+    app_handle_event(&instance, &enter);
+    type_notepad_codepoint(&instance, 0x00C1u);
+    type_notepad_char(&instance, 'R');
+    type_notepad_char(&instance, 'B');
+    type_notepad_char(&instance, 'O');
+    type_notepad_char(&instance, 'L');
+
+    size_t history_before_find = notepad_undo_count_for_test(&instance);
+    RetroEvent find = key_event(RETRO_KEY_CTRL_F, '\0');
+    app_handle_event(&instance, &find);
+    TEST_REQUIRE(notepad_search_mode_for_test(&instance));
+    type_notepad_codepoint(&instance, 0x00E1u);
+    type_notepad_char(&instance, 'r');
+    type_notepad_char(&instance, 'b');
+    type_notepad_char(&instance, 'o');
+    type_notepad_char(&instance, 'l');
+    app_handle_event(&instance, &enter);
+    TEST_REQUIRE(notepad_cursor_row_for_test(&instance) == 0);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 6);
+    TEST_REQUIRE(notepad_undo_count_for_test(&instance) == history_before_find);
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &escape);
+    TEST_REQUIRE(!notepad_search_mode_for_test(&instance));
+    RetroEvent copy = key_event(RETRO_KEY_CTRL_C, '\0');
+    app_handle_event(&instance, &copy);
+    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "Árbol") == 0);
+
+    app_handle_event(&instance, &find);
+    type_notepad_codepoint(&instance, 0x00E1u);
+    type_notepad_char(&instance, 'r');
+    type_notepad_char(&instance, 'b');
+    type_notepad_char(&instance, 'o');
+    type_notepad_char(&instance, 'l');
+    app_handle_event(&instance, &enter);
+    TEST_REQUIRE(notepad_cursor_row_for_test(&instance) == 1);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 12);
+    app_handle_event(&instance, &escape);
+    app_handle_event(&instance, &copy);
+    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "árbol") == 0);
+
+    app_handle_event(&instance, &find);
+    type_notepad_codepoint(&instance, 0x00E1u);
+    type_notepad_char(&instance, 'r');
+    type_notepad_char(&instance, 'b');
+    type_notepad_char(&instance, 'o');
+    type_notepad_char(&instance, 'l');
+    app_handle_event(&instance, &enter);
+    TEST_REQUIRE(notepad_cursor_row_for_test(&instance) == 2);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 6);
+    app_handle_event(&instance, &escape);
+    app_handle_event(&instance, &copy);
+    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "ÁRBOL") == 0);
+
+    TEST_REQUIRE(notepad_undo_count_for_test(&instance) == history_before_find);
+    instance.descriptor->destroy(&instance);
+    retro_clipboard_clear();
+}
+
 static void test_notepad_shift_selection_replacement(void) {
     RetroAppInstance instance = create_untitled_notepad();
     type_notepad_char(&instance, 'n');
@@ -772,6 +852,7 @@ int main(void) {
     test_notepad_undo_redo_utf8();
     test_notepad_history_limit_and_noop();
     test_notepad_selection_clipboard_between_instances();
+    test_notepad_utf8_find();
     test_notepad_shift_selection_replacement();
 #if !defined(_WIN32)
     test_notepad_saved_baseline_tracks_undo();

@@ -15,6 +15,12 @@
 
 typedef struct TextBuffer TextBuffer;
 
+typedef struct TextBufferMatch {
+    size_t row;
+    size_t start_col;
+    size_t end_col;
+} TextBufferMatch;
+
 /* Lifecycle */
 TextBuffer *text_buffer_create(void);
 void text_buffer_destroy(TextBuffer *buf);
@@ -40,6 +46,14 @@ void text_buffer_clear_selection(TextBuffer *buf);
 void text_buffer_select_all(TextBuffer *buf);
 /* Returns selected UTF-8 text with LF separators. The caller owns it. */
 char *text_buffer_selected_text(const TextBuffer *buf, size_t *length);
+/* Select a validated match range and place the cursor at its end. */
+bool text_buffer_select_match(TextBuffer *buf, const TextBufferMatch *match);
+/* Find the next single-line UTF-8 query from the supplied byte boundary. */
+bool text_buffer_find_next(const TextBuffer *buf,
+                           const char *query, size_t query_length,
+                           bool case_insensitive,
+                           size_t start_row, size_t start_col,
+                           bool wrap, TextBufferMatch *match);
 
 /* Scroll state. scroll_col is a UTF-8 byte offset. */
 size_t text_buffer_scroll_row(const TextBuffer *buf);

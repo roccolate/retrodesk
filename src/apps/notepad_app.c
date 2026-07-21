@@ -34,6 +34,8 @@ typedef struct NotepadState {
     RetroFsVersion version;
     bool has_path;
     bool save_as;
+    bool search_mode;
+    bool search_has_match;
     bool close_prompt;
     bool close_after_save;
     bool force_close;
@@ -452,6 +454,8 @@ static void np_handle_close_prompt(RetroAppInstance *instance,
 
     if (!state->has_path) {
         state->close_prompt = false;
+        state->search_mode = false;
+        text_input_clear(state->path_input);
         state->save_as = true;
         state->close_after_save = true;
         state->error[0] = '\0';
@@ -459,6 +463,52 @@ static void np_handle_close_prompt(RetroAppInstance *instance,
     }
 
     if (np_save(state)) np_finish_close(instance, state);
+}
+
+static bool np_find_next(NotepadState *state) {
+    if (!state || !state->buffer || !state->path_input) return false;
+    const char *query = text_input_text(state->path_input);
+    size_t query_length = text_input_length(state->path_input);
+    if (query_length == 0) {
+        snprintf(state->error, sizeof(state->error),
+                 "Find: enter text to search");
+        return false;
+    }
+
+    TextBufferMatch match = {0};
+    size_t start_row = text_buffer_cursor_row(state->buffer);
+    size_t start_col = text_buffer_cursor_col(state->buffer);
+    if (!text_buffer_find_next(state->buffer, query, query_length, true,
+                               start_row, start_col, true, &match)) {
+        snprintf(state->error, sizeof(state->error),
+                 "Find: no match");
+        state->search_has_match = false;
+        return false;
+    }
+    if (!text_buffer_select_match(state->buffer, &match)) return false;
+    state->search_has_match = true;
+    state->error[0] = '\0';
+    return true;
+}
+
+static void np_handle_search(NotepadState *state,
+                             const RetroKeyEvent *key) {
+    if (!state || !key) return;
+    if (key->key_code == RETRO_KEY_ESC) {
+        state->search_mode = false;
+        state->search_has_match = false;
+        state->error[0] = '\0';
+        return;
+    }
+    if (key->key_code == RETRO_KEY_CR || key->key_code == RETRO_KEY_LF) {
+        (void)np_find_next(state);
+        return;
+    }
+    if (text_input_handle_key(state->path_input, key)) {
+        state->search_has_match = false;
+        text_buffer_clear_selection(state->buffer);
+        state->error[0] = '\0';
+    }
 }
 
 static void np_handle_save_as(RetroAppInstance *instance,
@@ -525,6 +575,20 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
         return;
     }
 
+    if (state->search_mode) {
+        np_handle_search(state, key);
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_F) {
+        state->search_mode = true;
+        state->search_has_match = false;
+        text_input_clear(state->path_input);
+        text_buffer_clear_selection(state->buffer);
+        state->error[0] = '\0';
+        return;
+    }
+
     if (key->key_code == RETRO_KEY_CTRL_A) {
         text_buffer_select_all(state->buffer);
         state->error[0] = '\0';
@@ -561,6 +625,8 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
         if (state->has_path) {
             (void)np_save(state);
         } else {
+            state->search_mode = false;
+            text_input_clear(state->path_input);
             state->save_as = true;
         }
         return;
@@ -568,6 +634,8 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
 
     if (key->key_code == RETRO_KEY_F3) {
         state->close_after_save = false;
+        state->search_mode = false;
+        text_input_clear(state->path_input);
         state->save_as = true;
         return;
     }
@@ -616,9 +684,9 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
     draw_list_text(draw_list, 2, 2,
                    "Ctrl+S save | F3 Save As | Ctrl+Z/Y undo/redo | Ctrl+W close",
                    text);
-    if (!state->save_as && !state->close_prompt) {
+    if (!state->save_as && !state->close_prompt && !state->search_mode) {
         draw_list_text(draw_list, 3, 2,
-                       "Shift+arrows select | Ctrl+A/C/X/V all/copy/cut/paste",
+                       "Shift+arrows select | Ctrl+A/C/X/V | Ctrl+F find",
                        text);
     }
 
@@ -632,6 +700,14 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
                        "Path (Enter save, Esc cancel):", accent);
         text_input_render(state->path_input, draw_list, 4, 2, 64,
                           text, cursor);
+    } else if (state->search_mode) {
+        draw_list_text(draw_list, 3, 2,
+                       "Find (Enter next, Esc close):", accent);
+        text_input_render(state->path_input, draw_list, 4, 2, 64,
+                          text, cursor);
+        text_buffer_render_with_selection(
+            state->buffer, draw_list, 6, 2, 9, 64,
+            text, cursor, &selection);
     } else {
         text_buffer_render_with_selection(
             state->buffer, draw_list, 4, 2, 11, 64,
@@ -713,6 +789,18 @@ size_t notepad_cursor_col_for_test(const RetroAppInstance *instance) {
     if (!instance || !instance->state) return 0;
     const NotepadState *state = instance->state;
     return text_buffer_cursor_col(state->buffer);
+}
+
+size_t notepad_cursor_row_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return 0;
+    const NotepadState *state = instance->state;
+    return text_buffer_cursor_row(state->buffer);
+}
+
+bool notepad_search_mode_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->search_mode;
 }
 
 const RetroAppDescriptor *notepad_app_descriptor(void) {

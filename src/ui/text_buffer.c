@@ -425,6 +425,157 @@ char *text_buffer_selected_text(const TextBuffer *buf, size_t *length) {
     return selected;
 }
 
+static size_t text_line_boundary_at_or_after(const TextLine *line,
+                                                  size_t offset) {
+    if (!line || !line->data || offset >= line->len) {
+        return line ? line->len : 0;
+    }
+    size_t before = text_line_boundary_at_or_before(line, offset);
+    if (before == offset) return before;
+    size_t after = retro_utf8_next(line->data, line->len, before);
+    return after > before && after <= line->len ? after : line->len;
+}
+
+static uint32_t text_search_fold(uint32_t codepoint) {
+    if (codepoint >= 'A' && codepoint <= 'Z') return codepoint + 0x20u;
+    if ((codepoint >= 0x00C0u && codepoint <= 0x00D6u) ||
+        (codepoint >= 0x00D8u && codepoint <= 0x00DEu)) {
+        return codepoint + 0x20u;
+    }
+    if (codepoint == 0x0178u) return 0x00FFu;
+    return codepoint;
+}
+
+static bool text_line_query_matches(const TextLine *line, size_t position,
+                                    const char *query, size_t query_length,
+                                    bool case_insensitive,
+                                    size_t *match_end) {
+    if (!line || !query || !match_end) return false;
+    size_t line_offset = position;
+    size_t query_offset = 0;
+
+    while (query_offset < query_length) {
+        if (line_offset >= line->len) return false;
+        uint32_t line_codepoint = 0;
+        uint32_t query_codepoint = 0;
+        size_t line_bytes = 0;
+        size_t query_bytes = 0;
+        if (!retro_utf8_decode(line->data, line->len, line_offset,
+                               &line_codepoint, &line_bytes) ||
+            !retro_utf8_decode(query, query_length, query_offset,
+                               &query_codepoint, &query_bytes)) {
+            return false;
+        }
+        if (case_insensitive) {
+            line_codepoint = text_search_fold(line_codepoint);
+            query_codepoint = text_search_fold(query_codepoint);
+        }
+        if (line_codepoint != query_codepoint) return false;
+        line_offset += line_bytes;
+        query_offset += query_bytes;
+    }
+
+    *match_end = line_offset;
+    return true;
+}
+
+static bool text_line_find_range(const TextLine *line,
+                                 const char *query, size_t query_length,
+                                 bool case_insensitive,
+                                 size_t start, size_t limit,
+                                 size_t *match_start, size_t *match_end) {
+    if (!line || !query || !match_start || !match_end) return false;
+    if (limit > line->len) limit = line->len;
+    start = text_line_boundary_at_or_after(line, start);
+    limit = text_line_boundary_at_or_before(line, limit);
+
+    size_t position = start;
+    while (position < limit) {
+        size_t end = 0;
+        if (text_line_query_matches(line, position, query, query_length,
+                                    case_insensitive, &end) &&
+            end <= limit) {
+            *match_start = position;
+            *match_end = end;
+            return true;
+        }
+        size_t next = retro_utf8_next(line->data, line->len, position);
+        if (next <= position) break;
+        position = next;
+    }
+    return false;
+}
+
+bool text_buffer_select_match(TextBuffer *buf, const TextBufferMatch *match) {
+    if (!buf || !match || match->row >= buf->line_count) return false;
+    TextLine *line = &buf->lines[match->row];
+    size_t start = text_line_boundary_at_or_before(line, match->start_col);
+    size_t end = text_line_boundary_at_or_before(line, match->end_col);
+    if (start >= end) return false;
+
+    buf->selection_anchor_row = match->row;
+    buf->selection_anchor_col = start;
+    buf->cursor_row = match->row;
+    buf->cursor_col = end;
+    buf->selection_active = true;
+    return true;
+}
+
+bool text_buffer_find_next(const TextBuffer *buf,
+                           const char *query, size_t query_length,
+                           bool case_insensitive,
+                           size_t start_row, size_t start_col,
+                           bool wrap, TextBufferMatch *match) {
+    if (match) *match = (TextBufferMatch){0};
+    if (!buf || !query || !match || buf->line_count == 0 ||
+        query_length == 0 || !retro_utf8_validate(query, query_length) ||
+        memchr(query, '\0', query_length) ||
+        memchr(query, '\n', query_length) ||
+        memchr(query, '\r', query_length)) {
+        return false;
+    }
+
+    if (start_row >= buf->line_count) start_row = buf->line_count - 1;
+    start_col = text_line_boundary_at_or_after(
+        &buf->lines[start_row], start_col);
+
+    for (size_t row = start_row; row < buf->line_count; ++row) {
+        const TextLine *line = &buf->lines[row];
+        size_t found_start = 0;
+        size_t found_end = 0;
+        size_t row_start = row == start_row ? start_col : 0;
+        if (text_line_find_range(line, query, query_length,
+                                 case_insensitive, row_start, line->len,
+                                 &found_start, &found_end)) {
+            *match = (TextBufferMatch){row, found_start, found_end};
+            return true;
+        }
+    }
+
+    if (!wrap) return false;
+    for (size_t row = 0; row < start_row; ++row) {
+        const TextLine *line = &buf->lines[row];
+        size_t found_start = 0;
+        size_t found_end = 0;
+        if (text_line_find_range(line, query, query_length,
+                                 case_insensitive, 0, line->len,
+                                 &found_start, &found_end)) {
+            *match = (TextBufferMatch){row, found_start, found_end};
+            return true;
+        }
+    }
+
+    size_t found_start = 0;
+    size_t found_end = 0;
+    if (text_line_find_range(&buf->lines[start_row], query, query_length,
+                             case_insensitive, 0, start_col,
+                             &found_start, &found_end)) {
+        *match = (TextBufferMatch){start_row, found_start, found_end};
+        return true;
+    }
+    return false;
+}
+
 size_t text_buffer_scroll_row(const TextBuffer *buf) {
     return buf ? buf->scroll_row : 0;
 }

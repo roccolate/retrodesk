@@ -601,6 +601,59 @@ static void test_selection_render_overlay(void) {
     printf("  PASS: selection_render_overlay\n");
 }
 
+static void test_utf8_find_next_and_wrap(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(tb != NULL);
+    TEST_REQUIRE(text_buffer_set_text(tb, "Árbol\nniño árbol\nÁRBOL"));
+
+    const char *query = "árbol";
+    TextBufferMatch match = {0};
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), true,
+                                       0, 0, true, &match));
+    TEST_REQUIRE(match.row == 0);
+    TEST_REQUIRE(match.start_col == 0);
+    TEST_REQUIRE(match.end_col == 6);
+
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), true,
+                                       match.row, match.end_col, true, &match));
+    TEST_REQUIRE(match.row == 1);
+    TEST_REQUIRE(match.start_col == 6);
+    TEST_REQUIRE(match.end_col == 12);
+
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), true,
+                                       match.row, match.end_col, true, &match));
+    TEST_REQUIRE(match.row == 2);
+    TEST_REQUIRE(match.start_col == 0);
+    TEST_REQUIRE(match.end_col == 6);
+
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), true,
+                                       match.row, match.end_col, true, &match));
+    TEST_REQUIRE(match.row == 0);
+    TEST_REQUIRE(text_buffer_select_match(tb, &match));
+    size_t selected_length = 0;
+    char *selected = text_buffer_selected_text(tb, &selected_length);
+    TEST_REQUIRE(selected != NULL);
+    TEST_REQUIRE(selected_length == 6);
+    TEST_REQUIRE(strcmp(selected, "Árbol") == 0);
+    free(selected);
+
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), false,
+                                       0, 0, true, &match));
+    TEST_REQUIRE(match.row == 1);
+    TEST_REQUIRE(match.start_col == 6);
+
+    const char invalid[] = {(char)0xC3};
+    TEST_REQUIRE(!text_buffer_find_next(tb, "", 0, true,
+                                        0, 0, true, &match));
+    TEST_REQUIRE(!text_buffer_find_next(tb, invalid, sizeof(invalid), true,
+                                        0, 0, true, &match));
+    TEST_REQUIRE(!text_buffer_find_next(tb, "missing", 7, true,
+                                        0, 0, true, &match));
+
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_find_next_and_wrap\n");
+}
+
 static void test_null_safety(void) {
     /* All functions should handle NULL gracefully. */
     TEST_REQUIRE(text_buffer_line_count(NULL) == 0);
@@ -616,6 +669,10 @@ static void test_null_safety(void) {
     TEST_REQUIRE(!text_buffer_delete_forward(NULL));
     TEST_REQUIRE(!text_buffer_handle_key(NULL, NULL));
     TEST_REQUIRE(!text_buffer_set_text(NULL, "test"));
+    TextBufferMatch match = {0};
+    TEST_REQUIRE(!text_buffer_find_next(NULL, "x", 1, true,
+                                        0, 0, true, &match));
+    TEST_REQUIRE(!text_buffer_select_match(NULL, &match));
     text_buffer_clear(NULL);
     text_buffer_set_cursor(NULL, 0, 0);
     text_buffer_destroy(NULL);
@@ -674,6 +731,7 @@ int main(void) {
     test_select_all_and_atomic_insert();
     test_collapsed_shift_selection_stays_collapsed();
     test_selection_render_overlay();
+    test_utf8_find_next_and_wrap();
     test_null_safety();
     test_render_basic();
     printf("All text_buffer tests passed.\n");

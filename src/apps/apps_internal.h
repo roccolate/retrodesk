@@ -25,5 +25,7 @@ size_t notepad_undo_count_for_test(const RetroAppInstance *instance);
 size_t notepad_redo_count_for_test(const RetroAppInstance *instance);
 const char *notepad_line_for_test(const RetroAppInstance *instance, size_t row);
 size_t notepad_cursor_col_for_test(const RetroAppInstance *instance);
+size_t notepad_cursor_row_for_test(const RetroAppInstance *instance);
+bool notepad_search_mode_for_test(const RetroAppInstance *instance);
 
 #endif

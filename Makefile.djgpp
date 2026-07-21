@@ -1,62 +1,74 @@
-# Build RetroDesk DOS profile with DJGPP + PDCurses
+# Build RetroDesk's 32-bit DOS profile with DJGPP + PDCurses.
 #
-# Usage:
-#   make -f Makefile.djgpp PDC_DIR=C:\PDCurses
+# Native DOS example:
+#   make -f Makefile.djgpp PDC_DIR=C:/PDCurses
+#
+# Linux cross-build example:
+#   make -f Makefile.djgpp \
+#     CC=i586-pc-msdosdjgpp-gcc \
+#     PDC_DIR=/opt/PDCurses \
+#     PDC_LIB=/opt/PDCurses/dos/pdcurses.a
 #
 # IMPORTANT: This SRCS list must stay in sync with RETRODESK_DJGPP_SOURCES
-# in CMakeLists.txt. The script scripts/check_djgpp_sources.py verifies
-# the invariant (and is wired into `make check-build-sources`). If you add
-# or remove a source file, update both places — CMake is canonical.
+# in CMakeLists.txt. scripts/check_djgpp_sources.py verifies the invariant.
 
-PDC_DIR ?= C:\PDCurses
-CC = gcc
-CFLAGS = -O2 -std=gnu11 -D__DJGPP__ -I.\src -I$(PDC_DIR)\include -Wall
-LDFLAGS = -s
-PDC_LIB = $(PDC_DIR)\lib\pdcurses.a
+PDC_DIR ?= C:/PDCurses
+PDC_INCLUDE ?= $(PDC_DIR)
+PDC_LIB ?= $(PDC_DIR)/dos/pdcurses.a
+
+CC ?= gcc
+RM ?= rm -f
+
+CPPFLAGS ?=
+CPPFLAGS += -D__DJGPP__ -DHAVE_PDCURSES -DPDC_NCMOUSE
+CPPFLAGS += -I./src -I$(PDC_INCLUDE)
+CFLAGS ?= -O2 -std=gnu11 -Wall -Wextra -Wpedantic
+LDFLAGS ?= -s
+LDLIBS ?= $(PDC_LIB)
 
 SRCS = \
-	src\main.c \
-	src\core\cli.c \
-	src\core\clipboard.c \
-	src\core\desktop.c \
-	src\core\key_chord.c \
-	src\core\utf8.c \
-	src\platform\platform.c \
-	src\platform\platform_curses.c \
-	src\platform\tty_decoder.c \
-	src\render\render.c \
-	src\render\ansi_renderer.c \
-	src\wm\window_manager.c \
-	src\app\app_runtime.c \
-	src\ui\statusbar.c \
-	src\ui\text_input.c \
-	src\ui\scroll_list.c \
-	src\ui\text_buffer.c \
-	src\ui\button.c \
-	src\ui\dialog.c \
-	src\ui\menu_bar.c \
-	src\ui\progress_bar.c \
-	src\ui\tab.c \
-	src\ui\theme.c \
-	src\apps\apps.c \
-	src\apps\filemanager_app.c \
-	src\apps\notepad_app.c \
-	src\apps\terminal_app.c
+	src/main.c \
+	src/core/cli.c \
+	src/core/clipboard.c \
+	src/core/desktop.c \
+	src/core/key_chord.c \
+	src/core/utf8.c \
+	src/platform/platform.c \
+	src/platform/platform_curses.c \
+	src/platform/tty_decoder.c \
+	src/render/render.c \
+	src/render/ansi_renderer.c \
+	src/wm/window_manager.c \
+	src/app/app_runtime.c \
+	src/ui/statusbar.c \
+	src/ui/text_input.c \
+	src/ui/scroll_list.c \
+	src/ui/text_buffer.c \
+	src/ui/button.c \
+	src/ui/dialog.c \
+	src/ui/menu_bar.c \
+	src/ui/progress_bar.c \
+	src/ui/tab.c \
+	src/ui/theme.c \
+	src/apps/apps.c \
+	src/apps/filemanager_app.c \
+	src/apps/notepad_app.c \
+	src/apps/terminal_app.c
 
 OBJS = $(SRCS:.c=.o)
-TARGET = retrodesk.exe
+TARGET ?= retrodesk.exe
 
 .PHONY: all clean check-sources
-all: $(TARGET)
+all: check-sources $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $^ $(PDC_LIB)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
 check-sources:
-	@python3 scripts/check_djgpp_sources.py
+	@python3 scripts/check_djgpp_sources.py --quiet
 
 clean:
-	del /Q $(OBJS) $(TARGET) 2>nul || rm -f $(OBJS) $(TARGET)
+	$(RM) $(OBJS) $(TARGET)

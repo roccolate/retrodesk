@@ -13,6 +13,7 @@
 
 #include "app/app_runtime.h"
 #include "apps/apps_internal.h"
+#include "core/clipboard.h"
 #include "core/desktop.h"
 #include "core/key_chord.h"
 #include "platform/platform.h"
@@ -76,6 +77,13 @@ static RetroEvent key_event(int key_code, char ascii) {
     event.data.key.key_code = key_code;
     event.data.key.is_printable = (ascii >= 32 && ascii <= 126);
     event.data.key.ascii = event.data.key.is_printable ? (unsigned char)ascii : 0;
+    return event;
+}
+
+static RetroEvent modified_key_event(int key_code,
+                                     unsigned int modifiers) {
+    RetroEvent event = key_event(key_code, '\0');
+    event.data.key.modifiers = modifiers;
     return event;
 }
 
@@ -411,6 +419,74 @@ static void test_notepad_history_limit_and_noop(void) {
     instance.descriptor->destroy(&instance);
 }
 
+static void test_notepad_selection_clipboard_between_instances(void) {
+    retro_clipboard_clear();
+    RetroAppInstance first = create_untitled_notepad();
+    RetroAppInstance second = create_untitled_notepad();
+
+    type_notepad_char(&first, 'n');
+    type_notepad_char(&first, 'i');
+    type_notepad_codepoint(&first, 0x00F1u);
+    type_notepad_char(&first, 'o');
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&first, 0), "niño") == 0);
+
+    size_t history_before_copy = notepad_undo_count_for_test(&first);
+    RetroEvent select_all = key_event(RETRO_KEY_CTRL_A, '\0');
+    RetroEvent copy = key_event(RETRO_KEY_CTRL_C, '\0');
+    app_handle_event(&first, &select_all);
+    app_handle_event(&first, &copy);
+    TEST_REQUIRE(notepad_undo_count_for_test(&first) == history_before_copy);
+    TEST_REQUIRE(retro_clipboard_has_text());
+    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "niño") == 0);
+
+    RetroEvent paste = key_event(RETRO_KEY_CTRL_V, '\0');
+    app_handle_event(&second, &paste);
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&second, 0), "niño") == 0);
+    TEST_REQUIRE(notepad_undo_count_for_test(&second) == 1);
+    TEST_REQUIRE(notepad_dirty_for_test(&second));
+
+    RetroEvent undo = key_event(RETRO_KEY_CTRL_Z, '\0');
+    app_handle_event(&second, &undo);
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&second, 0), "") == 0);
+    TEST_REQUIRE(!notepad_dirty_for_test(&second));
+
+    RetroEvent cut = key_event(RETRO_KEY_CTRL_X, '\0');
+    app_handle_event(&first, &cut);
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&first, 0), "") == 0);
+    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "niño") == 0);
+    app_handle_event(&first, &undo);
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&first, 0), "niño") == 0);
+
+    first.descriptor->destroy(&first);
+    second.descriptor->destroy(&second);
+    retro_clipboard_clear();
+}
+
+static void test_notepad_shift_selection_replacement(void) {
+    RetroAppInstance instance = create_untitled_notepad();
+    type_notepad_char(&instance, 'n');
+    type_notepad_char(&instance, 'i');
+    type_notepad_codepoint(&instance, 0x00F1u);
+    type_notepad_char(&instance, 'o');
+
+    RetroEvent left = key_event(RETRO_KEY_LEFT, '\0');
+    app_handle_event(&instance, &left);
+    app_handle_event(&instance, &left);
+    RetroEvent shift_right = modified_key_event(
+        RETRO_KEY_RIGHT, RETRO_MOD_SHIFT);
+    app_handle_event(&instance, &shift_right);
+    type_notepad_char(&instance, 'x');
+
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "nixo") == 0);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 3);
+
+    RetroEvent undo = key_event(RETRO_KEY_CTRL_Z, '\0');
+    app_handle_event(&instance, &undo);
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "niño") == 0);
+
+    instance.descriptor->destroy(&instance);
+}
+
 #if !defined(_WIN32)
 static void create_fixture_file(const char *directory, const char *name) {
     char path[512];
@@ -695,6 +771,8 @@ int main(void) {
     test_notepad_untitled_save_routes_to_save_as();
     test_notepad_undo_redo_utf8();
     test_notepad_history_limit_and_noop();
+    test_notepad_selection_clipboard_between_instances();
+    test_notepad_shift_selection_replacement();
 #if !defined(_WIN32)
     test_notepad_saved_baseline_tracks_undo();
     test_notepad_save_before_close();

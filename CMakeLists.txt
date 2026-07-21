@@ -17,6 +17,7 @@ set(RETROCORE_SPEC_DIR "${CMAKE_SOURCE_DIR}/../retrocore-spec" CACHE PATH
 set(RETRODESK_SOURCES
     src/main.c
     src/core/cli.c
+    src/core/clipboard.c
     src/core/desktop.c
     src/core/key_chord.c
     src/core/utf8.c
@@ -51,6 +52,7 @@ set(RETRODESK_SOURCES
 set(RETRODESK_DJGPP_SOURCES
     src/main.c
     src/core/cli.c
+    src/core/clipboard.c
     src/core/desktop.c
     src/core/key_chord.c
     src/core/utf8.c
@@ -143,6 +145,14 @@ if (ENABLE_TESTS)
         )
         target_include_directories(utf8_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
         add_test(NAME utf8_test COMMAND utf8_test)
+
+        add_executable(clipboard_test
+            tests/clipboard_test.c
+            src/core/clipboard.c
+            src/core/utf8.c
+        )
+        target_include_directories(clipboard_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        add_test(NAME clipboard_test COMMAND clipboard_test)
 
         add_executable(app_registry_test
             tests/app_registry_test.c
@@ -391,6 +401,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/desktop_runtime_test.c
         tests/wm_render_stub.c
         src/core/desktop.c
+        src/core/clipboard.c
         src/core/utf8.c
         src/app/app_runtime.c
         src/apps/apps.c
@@ -422,6 +433,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             tests/retrocore_event_fixture_test.c
             tests/wm_render_stub.c
             src/core/desktop.c
+        src/core/clipboard.c
             src/core/utf8.c
             src/app/app_runtime.c
             src/apps/apps.c
@@ -545,6 +557,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         cli_parse_test
         key_chord_test
         utf8_test
+        clipboard_test
         app_registry_test
         platform_features_test
         wm_event_replay_test

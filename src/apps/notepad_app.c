@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/clipboard.h"
 #include "core/key_chord.h"
 #include "storage/retro_fs.h"
 #include "ui/text_buffer.h"
@@ -283,6 +284,59 @@ static void np_handle_editor_key(NotepadState *state,
     np_history_entry_destroy(&before);
 }
 
+static void np_finish_manual_edit(NotepadState *state,
+                                  NotepadHistoryEntry *before,
+                                  bool captured, bool changed) {
+    if (!state || !before) return;
+    if (changed) {
+        if (captured) {
+            np_history_stack_push(&state->undo, before);
+            np_history_stack_clear(&state->redo);
+        }
+        state->force_close = false;
+        state->error[0] = '\0';
+        np_refresh_dirty(state);
+    }
+    np_history_entry_destroy(before);
+}
+
+static bool np_copy_selection(NotepadState *state) {
+    if (!state || !text_buffer_has_selection(state->buffer)) return false;
+    size_t length = 0;
+    char *selected = text_buffer_selected_text(state->buffer, &length);
+    if (!selected) return false;
+    bool copied = retro_clipboard_set_text(selected, length);
+    free(selected);
+    if (copied) {
+        state->error[0] = '\0';
+    } else {
+        snprintf(state->error, sizeof(state->error),
+                 "Clipboard: unable to copy selection");
+    }
+    return copied;
+}
+
+static void np_cut_selection(NotepadState *state) {
+    if (!state || !np_copy_selection(state)) return;
+    NotepadHistoryEntry before = {0};
+    bool captured = np_history_capture(state, &before);
+    if (!captured) np_clear_history(state);
+    bool changed = text_buffer_delete_selection(state->buffer);
+    np_finish_manual_edit(state, &before, captured, changed);
+}
+
+static void np_paste_clipboard(NotepadState *state) {
+    if (!state || !retro_clipboard_has_text()) return;
+    size_t length = 0;
+    const char *clipboard = retro_clipboard_text(&length);
+    NotepadHistoryEntry before = {0};
+    bool captured = np_history_capture(state, &before);
+    if (!captured) np_clear_history(state);
+    bool changed = text_buffer_insert_text(state->buffer,
+                                           clipboard, length);
+    np_finish_manual_edit(state, &before, captured, changed);
+}
+
 static bool np_save(NotepadState *state) {
     if (!state || !state->buffer || !state->has_path) {
         if (state) {
@@ -471,6 +525,27 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
         return;
     }
 
+    if (key->key_code == RETRO_KEY_CTRL_A) {
+        text_buffer_select_all(state->buffer);
+        state->error[0] = '\0';
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_C) {
+        (void)np_copy_selection(state);
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_X) {
+        np_cut_selection(state);
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_V) {
+        np_paste_clipboard(state);
+        return;
+    }
+
     if (key->key_code == RETRO_KEY_CTRL_Z) {
         np_undo(state);
         return;
@@ -498,6 +573,9 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
     }
 
     if (key->key_code == RETRO_KEY_ESC) {
+        if (text_buffer_has_selection(state->buffer)) {
+            text_buffer_clear_selection(state->buffer);
+        }
         state->error[0] = '\0';
         return;
     }
@@ -526,6 +604,8 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
     const RenderStyle *text = &theme->window_body;
     const RenderStyle *accent = &theme->shell_accent;
     const RenderStyle *cursor = &theme->launcher_selected;
+    RenderStyle selection = theme->launcher_selected;
+    selection.bold = false;
     char title[192];
     const char *name = state->has_path
                            ? retro_fs_path_cstr(&state->path)
@@ -536,10 +616,16 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
     draw_list_text(draw_list, 2, 2,
                    "Ctrl+S save | F3 Save As | Ctrl+Z/Y undo/redo | Ctrl+W close",
                    text);
+    if (!state->save_as && !state->close_prompt) {
+        draw_list_text(draw_list, 3, 2,
+                       "Shift+arrows select | Ctrl+A/C/X/V all/copy/cut/paste",
+                       text);
+    }
 
     if (state->close_prompt) {
-        text_buffer_render(state->buffer, draw_list, 4, 2, 11, 64,
-                           text, cursor);
+        text_buffer_render_with_selection(
+            state->buffer, draw_list, 4, 2, 11, 64,
+            text, cursor, &selection);
         np_render_close_prompt(state, draw_list, text, accent, cursor);
     } else if (state->save_as) {
         draw_list_text(draw_list, 3, 2,
@@ -547,8 +633,9 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
         text_input_render(state->path_input, draw_list, 4, 2, 64,
                           text, cursor);
     } else {
-        text_buffer_render(state->buffer, draw_list, 4, 2, 11, 64,
-                           text, cursor);
+        text_buffer_render_with_selection(
+            state->buffer, draw_list, 4, 2, 11, 64,
+            text, cursor, &selection);
     }
 
     if (state->error[0]) {

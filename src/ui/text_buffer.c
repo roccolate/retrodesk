@@ -378,6 +378,12 @@ bool text_buffer_has_selection(const TextBuffer *buf) {
     return text_buffer_selection_range(buf, &range);
 }
 
+static void text_buffer_clear_collapsed_selection(TextBuffer *buf) {
+    if (buf && buf->selection_active && !text_buffer_has_selection(buf)) {
+        text_buffer_clear_selection(buf);
+    }
+}
+
 void text_buffer_select_all(TextBuffer *buf) {
     if (!buf || buf->line_count == 0) return;
     buf->selection_anchor_row = 0;
@@ -503,6 +509,7 @@ bool text_buffer_insert_codepoint(TextBuffer *buf, uint32_t codepoint) {
     if (text_buffer_has_selection(buf)) {
         return text_buffer_insert_text(buf, encoded, encoded_len);
     }
+    text_buffer_clear_collapsed_selection(buf);
 
     TextLine *line = &buf->lines[buf->cursor_row];
     text_buffer_clamp_cursor(buf);
@@ -529,6 +536,7 @@ bool text_buffer_insert_newline(TextBuffer *buf) {
     if (text_buffer_has_selection(buf)) {
         return text_buffer_insert_text(buf, "\n", 1);
     }
+    text_buffer_clear_collapsed_selection(buf);
     text_buffer_clamp_cursor(buf);
 
     const TextLine *current = &buf->lines[buf->cursor_row];
@@ -574,6 +582,7 @@ bool text_buffer_delete_backward(TextBuffer *buf) {
     if (text_buffer_has_selection(buf)) {
         return text_buffer_delete_selection(buf);
     }
+    text_buffer_clear_collapsed_selection(buf);
     text_buffer_clamp_cursor(buf);
 
     if (buf->cursor_col > 0) {
@@ -623,6 +632,7 @@ bool text_buffer_delete_forward(TextBuffer *buf) {
     if (text_buffer_has_selection(buf)) {
         return text_buffer_delete_selection(buf);
     }
+    text_buffer_clear_collapsed_selection(buf);
     text_buffer_clamp_cursor(buf);
     TextLine *line = &buf->lines[buf->cursor_row];
 

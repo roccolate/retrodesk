@@ -62,7 +62,31 @@ fi
 mkdir -p "$out_dir"
 cp retrodesk.exe "$out_dir/retrodesk.exe"
 cp "$CWSDPMI_EXE" "$out_dir/CWSDPMI.EXE"
+cat >"$out_dir/README.TXT" <<'TXT'
+RetroDesk 0.2.0-alpha - DOS/DJGPP build
+
+Requirements:
+- 386-compatible CPU or newer
+- DOS, FreeDOS, or DOSBox-X
+- VGA-compatible text console
+
+Keep RETRODESK.EXE and CWSDPMI.EXE in the same directory, then run:
+
+  RETRODESK.EXE
+
+Diagnostic startup check:
+
+  RETRODESK.EXE --diagnose
+
+This alpha build uses the PDCurses DOS backend. Native filesystem operations
+are not implemented yet; File Manager shows an unavailable-storage view and
+untitled Notepad documents remain in memory only.
+TXT
+(
+    cd "$out_dir"
+    sha256sum retrodesk.exe CWSDPMI.EXE > SHA256SUMS
+)
 
 printf 'Built %s\n' "$out_dir/retrodesk.exe"
 "$cc" --version | head -n 1
-sha256sum "$out_dir/retrodesk.exe" "$out_dir/CWSDPMI.EXE"
+cat "$out_dir/SHA256SUMS"

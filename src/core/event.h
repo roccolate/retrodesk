@@ -18,18 +18,20 @@ typedef enum RetroEventType {
 typedef struct RetroKeyEvent {
     int key_code;
     bool is_printable;
-    /* `ascii` is retained for the byte-oriented widget transition.  New
+    /* `ascii` is retained for the byte-oriented widget transition. New
        callers should use text_codepoint; unsigned storage prevents bytes
        0x80..0xFF from changing sign across platforms. */
     unsigned char ascii;
     uint32_t text_codepoint;
+    /* Backends report only modifiers they can identify reliably. A terminal
+       that cannot distinguish a shifted navigation key leaves this as NONE. */
     unsigned int modifiers;
 } RetroKeyEvent;
 
 typedef struct RetroMouseEvent {
     int y;
     int x;
-    /* Screen coordinates are produced by the platform.  The WM fills these
+    /* Screen coordinates are produced by the platform. The WM fills these
        content-local coordinates before dispatching to an app/widget. */
     int local_y;
     int local_x;

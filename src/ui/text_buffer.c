@@ -1,22 +1,32 @@
 #include "ui/text_buffer.h"
 
-#include <stdlib.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "core/key_chord.h"
+#include "core/utf8.h"
 
 enum {
     TEXT_BUFFER_INIT_LINES = 16,
     TEXT_BUFFER_LINE_INIT_CAP = 64,
 };
 
-/* A single line in the buffer. */
 typedef struct TextLine {
     char *data;
     size_t len;
     size_t cap;
 } TextLine;
+
+typedef struct TextPosition {
+    size_t row;
+    size_t col;
+} TextPosition;
+
+typedef struct TextRange {
+    TextPosition start;
+    TextPosition end;
+} TextRange;
 
 struct TextBuffer {
     TextLine *lines;
@@ -26,11 +36,10 @@ struct TextBuffer {
     size_t cursor_col;
     size_t scroll_row;
     size_t scroll_col;
+    bool selection_active;
+    size_t selection_anchor_row;
+    size_t selection_anchor_col;
 };
-
-/* ------------------------------------------------------------------ */
-/* Internal helpers                                                    */
-/* ------------------------------------------------------------------ */
 
 static bool text_line_init(TextLine *line) {
     if (!line) return false;
@@ -54,7 +63,13 @@ static bool text_line_grow(TextLine *line, size_t need) {
     if (!line) return false;
     if (need <= line->cap) return true;
     size_t new_cap = line->cap ? line->cap * 2 : TEXT_BUFFER_LINE_INIT_CAP;
-    while (new_cap < need) new_cap *= 2;
+    while (new_cap < need) {
+        if (new_cap > SIZE_MAX / 2) {
+            new_cap = need;
+            break;
+        }
+        new_cap *= 2;
+    }
     char *next = realloc(line->data, new_cap);
     if (!next) return false;
     line->data = next;
@@ -62,12 +77,10 @@ static bool text_line_grow(TextLine *line, size_t need) {
     return true;
 }
 
-static bool text_line_set(TextLine *line, const char *str, size_t len) {
+static bool text_line_set(TextLine *line, const char *text, size_t len) {
     if (!line) return false;
     if (!text_line_grow(line, len + 1)) return false;
-    if (len > 0 && str) {
-        memcpy(line->data, str, len);
-    }
+    if (len > 0 && text) memcpy(line->data, text, len);
     line->data[len] = '\0';
     line->len = len;
     return true;
@@ -77,27 +90,121 @@ static bool text_buffer_grow_lines(TextBuffer *buf, size_t need) {
     if (!buf) return false;
     if (need <= buf->line_cap) return true;
     size_t new_cap = buf->line_cap ? buf->line_cap * 2 : TEXT_BUFFER_INIT_LINES;
-    while (new_cap < need) new_cap *= 2;
-    TextLine *next = realloc(buf->lines, new_cap * sizeof(TextLine));
+    while (new_cap < need) {
+        if (new_cap > SIZE_MAX / 2) {
+            new_cap = need;
+            break;
+        }
+        new_cap *= 2;
+    }
+    TextLine *next = realloc(buf->lines, new_cap * sizeof(*next));
     if (!next) return false;
     buf->lines = next;
     buf->line_cap = new_cap;
     return true;
 }
 
-/* Clamp cursor_col to the current line length. */
-static void text_buffer_clamp_col(TextBuffer *buf) {
-    if (!buf || buf->line_count == 0) return;
-    size_t line_len = buf->lines[buf->cursor_row].len;
-    if (buf->cursor_col > line_len) {
-        buf->cursor_col = line_len;
+static size_t text_line_boundary_at_or_before(const TextLine *line,
+                                              size_t offset) {
+    if (!line || !line->data) return 0;
+    if (offset >= line->len) return line->len;
+
+    size_t position = 0;
+    while (position < line->len) {
+        if (position == offset) return position;
+        size_t next = retro_utf8_next(line->data, line->len, position);
+        if (next <= position || next > offset) return position;
+        position = next;
     }
+    return line->len;
 }
 
+static void text_buffer_clamp_cursor(TextBuffer *buf) {
+    if (!buf || buf->line_count == 0) return;
+    if (buf->cursor_row >= buf->line_count) {
+        buf->cursor_row = buf->line_count - 1;
+    }
+    TextLine *line = &buf->lines[buf->cursor_row];
+    buf->cursor_col = text_line_boundary_at_or_before(line, buf->cursor_col);
+}
 
-/* ------------------------------------------------------------------ */
-/* Lifecycle                                                           */
-/* ------------------------------------------------------------------ */
+static int text_position_compare(TextPosition left, TextPosition right) {
+    if (left.row < right.row) return -1;
+    if (left.row > right.row) return 1;
+    if (left.col < right.col) return -1;
+    if (left.col > right.col) return 1;
+    return 0;
+}
+
+static bool text_buffer_selection_range(const TextBuffer *buf,
+                                        TextRange *range) {
+    if (!buf || !range || !buf->selection_active ||
+        buf->line_count == 0) {
+        return false;
+    }
+
+    TextPosition anchor = {
+        buf->selection_anchor_row,
+        buf->selection_anchor_col,
+    };
+    TextPosition cursor = {buf->cursor_row, buf->cursor_col};
+    if (text_position_compare(anchor, cursor) == 0) return false;
+
+    if (text_position_compare(anchor, cursor) < 0) {
+        range->start = anchor;
+        range->end = cursor;
+    } else {
+        range->start = cursor;
+        range->end = anchor;
+    }
+    return true;
+}
+
+static size_t text_line_columns_to(const TextLine *line,
+                                   size_t byte_offset) {
+    if (!line) return 0;
+    size_t end = text_line_boundary_at_or_before(line, byte_offset);
+    return retro_utf8_columns(line->data, line->len, 0, end);
+}
+
+static size_t text_line_byte_for_columns(const TextLine *line,
+                                         size_t columns) {
+    if (!line) return 0;
+    return retro_utf8_prefix_bytes(line->data, line->len, columns);
+}
+
+static size_t text_buffer_document_offset(const TextBuffer *buf,
+                                          TextPosition position) {
+    if (!buf || buf->line_count == 0) return 0;
+    if (position.row >= buf->line_count) position.row = buf->line_count - 1;
+    position.col = text_line_boundary_at_or_before(
+        &buf->lines[position.row], position.col);
+
+    size_t offset = 0;
+    for (size_t row = 0; row < position.row; ++row) {
+        offset += buf->lines[row].len;
+        offset++;
+    }
+    return offset + position.col;
+}
+
+static void text_buffer_set_cursor_from_offset(TextBuffer *buf,
+                                               size_t offset) {
+    if (!buf || buf->line_count == 0) return;
+    for (size_t row = 0; row < buf->line_count; ++row) {
+        size_t line_len = buf->lines[row].len;
+        if (offset <= line_len) {
+            buf->cursor_row = row;
+            buf->cursor_col = text_line_boundary_at_or_before(
+                &buf->lines[row], offset);
+            return;
+        }
+        offset -= line_len;
+        if (row + 1 < buf->line_count && offset > 0) offset--;
+    }
+    buf->cursor_row = buf->line_count - 1;
+    buf->cursor_col = buf->lines[buf->cursor_row].len;
+}
 
 TextBuffer *text_buffer_create(void) {
     TextBuffer *buf = calloc(1, sizeof(*buf));
@@ -106,7 +213,6 @@ TextBuffer *text_buffer_create(void) {
         free(buf);
         return NULL;
     }
-    /* Always start with one empty line. */
     if (!text_line_init(&buf->lines[0])) {
         free(buf->lines);
         free(buf);
@@ -118,85 +224,98 @@ TextBuffer *text_buffer_create(void) {
 
 void text_buffer_destroy(TextBuffer *buf) {
     if (!buf) return;
-    for (size_t i = 0; i < buf->line_count; ++i) {
-        text_line_free(&buf->lines[i]);
+    for (size_t index = 0; index < buf->line_count; ++index) {
+        text_line_free(&buf->lines[index]);
     }
     free(buf->lines);
-    buf->lines = NULL;
     free(buf);
 }
 
-/* ------------------------------------------------------------------ */
-/* Content                                                             */
-/* ------------------------------------------------------------------ */
+void text_buffer_clear_selection(TextBuffer *buf) {
+    if (!buf) return;
+    buf->selection_active = false;
+    buf->selection_anchor_row = 0;
+    buf->selection_anchor_col = 0;
+}
 
 void text_buffer_clear(TextBuffer *buf) {
     if (!buf) return;
-    for (size_t i = 0; i < buf->line_count; ++i) {
-        text_line_free(&buf->lines[i]);
+    for (size_t index = 0; index < buf->line_count; ++index) {
+        text_line_free(&buf->lines[index]);
     }
-    /* Re-init with one empty line. */
-    text_line_init(&buf->lines[0]);
+    if (!text_line_init(&buf->lines[0])) {
+        buf->line_count = 0;
+        return;
+    }
     buf->line_count = 1;
     buf->cursor_row = 0;
     buf->cursor_col = 0;
     buf->scroll_row = 0;
     buf->scroll_col = 0;
+    text_buffer_clear_selection(buf);
 }
 
 bool text_buffer_set_text(TextBuffer *buf, const char *text) {
     if (!buf) return false;
     if (!text) text = "";
+    size_t text_len = strlen(text);
+    if (!retro_utf8_validate(text, text_len)) return false;
 
-    /* Free existing lines. */
-    for (size_t i = 0; i < buf->line_count; ++i) {
-        text_line_free(&buf->lines[i]);
-    }
-    buf->line_count = 0;
+    TextLine *next_lines = NULL;
+    size_t next_count = 0;
+    size_t next_cap = 0;
+    const char *cursor = text;
 
-    /* Split text by newlines. */
-    const char *p = text;
     for (;;) {
-        const char *nl = strchr(p, '\n');
-        size_t seg_len = nl ? (size_t)(nl - p) : strlen(p);
+        const char *newline = strchr(cursor, '\n');
+        size_t segment_len = newline
+                                 ? (size_t)(newline - cursor)
+                                 : strlen(cursor);
 
-        if (!text_buffer_grow_lines(buf, buf->line_count + 1)) {
-            /* Ensure at least one line on failure. */
-            if (buf->line_count == 0) {
-                text_line_init(&buf->lines[0]);
-                buf->line_count = 1;
-            }
-            buf->cursor_row = 0;
-            buf->cursor_col = 0;
-            return false;
+        if (next_count == next_cap) {
+            size_t grown = next_cap ? next_cap * 2 : TEXT_BUFFER_INIT_LINES;
+            TextLine *candidate = realloc(next_lines,
+                                          grown * sizeof(*candidate));
+            if (!candidate) goto fail;
+            next_lines = candidate;
+            next_cap = grown;
         }
-        if (!text_line_init(&buf->lines[buf->line_count])) {
-            if (buf->line_count == 0) {
-                text_line_init(&buf->lines[0]);
-                buf->line_count = 1;
-            }
-            buf->cursor_row = 0;
-            buf->cursor_col = 0;
-            return false;
+        memset(&next_lines[next_count], 0, sizeof(next_lines[next_count]));
+        if (!text_line_init(&next_lines[next_count])) goto fail;
+        if (!text_line_set(&next_lines[next_count], cursor, segment_len)) {
+            text_line_free(&next_lines[next_count]);
+            goto fail;
         }
-        text_line_set(&buf->lines[buf->line_count], p, seg_len);
-        buf->line_count++;
+        next_count++;
 
-        if (!nl) break;
-        p = nl + 1;
+        if (!newline) break;
+        cursor = newline + 1;
     }
 
-    /* Place cursor at end. */
-    buf->cursor_row = buf->line_count - 1;
+    for (size_t index = 0; index < buf->line_count; ++index) {
+        text_line_free(&buf->lines[index]);
+    }
+    free(buf->lines);
+    buf->lines = next_lines;
+    buf->line_count = next_count;
+    buf->line_cap = next_cap;
+    buf->cursor_row = next_count - 1;
     buf->cursor_col = buf->lines[buf->cursor_row].len;
     buf->scroll_row = 0;
     buf->scroll_col = 0;
+    text_buffer_clear_selection(buf);
     return true;
+
+fail:
+    for (size_t index = 0; index < next_count; ++index) {
+        text_line_free(&next_lines[index]);
+    }
+    free(next_lines);
+    return false;
 }
 
 size_t text_buffer_line_count(const TextBuffer *buf) {
-    if (!buf) return 0;
-    return buf->line_count;
+    return buf ? buf->line_count : 0;
 }
 
 const char *text_buffer_line(const TextBuffer *buf, size_t row) {
@@ -212,40 +331,37 @@ size_t text_buffer_line_length(const TextBuffer *buf, size_t row) {
 char *text_buffer_to_text(const TextBuffer *buf, size_t *length) {
     if (length) *length = 0;
     if (!buf || buf->line_count == 0) return NULL;
+
     size_t total = 0;
-    for (size_t i = 0; i < buf->line_count; ++i) {
-        if (buf->lines[i].len > SIZE_MAX - total) return NULL;
-        total += buf->lines[i].len;
-        if (i + 1 < buf->line_count) {
+    for (size_t index = 0; index < buf->line_count; ++index) {
+        if (buf->lines[index].len > SIZE_MAX - total) return NULL;
+        total += buf->lines[index].len;
+        if (index + 1 < buf->line_count) {
             if (total == SIZE_MAX) return NULL;
             total++;
         }
     }
+
     char *out = malloc(total + 1);
     if (!out) return NULL;
     size_t offset = 0;
-    for (size_t i = 0; i < buf->line_count; ++i) {
-        memcpy(out + offset, buf->lines[i].data, buf->lines[i].len);
-        offset += buf->lines[i].len;
-        if (i + 1 < buf->line_count) out[offset++] = '\n';
+    for (size_t index = 0; index < buf->line_count; ++index) {
+        memcpy(out + offset, buf->lines[index].data,
+               buf->lines[index].len);
+        offset += buf->lines[index].len;
+        if (index + 1 < buf->line_count) out[offset++] = '\n';
     }
     out[offset] = '\0';
     if (length) *length = offset;
     return out;
 }
 
-/* ------------------------------------------------------------------ */
-/* Cursor                                                              */
-/* ------------------------------------------------------------------ */
-
 size_t text_buffer_cursor_row(const TextBuffer *buf) {
-    if (!buf) return 0;
-    return buf->cursor_row;
+    return buf ? buf->cursor_row : 0;
 }
 
 size_t text_buffer_cursor_col(const TextBuffer *buf) {
-    if (!buf) return 0;
-    return buf->cursor_col;
+    return buf ? buf->cursor_col : 0;
 }
 
 void text_buffer_set_cursor(TextBuffer *buf, size_t row, size_t col) {
@@ -253,124 +369,403 @@ void text_buffer_set_cursor(TextBuffer *buf, size_t row, size_t col) {
     if (row >= buf->line_count) row = buf->line_count - 1;
     buf->cursor_row = row;
     buf->cursor_col = col;
-    text_buffer_clamp_col(buf);
+    text_buffer_clamp_cursor(buf);
+    text_buffer_clear_selection(buf);
+}
+
+bool text_buffer_has_selection(const TextBuffer *buf) {
+    TextRange range = {0};
+    return text_buffer_selection_range(buf, &range);
+}
+
+static void text_buffer_clear_collapsed_selection(TextBuffer *buf) {
+    if (buf && buf->selection_active && !text_buffer_has_selection(buf)) {
+        text_buffer_clear_selection(buf);
+    }
+}
+
+void text_buffer_select_all(TextBuffer *buf) {
+    if (!buf || buf->line_count == 0) return;
+    buf->selection_anchor_row = 0;
+    buf->selection_anchor_col = 0;
+    buf->cursor_row = buf->line_count - 1;
+    buf->cursor_col = buf->lines[buf->cursor_row].len;
+    buf->selection_active =
+        buf->cursor_row != 0 || buf->cursor_col != 0;
+}
+
+char *text_buffer_selected_text(const TextBuffer *buf, size_t *length) {
+    if (length) *length = 0;
+    TextRange range = {0};
+    if (!text_buffer_selection_range(buf, &range)) return NULL;
+
+    size_t document_length = 0;
+    char *document = text_buffer_to_text(buf, &document_length);
+    if (!document) return NULL;
+
+    size_t start = text_buffer_document_offset(buf, range.start);
+    size_t end = text_buffer_document_offset(buf, range.end);
+    if (start > end || end > document_length) {
+        free(document);
+        return NULL;
+    }
+
+    size_t selected_length = end - start;
+    char *selected = malloc(selected_length + 1);
+    if (!selected) {
+        free(document);
+        return NULL;
+    }
+    if (selected_length > 0) {
+        memcpy(selected, document + start, selected_length);
+    }
+    selected[selected_length] = '\0';
+    free(document);
+    if (length) *length = selected_length;
+    return selected;
+}
+
+static size_t text_line_boundary_at_or_after(const TextLine *line,
+                                                  size_t offset) {
+    if (!line || !line->data || offset >= line->len) {
+        return line ? line->len : 0;
+    }
+    size_t before = text_line_boundary_at_or_before(line, offset);
+    if (before == offset) return before;
+    size_t after = retro_utf8_next(line->data, line->len, before);
+    return after > before && after <= line->len ? after : line->len;
+}
+
+static uint32_t text_search_fold(uint32_t codepoint) {
+    if (codepoint >= 'A' && codepoint <= 'Z') return codepoint + 0x20u;
+    if ((codepoint >= 0x00C0u && codepoint <= 0x00D6u) ||
+        (codepoint >= 0x00D8u && codepoint <= 0x00DEu)) {
+        return codepoint + 0x20u;
+    }
+    if (codepoint == 0x0178u) return 0x00FFu;
+    return codepoint;
+}
+
+static bool text_line_query_matches(const TextLine *line, size_t position,
+                                    const char *query, size_t query_length,
+                                    bool case_insensitive,
+                                    size_t *match_end) {
+    if (!line || !query || !match_end) return false;
+    size_t line_offset = position;
+    size_t query_offset = 0;
+
+    while (query_offset < query_length) {
+        if (line_offset >= line->len) return false;
+        uint32_t line_codepoint = 0;
+        uint32_t query_codepoint = 0;
+        size_t line_bytes = 0;
+        size_t query_bytes = 0;
+        if (!retro_utf8_decode(line->data, line->len, line_offset,
+                               &line_codepoint, &line_bytes) ||
+            !retro_utf8_decode(query, query_length, query_offset,
+                               &query_codepoint, &query_bytes)) {
+            return false;
+        }
+        if (case_insensitive) {
+            line_codepoint = text_search_fold(line_codepoint);
+            query_codepoint = text_search_fold(query_codepoint);
+        }
+        if (line_codepoint != query_codepoint) return false;
+        line_offset += line_bytes;
+        query_offset += query_bytes;
+    }
+
+    *match_end = line_offset;
+    return true;
+}
+
+static bool text_line_find_range(const TextLine *line,
+                                 const char *query, size_t query_length,
+                                 bool case_insensitive,
+                                 size_t start, size_t limit,
+                                 size_t *match_start, size_t *match_end) {
+    if (!line || !query || !match_start || !match_end) return false;
+    if (limit > line->len) limit = line->len;
+    start = text_line_boundary_at_or_after(line, start);
+    limit = text_line_boundary_at_or_before(line, limit);
+
+    size_t position = start;
+    while (position < limit) {
+        size_t end = 0;
+        if (text_line_query_matches(line, position, query, query_length,
+                                    case_insensitive, &end) &&
+            end <= limit) {
+            *match_start = position;
+            *match_end = end;
+            return true;
+        }
+        size_t next = retro_utf8_next(line->data, line->len, position);
+        if (next <= position) break;
+        position = next;
+    }
+    return false;
+}
+
+bool text_buffer_select_match(TextBuffer *buf, const TextBufferMatch *match) {
+    if (!buf || !match || match->row >= buf->line_count) return false;
+    TextLine *line = &buf->lines[match->row];
+    size_t start = text_line_boundary_at_or_before(line, match->start_col);
+    size_t end = text_line_boundary_at_or_before(line, match->end_col);
+    if (start >= end) return false;
+
+    buf->selection_anchor_row = match->row;
+    buf->selection_anchor_col = start;
+    buf->cursor_row = match->row;
+    buf->cursor_col = end;
+    buf->selection_active = true;
+    return true;
+}
+
+bool text_buffer_find_next(const TextBuffer *buf,
+                           const char *query, size_t query_length,
+                           bool case_insensitive,
+                           size_t start_row, size_t start_col,
+                           bool wrap, TextBufferMatch *match) {
+    if (match) *match = (TextBufferMatch){0};
+    if (!buf || !query || !match || buf->line_count == 0 ||
+        query_length == 0 || !retro_utf8_validate(query, query_length) ||
+        memchr(query, '\0', query_length) ||
+        memchr(query, '\n', query_length) ||
+        memchr(query, '\r', query_length)) {
+        return false;
+    }
+
+    if (start_row >= buf->line_count) start_row = buf->line_count - 1;
+    start_col = text_line_boundary_at_or_after(
+        &buf->lines[start_row], start_col);
+
+    for (size_t row = start_row; row < buf->line_count; ++row) {
+        const TextLine *line = &buf->lines[row];
+        size_t found_start = 0;
+        size_t found_end = 0;
+        size_t row_start = row == start_row ? start_col : 0;
+        if (text_line_find_range(line, query, query_length,
+                                 case_insensitive, row_start, line->len,
+                                 &found_start, &found_end)) {
+            *match = (TextBufferMatch){row, found_start, found_end};
+            return true;
+        }
+    }
+
+    if (!wrap) return false;
+    for (size_t row = 0; row < start_row; ++row) {
+        const TextLine *line = &buf->lines[row];
+        size_t found_start = 0;
+        size_t found_end = 0;
+        if (text_line_find_range(line, query, query_length,
+                                 case_insensitive, 0, line->len,
+                                 &found_start, &found_end)) {
+            *match = (TextBufferMatch){row, found_start, found_end};
+            return true;
+        }
+    }
+
+    size_t found_start = 0;
+    size_t found_end = 0;
+    if (text_line_find_range(&buf->lines[start_row], query, query_length,
+                             case_insensitive, 0, start_col,
+                             &found_start, &found_end)) {
+        *match = (TextBufferMatch){start_row, found_start, found_end};
+        return true;
+    }
+    return false;
 }
 
 size_t text_buffer_scroll_row(const TextBuffer *buf) {
-    if (!buf) return 0;
-    return buf->scroll_row;
+    return buf ? buf->scroll_row : 0;
 }
 
 size_t text_buffer_scroll_col(const TextBuffer *buf) {
-    if (!buf) return 0;
-    return buf->scroll_col;
+    return buf ? buf->scroll_col : 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* Editing                                                             */
-/* ------------------------------------------------------------------ */
+static bool text_buffer_replace_range(TextBuffer *buf, TextRange range,
+                                      const char *inserted,
+                                      size_t inserted_length) {
+    if (!buf || (!inserted && inserted_length != 0)) return false;
+    if (!retro_utf8_validate(inserted, inserted_length)) return false;
+    if (inserted_length > 0 && memchr(inserted, '\0', inserted_length)) {
+        return false;
+    }
 
-bool text_buffer_insert_char(TextBuffer *buf, char ch) {
-    if (!buf || buf->line_count == 0 || ch == '\0') return false;
+    size_t document_length = 0;
+    char *document = text_buffer_to_text(buf, &document_length);
+    if (!document) return false;
+
+    size_t start = text_buffer_document_offset(buf, range.start);
+    size_t end = text_buffer_document_offset(buf, range.end);
+    if (start > end || end > document_length ||
+        start > SIZE_MAX - inserted_length ||
+        start + inserted_length > SIZE_MAX - (document_length - end)) {
+        free(document);
+        return false;
+    }
+
+    size_t next_length = start + inserted_length +
+                         (document_length - end);
+    char *next = malloc(next_length + 1);
+    if (!next) {
+        free(document);
+        return false;
+    }
+
+    if (start > 0) memcpy(next, document, start);
+    if (inserted_length > 0) {
+        memcpy(next + start, inserted, inserted_length);
+    }
+    if (document_length > end) {
+        memcpy(next + start + inserted_length, document + end,
+               document_length - end);
+    }
+    next[next_length] = '\0';
+
+    bool replaced = text_buffer_set_text(buf, next);
+    free(next);
+    free(document);
+    if (!replaced) return false;
+
+    text_buffer_set_cursor_from_offset(buf, start + inserted_length);
+    text_buffer_clear_selection(buf);
+    return true;
+}
+
+bool text_buffer_insert_text(TextBuffer *buf, const char *text,
+                             size_t length) {
+    if (!buf || (!text && length != 0)) return false;
+    TextRange range = {
+        .start = {buf->cursor_row, buf->cursor_col},
+        .end = {buf->cursor_row, buf->cursor_col},
+    };
+    (void)text_buffer_selection_range(buf, &range);
+    if (length == 0 && text_position_compare(range.start, range.end) == 0) {
+        return false;
+    }
+    return text_buffer_replace_range(buf, range, text, length);
+}
+
+bool text_buffer_insert_codepoint(TextBuffer *buf, uint32_t codepoint) {
+    if (!buf || buf->line_count == 0 || codepoint == 0 ||
+        codepoint == '\n' || codepoint == '\r') {
+        return false;
+    }
+
+    char encoded[4];
+    size_t encoded_len = 0;
+    if (!retro_utf8_encode(codepoint, encoded, &encoded_len)) return false;
+    if (text_buffer_has_selection(buf)) {
+        return text_buffer_insert_text(buf, encoded, encoded_len);
+    }
+    text_buffer_clear_collapsed_selection(buf);
 
     TextLine *line = &buf->lines[buf->cursor_row];
-    if (!text_line_grow(line, line->len + 2)) return false;
+    text_buffer_clamp_cursor(buf);
+    if (line->len > SIZE_MAX - encoded_len - 1) return false;
+    if (!text_line_grow(line, line->len + encoded_len + 1)) return false;
 
-    /* Shift right from cursor col. */
-    if (buf->cursor_col <= line->len) {
-        memmove(line->data + buf->cursor_col + 1,
-                line->data + buf->cursor_col,
-                line->len - buf->cursor_col + 1);
-    }
-    line->data[buf->cursor_col] = ch;
-    line->len++;
-    buf->cursor_col++;
+    memmove(line->data + buf->cursor_col + encoded_len,
+            line->data + buf->cursor_col,
+            line->len - buf->cursor_col + 1);
+    memcpy(line->data + buf->cursor_col, encoded, encoded_len);
+    line->len += encoded_len;
+    buf->cursor_col += encoded_len;
     return true;
+}
+
+bool text_buffer_insert_char(TextBuffer *buf, char ch) {
+    unsigned char byte = (unsigned char)ch;
+    if (byte == 0) return false;
+    return text_buffer_insert_codepoint(buf, (uint32_t)byte);
 }
 
 bool text_buffer_insert_newline(TextBuffer *buf) {
     if (!buf || buf->line_count == 0) return false;
+    if (text_buffer_has_selection(buf)) {
+        return text_buffer_insert_text(buf, "\n", 1);
+    }
+    text_buffer_clear_collapsed_selection(buf);
+    text_buffer_clamp_cursor(buf);
 
-    const TextLine *cur = &buf->lines[buf->cursor_row];
+    const TextLine *current = &buf->lines[buf->cursor_row];
     size_t col = buf->cursor_col;
-    if (col > cur->len) col = cur->len;
+    size_t tail_len = current->len - col;
 
-    /* Text after cursor moves to new line. */
-    size_t tail_len = cur->len - col;
-
-    /* Fully prepare the new line before changing the line array. This keeps
-       the buffer unchanged if either allocation fails and copies the tail
-       while `cur` is still valid. */
     TextLine new_line = {0};
     if (!text_line_init(&new_line)) return false;
-    if (!text_line_set(&new_line, cur->data + col, tail_len)) {
+    if (!text_line_set(&new_line, current->data + col, tail_len)) {
         text_line_free(&new_line);
         return false;
     }
 
-    /* Growing can relocate `buf->lines`, so no pointer into the old array is
-       used beyond this point. */
     if (!text_buffer_grow_lines(buf, buf->line_count + 1)) {
         text_line_free(&new_line);
         return false;
     }
 
-    /* Shift lines down. */
     size_t insert_at = buf->cursor_row + 1;
     if (insert_at < buf->line_count) {
         memmove(&buf->lines[insert_at + 1],
                 &buf->lines[insert_at],
                 (buf->line_count - insert_at) * sizeof(TextLine));
     }
-
     buf->lines[insert_at] = new_line;
     buf->line_count++;
 
-    /* Truncate current line at cursor. */
-    TextLine *current = &buf->lines[buf->cursor_row];
-    current->data[col] = '\0';
-    current->len = col;
-
-    /* Move cursor to beginning of new line. */
+    TextLine *head = &buf->lines[buf->cursor_row];
+    head->data[col] = '\0';
+    head->len = col;
     buf->cursor_row = insert_at;
     buf->cursor_col = 0;
     return true;
 }
 
+bool text_buffer_delete_selection(TextBuffer *buf) {
+    if (!buf || !text_buffer_has_selection(buf)) return false;
+    return text_buffer_insert_text(buf, "", 0);
+}
+
 bool text_buffer_delete_backward(TextBuffer *buf) {
     if (!buf || buf->line_count == 0) return false;
+    if (text_buffer_has_selection(buf)) {
+        return text_buffer_delete_selection(buf);
+    }
+    text_buffer_clear_collapsed_selection(buf);
+    text_buffer_clamp_cursor(buf);
 
     if (buf->cursor_col > 0) {
-        /* Delete character within the line. */
         TextLine *line = &buf->lines[buf->cursor_row];
-        size_t col = buf->cursor_col;
-        if (col > line->len) col = line->len;
-        memmove(line->data + col - 1,
-                line->data + col,
-                line->len - col + 1);
-        line->len--;
-        buf->cursor_col = col - 1;
+        size_t previous = retro_utf8_prev(line->data, buf->cursor_col);
+        size_t removed = buf->cursor_col - previous;
+        memmove(line->data + previous,
+                line->data + buf->cursor_col,
+                line->len - buf->cursor_col + 1);
+        line->len -= removed;
+        buf->cursor_col = previous;
         return true;
     }
 
-    /* At column 0: merge with previous line. */
     if (buf->cursor_row == 0) return false;
+    size_t previous_row = buf->cursor_row - 1;
+    TextLine *previous = &buf->lines[previous_row];
+    TextLine *current = &buf->lines[buf->cursor_row];
+    size_t old_previous_len = previous->len;
 
-    size_t prev_row = buf->cursor_row - 1;
-    TextLine *prev = &buf->lines[prev_row];
-    TextLine *cur = &buf->lines[buf->cursor_row];
-    size_t old_prev_len = prev->len;
-
-    /* Append current line to previous. */
-    if (cur->len > 0) {
-        if (!text_line_grow(prev, prev->len + cur->len + 1)) return false;
-        memcpy(prev->data + prev->len, cur->data, cur->len);
-        prev->len += cur->len;
-        prev->data[prev->len] = '\0';
+    if (current->len > 0) {
+        if (!text_line_grow(previous,
+                            previous->len + current->len + 1)) {
+            return false;
+        }
+        memcpy(previous->data + previous->len,
+               current->data, current->len);
+        previous->len += current->len;
+        previous->data[previous->len] = '\0';
     }
 
-    /* Free current line and shift remaining lines up. */
-    text_line_free(cur);
+    text_line_free(current);
     size_t remove_at = buf->cursor_row;
     if (remove_at + 1 < buf->line_count) {
         memmove(&buf->lines[remove_at],
@@ -378,42 +773,47 @@ bool text_buffer_delete_backward(TextBuffer *buf) {
                 (buf->line_count - remove_at - 1) * sizeof(TextLine));
     }
     buf->line_count--;
-
-    buf->cursor_row = prev_row;
-    buf->cursor_col = old_prev_len;
+    buf->cursor_row = previous_row;
+    buf->cursor_col = old_previous_len;
     return true;
 }
 
 bool text_buffer_delete_forward(TextBuffer *buf) {
     if (!buf || buf->line_count == 0) return false;
-
+    if (text_buffer_has_selection(buf)) {
+        return text_buffer_delete_selection(buf);
+    }
+    text_buffer_clear_collapsed_selection(buf);
+    text_buffer_clamp_cursor(buf);
     TextLine *line = &buf->lines[buf->cursor_row];
 
     if (buf->cursor_col < line->len) {
-        /* Delete character at cursor. */
+        size_t next = retro_utf8_next(line->data, line->len,
+                                      buf->cursor_col);
+        if (next <= buf->cursor_col) return false;
+        size_t removed = next - buf->cursor_col;
         memmove(line->data + buf->cursor_col,
-                line->data + buf->cursor_col + 1,
-                line->len - buf->cursor_col);
-        line->len--;
+                line->data + next,
+                line->len - next + 1);
+        line->len -= removed;
         return true;
     }
 
-    /* At end of line: merge with next line. */
     if (buf->cursor_row + 1 >= buf->line_count) return false;
-
     size_t next_row = buf->cursor_row + 1;
-    TextLine *next = &buf->lines[next_row];
+    TextLine *next_line = &buf->lines[next_row];
 
-    /* Append next line to current. */
-    if (next->len > 0) {
-        if (!text_line_grow(line, line->len + next->len + 1)) return false;
-        memcpy(line->data + line->len, next->data, next->len);
-        line->len += next->len;
+    if (next_line->len > 0) {
+        if (!text_line_grow(line, line->len + next_line->len + 1)) {
+            return false;
+        }
+        memcpy(line->data + line->len,
+               next_line->data, next_line->len);
+        line->len += next_line->len;
         line->data[line->len] = '\0';
     }
 
-    /* Free next line and shift. */
-    text_line_free(next);
+    text_line_free(next_line);
     if (next_row + 1 < buf->line_count) {
         memmove(&buf->lines[next_row],
                 &buf->lines[next_row + 1],
@@ -423,38 +823,33 @@ bool text_buffer_delete_forward(TextBuffer *buf) {
     return true;
 }
 
-/* ------------------------------------------------------------------ */
-/* Key handling                                                        */
-/* ------------------------------------------------------------------ */
-
-/* Cursor / line-editing helpers, factored out so the dispatch table
-   below stays small and each branch is independently understandable. */
-
 static bool text_buffer_kv_home(TextBuffer *buf) {
-    if (buf->cursor_col == 0) return true;
     buf->cursor_col = 0;
     return true;
 }
 
 static bool text_buffer_kv_end(TextBuffer *buf) {
-    size_t line_len = buf->lines[buf->cursor_row].len;
-    if (buf->cursor_col == line_len) return true;
-    buf->cursor_col = line_len;
+    buf->cursor_col = buf->lines[buf->cursor_row].len;
     return true;
 }
 
 static bool text_buffer_kv_kill_to_end(TextBuffer *buf) {
-    TextLine *line = &buf->lines[buf->cursor_row];
-    if (buf->cursor_col < line->len) {
-        line->data[buf->cursor_col] = '\0';
-        line->len = buf->cursor_col;
+    if (text_buffer_has_selection(buf)) {
+        return text_buffer_delete_selection(buf);
     }
+    text_buffer_clamp_cursor(buf);
+    TextLine *line = &buf->lines[buf->cursor_row];
+    if (buf->cursor_col >= line->len) return false;
+    line->data[buf->cursor_col] = '\0';
+    line->len = buf->cursor_col;
     return true;
 }
 
 static bool text_buffer_kv_left(TextBuffer *buf) {
+    text_buffer_clamp_cursor(buf);
     if (buf->cursor_col > 0) {
-        buf->cursor_col--;
+        TextLine *line = &buf->lines[buf->cursor_row];
+        buf->cursor_col = retro_utf8_prev(line->data, buf->cursor_col);
     } else if (buf->cursor_row > 0) {
         buf->cursor_row--;
         buf->cursor_col = buf->lines[buf->cursor_row].len;
@@ -463,8 +858,11 @@ static bool text_buffer_kv_left(TextBuffer *buf) {
 }
 
 static bool text_buffer_kv_right(TextBuffer *buf) {
-    if (buf->cursor_col < buf->lines[buf->cursor_row].len) {
-        buf->cursor_col++;
+    text_buffer_clamp_cursor(buf);
+    TextLine *line = &buf->lines[buf->cursor_row];
+    if (buf->cursor_col < line->len) {
+        buf->cursor_col = retro_utf8_next(line->data, line->len,
+                                          buf->cursor_col);
     } else if (buf->cursor_row + 1 < buf->line_count) {
         buf->cursor_row++;
         buf->cursor_col = 0;
@@ -474,127 +872,710 @@ static bool text_buffer_kv_right(TextBuffer *buf) {
 
 static bool text_buffer_kv_up(TextBuffer *buf) {
     if (buf->cursor_row > 0) {
+        size_t desired = text_line_columns_to(
+            &buf->lines[buf->cursor_row], buf->cursor_col);
         buf->cursor_row--;
-        text_buffer_clamp_col(buf);
+        buf->cursor_col = text_line_byte_for_columns(
+            &buf->lines[buf->cursor_row], desired);
     }
     return true;
 }
 
 static bool text_buffer_kv_down(TextBuffer *buf) {
     if (buf->cursor_row + 1 < buf->line_count) {
+        size_t desired = text_line_columns_to(
+            &buf->lines[buf->cursor_row], buf->cursor_col);
         buf->cursor_row++;
-        text_buffer_clamp_col(buf);
+        buf->cursor_col = text_line_byte_for_columns(
+            &buf->lines[buf->cursor_row], desired);
     }
-    return true;
-}
-
-static bool text_buffer_kv_home_col(TextBuffer *buf) {
-    buf->cursor_col = 0;
-    return true;
-}
-
-static bool text_buffer_kv_end_col(TextBuffer *buf) {
-    buf->cursor_col = buf->lines[buf->cursor_row].len;
     return true;
 }
 
 typedef bool (*TextBufferKeyFn)(TextBuffer *buf);
 
-static const struct {
+typedef struct TextBufferKeyBinding {
     int code;
-    TextBufferKeyFn fn;
-} text_buffer_key_bindings[] = {
-    {RETRO_KEY_LF,       text_buffer_insert_newline},
-    {RETRO_KEY_CR,       text_buffer_insert_newline},
-    {RETRO_KEY_BS,       text_buffer_delete_backward},
-    {RETRO_KEY_DEL,      text_buffer_delete_backward},
-    {RETRO_KEY_CTRL_A,   text_buffer_kv_home},
-    {RETRO_KEY_CTRL_E,   text_buffer_kv_end},
-    {RETRO_KEY_CTRL_K,   text_buffer_kv_kill_to_end},
-    {RETRO_KEY_CTRL_D,   text_buffer_delete_forward},
-    {RETRO_KEY_LEFT,     text_buffer_kv_left},
-    {RETRO_KEY_RIGHT,    text_buffer_kv_right},
-    {RETRO_KEY_UP,       text_buffer_kv_up},
-    {RETRO_KEY_DOWN,     text_buffer_kv_down},
-    {RETRO_KEY_HOME,     text_buffer_kv_home_col},
-    {RETRO_KEY_END,      text_buffer_kv_end_col},
-    {RETRO_KEY_DC,       text_buffer_delete_forward},
+    TextBufferKeyFn function;
+    bool movement;
+} TextBufferKeyBinding;
+
+static const TextBufferKeyBinding text_buffer_key_bindings[] = {
+    {RETRO_KEY_LF, text_buffer_insert_newline, false},
+    {RETRO_KEY_CR, text_buffer_insert_newline, false},
+    {RETRO_KEY_BS, text_buffer_delete_backward, false},
+    {RETRO_KEY_DEL, text_buffer_delete_backward, false},
+    {RETRO_KEY_CTRL_A, text_buffer_kv_home, true},
+    {RETRO_KEY_CTRL_E, text_buffer_kv_end, true},
+    {RETRO_KEY_CTRL_K, text_buffer_kv_kill_to_end, false},
+    {RETRO_KEY_CTRL_D, text_buffer_delete_forward, false},
+    {RETRO_KEY_LEFT, text_buffer_kv_left, true},
+    {RETRO_KEY_RIGHT, text_buffer_kv_right, true},
+    {RETRO_KEY_UP, text_buffer_kv_up, true},
+    {RETRO_KEY_DOWN, text_buffer_kv_down, true},
+    {RETRO_KEY_HOME, text_buffer_kv_home, true},
+    {RETRO_KEY_END, text_buffer_kv_end, true},
+    {RETRO_KEY_DC, text_buffer_delete_forward, false},
 };
+
+static void text_buffer_prepare_movement(TextBuffer *buf,
+                                         const RetroKeyEvent *key) {
+    if (!buf || !key) return;
+    if ((key->modifiers & RETRO_MOD_SHIFT) != 0) {
+        if (!buf->selection_active) {
+            buf->selection_active = true;
+            buf->selection_anchor_row = buf->cursor_row;
+            buf->selection_anchor_col = buf->cursor_col;
+        }
+    } else {
+        text_buffer_clear_selection(buf);
+    }
+}
 
 bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key) {
     if (!buf || !key) return false;
 
-    int code = key->key_code;
-    size_t n = sizeof(text_buffer_key_bindings) / sizeof(text_buffer_key_bindings[0]);
-    for (size_t i = 0; i < n; i++) {
-        if (text_buffer_key_bindings[i].code == code) {
-            return text_buffer_key_bindings[i].fn(buf);
+    size_t binding_count = sizeof(text_buffer_key_bindings) /
+                           sizeof(text_buffer_key_bindings[0]);
+    for (size_t index = 0; index < binding_count; ++index) {
+        if (text_buffer_key_bindings[index].code == key->key_code) {
+            if (text_buffer_key_bindings[index].movement) {
+                text_buffer_prepare_movement(buf, key);
+            }
+            return text_buffer_key_bindings[index].function(buf);
         }
     }
 
-    /* Fallthrough: printable ASCII characters are inserted verbatim. */
-    if (key->is_printable && key->ascii > 0) {
-        return text_buffer_insert_char(buf, key->ascii);
+    if (key->is_printable) {
+        uint32_t codepoint = key->text_codepoint;
+        if (codepoint == 0 && key->ascii > 0) codepoint = key->ascii;
+        if (codepoint >= 0x20u && codepoint != 0x7fu) {
+            return text_buffer_insert_codepoint(buf, codepoint);
+        }
     }
     return false;
 }
 
-/* ------------------------------------------------------------------ */
-/* Render                                                              */
-/* ------------------------------------------------------------------ */
+typedef struct TextWrapChunk {
+    size_t row;
+    size_t start;
+    size_t end;
+} TextWrapChunk;
+
+static size_t text_line_wrap_end(const TextLine *line, size_t start,
+                                 size_t wrap_columns) {
+    if (!line || !line->data || start >= line->len || wrap_columns == 0) {
+        return line ? line->len : 0;
+    }
+
+    size_t position = text_line_boundary_at_or_before(line, start);
+    size_t used_columns = 0;
+    while (position < line->len) {
+        uint32_t codepoint = 0;
+        size_t byte_len = 0;
+        if (!retro_utf8_decode(line->data, line->len, position,
+                               &codepoint, &byte_len)) {
+            codepoint = '?';
+            byte_len = 1;
+        }
+        int width_value = retro_utf8_width(codepoint);
+        size_t width = width_value > 0 ? (size_t)width_value : 0;
+        if (width > 0 && used_columns > 0 &&
+            used_columns + width > wrap_columns) {
+            break;
+        }
+        if (width > wrap_columns && used_columns == 0) {
+            position += byte_len;
+            break;
+        }
+        if (width > 0 && used_columns + width > wrap_columns) break;
+        used_columns += width;
+        position += byte_len;
+    }
+    if (position <= start) {
+        size_t next = retro_utf8_next(line->data, line->len, start);
+        return next > start ? next : line->len;
+    }
+    return position;
+}
+
+static size_t text_line_wrap_chunk_count(const TextLine *line,
+                                         size_t wrap_columns) {
+    if (!line || line->len == 0 || wrap_columns == 0) return 1;
+    size_t count = 0;
+    size_t start = 0;
+    while (start < line->len) {
+        size_t end = text_line_wrap_end(line, start, wrap_columns);
+        if (end <= start) break;
+        count++;
+        start = end;
+    }
+    return count > 0 ? count : 1;
+}
+
+size_t text_buffer_visual_row_count(const TextBuffer *buf,
+                                    size_t wrap_columns) {
+    if (!buf || buf->line_count == 0 || wrap_columns == 0) return 0;
+    size_t total = 0;
+    for (size_t row = 0; row < buf->line_count; ++row) {
+        size_t count = text_line_wrap_chunk_count(
+            &buf->lines[row], wrap_columns);
+        if (total > SIZE_MAX - count) return SIZE_MAX;
+        total += count;
+    }
+    return total;
+}
+
+static bool text_buffer_wrap_chunk_at_visual(const TextBuffer *buf,
+                                             size_t wrap_columns,
+                                             size_t visual_row,
+                                             TextWrapChunk *chunk) {
+    if (!buf || !chunk || buf->line_count == 0 || wrap_columns == 0) {
+        return false;
+    }
+
+    size_t index = 0;
+    for (size_t row = 0; row < buf->line_count; ++row) {
+        const TextLine *line = &buf->lines[row];
+        if (line->len == 0) {
+            if (index == visual_row) {
+                *chunk = (TextWrapChunk){row, 0, 0};
+                return true;
+            }
+            index++;
+            continue;
+        }
+
+        size_t start = 0;
+        while (start < line->len) {
+            size_t end = text_line_wrap_end(line, start, wrap_columns);
+            if (end <= start) return false;
+            if (index == visual_row) {
+                *chunk = (TextWrapChunk){row, start, end};
+                return true;
+            }
+            index++;
+            start = end;
+        }
+    }
+    return false;
+}
+
+static bool text_buffer_wrap_chunk_for_cursor(const TextBuffer *buf,
+                                              size_t wrap_columns,
+                                              TextWrapChunk *chunk,
+                                              size_t *visual_row) {
+    if (!buf || !chunk || !visual_row || buf->line_count == 0 ||
+        wrap_columns == 0 || buf->cursor_row >= buf->line_count) {
+        return false;
+    }
+
+    size_t visual = 0;
+    for (size_t row = 0; row < buf->cursor_row; ++row) {
+        visual += text_line_wrap_chunk_count(
+            &buf->lines[row], wrap_columns);
+    }
+
+    const TextLine *line = &buf->lines[buf->cursor_row];
+    if (line->len == 0) {
+        *chunk = (TextWrapChunk){buf->cursor_row, 0, 0};
+        *visual_row = visual;
+        return true;
+    }
+
+    size_t cursor = text_line_boundary_at_or_before(line, buf->cursor_col);
+    size_t start = 0;
+    while (start < line->len) {
+        size_t end = text_line_wrap_end(line, start, wrap_columns);
+        if (end <= start) return false;
+        if (cursor < end || end == line->len) {
+            *chunk = (TextWrapChunk){buf->cursor_row, start, end};
+            *visual_row = visual;
+            return true;
+        }
+        visual++;
+        start = end;
+    }
+    return false;
+}
+
+size_t text_buffer_cursor_visual_row(const TextBuffer *buf,
+                                     size_t wrap_columns) {
+    TextWrapChunk chunk = {0};
+    size_t visual_row = 0;
+    return text_buffer_wrap_chunk_for_cursor(
+               buf, wrap_columns, &chunk, &visual_row)
+               ? visual_row
+               : 0;
+}
+
+static bool text_buffer_move_wrapped_vertical(TextBuffer *buf,
+                                              int direction,
+                                              size_t wrap_columns) {
+    if (!buf || wrap_columns == 0 || direction == 0) return false;
+    TextWrapChunk current = {0};
+    size_t current_visual = 0;
+    if (!text_buffer_wrap_chunk_for_cursor(
+            buf, wrap_columns, &current, &current_visual)) {
+        return false;
+    }
+
+    size_t target_visual = current_visual;
+    if (direction < 0) {
+        if (current_visual == 0) return true;
+        target_visual--;
+    } else {
+        size_t total = text_buffer_visual_row_count(buf, wrap_columns);
+        if (current_visual + 1 >= total) return true;
+        target_visual++;
+    }
+
+    TextWrapChunk target = {0};
+    if (!text_buffer_wrap_chunk_at_visual(
+            buf, wrap_columns, target_visual, &target)) {
+        return false;
+    }
+
+    const TextLine *current_line = &buf->lines[current.row];
+    size_t desired = retro_utf8_columns(
+        current_line->data, current_line->len,
+        current.start, buf->cursor_col);
+    const TextLine *target_line = &buf->lines[target.row];
+    size_t target_length = target.end - target.start;
+    size_t relative = retro_utf8_prefix_bytes(
+        target_line->data + target.start, target_length, desired);
+    size_t target_col = target.start + relative;
+    if (target.end < target_line->len && target_col >= target.end &&
+        target.end > target.start) {
+        target_col = retro_utf8_prev(target_line->data, target.end);
+    }
+
+    buf->cursor_row = target.row;
+    buf->cursor_col = target_col;
+    return true;
+}
+
+bool text_buffer_handle_key_wrapped(TextBuffer *buf,
+                                    const RetroKeyEvent *key,
+                                    size_t wrap_columns) {
+    if (!buf || !key) return false;
+    if (wrap_columns == 0 ||
+        (key->key_code != RETRO_KEY_UP &&
+         key->key_code != RETRO_KEY_DOWN)) {
+        return text_buffer_handle_key(buf, key);
+    }
+
+    text_buffer_prepare_movement(buf, key);
+    return text_buffer_move_wrapped_vertical(
+        buf, key->key_code == RETRO_KEY_UP ? -1 : 1,
+        wrap_columns);
+}
+
+static size_t text_line_cursor_width(const TextLine *line,
+                                     size_t cursor_col) {
+    if (!line || cursor_col >= line->len) return 1;
+    uint32_t codepoint = 0;
+    size_t byte_len = 0;
+    if (!retro_utf8_decode(line->data, line->len, cursor_col,
+                           &codepoint, &byte_len)) {
+        return 1;
+    }
+    (void)byte_len;
+    int width = retro_utf8_width(codepoint);
+    return width > 0 ? (size_t)width : 1;
+}
+
+static size_t text_line_scroll_start(const TextLine *line,
+                                     size_t requested_start,
+                                     size_t cursor_col,
+                                     size_t visible_cols) {
+    if (!line || visible_cols == 0) return 0;
+    size_t start = text_line_boundary_at_or_before(line, requested_start);
+    size_t cursor = text_line_boundary_at_or_before(line, cursor_col);
+    if (cursor < start) start = cursor;
+
+    size_t cursor_width = text_line_cursor_width(line, cursor);
+    while (start < cursor) {
+        size_t columns = retro_utf8_columns(line->data, line->len,
+                                            start, cursor);
+        if (columns + cursor_width <= visible_cols) break;
+        size_t next = retro_utf8_next(line->data, line->len, start);
+        if (next <= start) break;
+        start = next;
+    }
+    return start;
+}
+
+static char *text_line_visible_text(const TextLine *line,
+                                    size_t start,
+                                    size_t visible_cols) {
+    size_t remaining = line && start < line->len ? line->len - start : 0;
+    if (remaining > SIZE_MAX - visible_cols - 1) return NULL;
+    size_t capacity = remaining + visible_cols + 1;
+    char *out = malloc(capacity);
+    if (!out) return NULL;
+
+    size_t out_len = 0;
+    size_t used_cols = 0;
+    size_t position = start;
+    while (line && position < line->len) {
+        uint32_t codepoint = 0;
+        size_t byte_len = 0;
+        if (!retro_utf8_decode(line->data, line->len, position,
+                               &codepoint, &byte_len)) {
+            codepoint = '?';
+            byte_len = 1;
+        }
+        int width_value = retro_utf8_width(codepoint);
+        size_t width = width_value > 0 ? (size_t)width_value : 0;
+        if (width > 0 && used_cols + width > visible_cols) break;
+        if (out_len + byte_len >= capacity) break;
+        memcpy(out + out_len, line->data + position, byte_len);
+        out_len += byte_len;
+        used_cols += width;
+        position += byte_len;
+    }
+
+    while (used_cols < visible_cols && out_len + 1 < capacity) {
+        out[out_len++] = ' ';
+        used_cols++;
+    }
+    out[out_len] = '\0';
+    return out;
+}
+
+static char *text_line_range_text(const TextLine *line,
+                                  size_t start, size_t end,
+                                  size_t max_columns) {
+    if (!line || start >= end || start >= line->len) return NULL;
+    start = text_line_boundary_at_or_before(line, start);
+    end = text_line_boundary_at_or_before(line, end);
+    if (end <= start) return NULL;
+
+    size_t capacity = end - start + 1;
+    char *out = malloc(capacity);
+    if (!out) return NULL;
+    size_t out_len = 0;
+    size_t used_columns = 0;
+    size_t position = start;
+
+    while (position < end) {
+        uint32_t codepoint = 0;
+        size_t byte_len = 0;
+        if (!retro_utf8_decode(line->data, line->len, position,
+                               &codepoint, &byte_len)) {
+            free(out);
+            return NULL;
+        }
+        int width_value = retro_utf8_width(codepoint);
+        size_t width = width_value > 0 ? (size_t)width_value : 0;
+        if (width > 0 && used_columns + width > max_columns) break;
+        memcpy(out + out_len, line->data + position, byte_len);
+        out_len += byte_len;
+        used_columns += width;
+        position += byte_len;
+    }
+    out[out_len] = '\0';
+    return out;
+}
+
+static void text_buffer_render_selection_line(
+    const TextBuffer *buf, DrawList *draw_list,
+    const TextRange *range, size_t buffer_row,
+    size_t line_start, size_t visible_cols,
+    int y, int x, const RenderStyle *selection_style) {
+    if (!buf || !draw_list || !range || !selection_style ||
+        buffer_row >= buf->line_count || buffer_row < range->start.row ||
+        buffer_row > range->end.row) {
+        return;
+    }
+
+    const TextLine *line = &buf->lines[buffer_row];
+    size_t selected_start =
+        buffer_row == range->start.row ? range->start.col : 0;
+    size_t selected_end =
+        buffer_row == range->end.row ? range->end.col : line->len;
+    selected_start = text_line_boundary_at_or_before(line, selected_start);
+    selected_end = text_line_boundary_at_or_before(line, selected_end);
+
+    if (selected_end > line_start && selected_start < line->len) {
+        size_t visible_start = selected_start > line_start
+                                   ? selected_start
+                                   : line_start;
+        size_t x_columns = retro_utf8_columns(
+            line->data, line->len, line_start, visible_start);
+        if (x_columns < visible_cols) {
+            char *selected = text_line_range_text(
+                line, visible_start, selected_end,
+                visible_cols - x_columns);
+            if (selected && selected[0]) {
+                draw_list_text(draw_list, y, x + (int)x_columns,
+                               selected, selection_style);
+            }
+            free(selected);
+        }
+    }
+
+    if (buffer_row < range->end.row && line->len >= line_start) {
+        size_t newline_x = retro_utf8_columns(
+            line->data, line->len, line_start, line->len);
+        if (newline_x < visible_cols) {
+            draw_list_text(draw_list, y, x + (int)newline_x,
+                           " ", selection_style);
+        }
+    }
+}
+
+static char *text_line_wrapped_chunk_text(const TextLine *line,
+                                          size_t start, size_t end,
+                                          size_t visible_cols) {
+    if (end < start) end = start;
+    size_t bytes = end - start;
+    if (bytes > SIZE_MAX - visible_cols - 1) return NULL;
+    size_t capacity = bytes + visible_cols + 1;
+    char *out = malloc(capacity);
+    if (!out) return NULL;
+
+    size_t out_len = 0;
+    size_t used_columns = 0;
+    size_t position = start;
+    while (line && position < end) {
+        uint32_t codepoint = 0;
+        size_t byte_len = 0;
+        if (!retro_utf8_decode(line->data, line->len, position,
+                               &codepoint, &byte_len) ||
+            position + byte_len > end) {
+            free(out);
+            return NULL;
+        }
+        int width_value = retro_utf8_width(codepoint);
+        size_t width = width_value > 0 ? (size_t)width_value : 0;
+        if (out_len + byte_len >= capacity) break;
+        memcpy(out + out_len, line->data + position, byte_len);
+        out_len += byte_len;
+        used_columns += width;
+        position += byte_len;
+    }
+    while (used_columns < visible_cols && out_len + 1 < capacity) {
+        out[out_len++] = ' ';
+        used_columns++;
+    }
+    out[out_len] = '\0';
+    return out;
+}
+
+static void text_buffer_render_selection_chunk(
+    const TextBuffer *buf, DrawList *draw_list,
+    const TextRange *range, const TextWrapChunk *chunk,
+    size_t visible_cols, int y, int x,
+    const RenderStyle *selection_style) {
+    if (!buf || !draw_list || !range || !chunk || !selection_style ||
+        chunk->row >= buf->line_count || chunk->row < range->start.row ||
+        chunk->row > range->end.row) {
+        return;
+    }
+
+    const TextLine *line = &buf->lines[chunk->row];
+    size_t selected_start =
+        chunk->row == range->start.row ? range->start.col : 0;
+    size_t selected_end =
+        chunk->row == range->end.row ? range->end.col : line->len;
+    if (selected_start < chunk->start) selected_start = chunk->start;
+    if (selected_end > chunk->end) selected_end = chunk->end;
+    selected_start = text_line_boundary_at_or_before(line, selected_start);
+    selected_end = text_line_boundary_at_or_before(line, selected_end);
+
+    if (selected_end > selected_start) {
+        size_t x_columns = retro_utf8_columns(
+            line->data, line->len, chunk->start, selected_start);
+        if (x_columns < visible_cols) {
+            char *selected = text_line_range_text(
+                line, selected_start, selected_end,
+                visible_cols - x_columns);
+            if (selected && selected[0]) {
+                draw_list_text(draw_list, y, x + (int)x_columns,
+                               selected, selection_style);
+            }
+            free(selected);
+        }
+    }
+
+    if (chunk->end == line->len && chunk->row < range->end.row) {
+        size_t newline_x = retro_utf8_columns(
+            line->data, line->len, chunk->start, line->len);
+        if (newline_x < visible_cols) {
+            draw_list_text(draw_list, y, x + (int)newline_x,
+                           " ", selection_style);
+        }
+    }
+}
+
+void text_buffer_render_wrapped_with_selection(
+    const TextBuffer *buf, DrawList *draw_list,
+    int y, int x, int visible_rows, int visible_cols,
+    const RenderStyle *style, const RenderStyle *cursor_style,
+    const RenderStyle *selection_style) {
+    if (!buf || !draw_list || !style || visible_rows <= 0 ||
+        visible_cols <= 0 || buf->line_count == 0) {
+        return;
+    }
+
+    size_t rows = (size_t)visible_rows;
+    size_t cols = (size_t)visible_cols;
+    TextWrapChunk cursor_chunk = {0};
+    size_t cursor_visual = 0;
+    if (!text_buffer_wrap_chunk_for_cursor(
+            buf, cols, &cursor_chunk, &cursor_visual)) {
+        return;
+    }
+    size_t scroll_visual =
+        cursor_visual >= rows ? cursor_visual - rows + 1 : 0;
+    TextRange selection = {0};
+    bool has_selection = text_buffer_selection_range(buf, &selection);
+
+    for (size_t row = 0; row < rows; ++row) {
+        TextWrapChunk chunk = {0};
+        size_t visual = scroll_visual + row;
+        if (!text_buffer_wrap_chunk_at_visual(buf, cols, visual, &chunk)) {
+            char *blank = text_line_wrapped_chunk_text(NULL, 0, 0, cols);
+            if (blank) {
+                draw_list_text(draw_list, y + (int)row, x, blank, style);
+                free(blank);
+            }
+            continue;
+        }
+        const TextLine *line = &buf->lines[chunk.row];
+        char *visible = text_line_wrapped_chunk_text(
+            line, chunk.start, chunk.end, cols);
+        if (visible) {
+            draw_list_text(draw_list, y + (int)row, x, visible, style);
+            free(visible);
+        }
+        if (has_selection) {
+            text_buffer_render_selection_chunk(
+                buf, draw_list, &selection, &chunk, cols,
+                y + (int)row, x, selection_style);
+        }
+    }
+
+    if (!cursor_style || cursor_visual < scroll_visual ||
+        cursor_visual >= scroll_visual + rows) {
+        return;
+    }
+
+    const TextLine *cursor_line = &buf->lines[buf->cursor_row];
+    size_t cursor_x = retro_utf8_columns(
+        cursor_line->data, cursor_line->len,
+        cursor_chunk.start, buf->cursor_col);
+    size_t cursor_byte = buf->cursor_col;
+    if (cursor_x >= cols && cursor_chunk.end > cursor_chunk.start) {
+        cursor_byte = retro_utf8_prev(
+            cursor_line->data, cursor_chunk.end);
+        cursor_x = retro_utf8_columns(
+            cursor_line->data, cursor_line->len,
+            cursor_chunk.start, cursor_byte);
+    }
+    if (cursor_x >= cols) return;
+
+    char cursor_text[5] = {' ', '\0', '\0', '\0', '\0'};
+    if (cursor_byte < cursor_line->len) {
+        uint32_t codepoint = 0;
+        size_t byte_len = 0;
+        if (retro_utf8_decode(cursor_line->data, cursor_line->len,
+                              cursor_byte, &codepoint, &byte_len) &&
+            byte_len <= 4) {
+            (void)codepoint;
+            memcpy(cursor_text, cursor_line->data + cursor_byte, byte_len);
+            cursor_text[byte_len] = '\0';
+        }
+    }
+
+    int cursor_y = y + (int)(cursor_visual - scroll_visual);
+    draw_list_text(draw_list, cursor_y, x + (int)cursor_x,
+                   cursor_text, cursor_style);
+}
+
+void text_buffer_render_with_selection(
+    const TextBuffer *buf, DrawList *draw_list,
+    int y, int x, int visible_rows, int visible_cols,
+    const RenderStyle *style, const RenderStyle *cursor_style,
+    const RenderStyle *selection_style) {
+    if (!buf || !draw_list || !style ||
+        visible_rows <= 0 || visible_cols <= 0 ||
+        buf->line_count == 0) {
+        return;
+    }
+
+    size_t scroll_row = buf->scroll_row;
+    size_t rows = (size_t)visible_rows;
+    size_t cols = (size_t)visible_cols;
+    if (buf->cursor_row < scroll_row) scroll_row = buf->cursor_row;
+    if (buf->cursor_row >= scroll_row + rows) {
+        scroll_row = buf->cursor_row - rows + 1;
+    }
+
+    const TextLine *cursor_line = &buf->lines[buf->cursor_row];
+    size_t scroll_col = text_line_scroll_start(
+        cursor_line, buf->scroll_col, buf->cursor_col, cols);
+    TextRange selection = {0};
+    bool has_selection = text_buffer_selection_range(buf, &selection);
+
+    for (size_t row = 0; row < rows; ++row) {
+        size_t buffer_row = scroll_row + row;
+        const TextLine *line =
+            buffer_row < buf->line_count ? &buf->lines[buffer_row] : NULL;
+        size_t line_start = line
+                                ? text_line_boundary_at_or_before(
+                                      line, scroll_col)
+                                : 0;
+        char *visible = text_line_visible_text(line, line_start, cols);
+        if (visible) {
+            draw_list_text(draw_list, y + (int)row, x, visible, style);
+            free(visible);
+        }
+        if (has_selection && line) {
+            text_buffer_render_selection_line(
+                buf, draw_list, &selection, buffer_row,
+                line_start, cols, y + (int)row, x,
+                selection_style);
+        }
+    }
+
+    if (!cursor_style || buf->cursor_row < scroll_row ||
+        buf->cursor_row >= scroll_row + rows) {
+        return;
+    }
+
+    size_t cursor_x = retro_utf8_columns(
+        cursor_line->data, cursor_line->len,
+        scroll_col, buf->cursor_col);
+    if (cursor_x >= cols) return;
+
+    char cursor_text[5] = {' ', '\0', '\0', '\0', '\0'};
+    if (buf->cursor_col < cursor_line->len) {
+        uint32_t codepoint = 0;
+        size_t byte_len = 0;
+        if (retro_utf8_decode(cursor_line->data, cursor_line->len,
+                              buf->cursor_col, &codepoint, &byte_len) &&
+            byte_len <= 4) {
+            (void)codepoint;
+            memcpy(cursor_text,
+                   cursor_line->data + buf->cursor_col,
+                   byte_len);
+            cursor_text[byte_len] = '\0';
+        }
+    }
+
+    int cursor_y = y + (int)(buf->cursor_row - scroll_row);
+    draw_list_text(draw_list, cursor_y, x + (int)cursor_x,
+                   cursor_text, cursor_style);
+}
 
 void text_buffer_render(const TextBuffer *buf, DrawList *draw_list,
                         int y, int x, int visible_rows, int visible_cols,
                         const RenderStyle *style,
                         const RenderStyle *cursor_style) {
-    if (!buf || !draw_list || visible_rows <= 0 || visible_cols <= 0) return;
-
-    /* Compute effective scroll (const-safe: don't mutate buf). */
-    size_t s_row = buf->scroll_row;
-    size_t s_col = buf->scroll_col;
-    size_t vr = (size_t)visible_rows;
-    size_t vc = (size_t)visible_cols;
-
-    if (buf->cursor_row < s_row) s_row = buf->cursor_row;
-    if (buf->cursor_row >= s_row + vr) s_row = buf->cursor_row - vr + 1;
-    if (buf->cursor_col < s_col) s_col = buf->cursor_col;
-    if (buf->cursor_col >= s_col + vc) s_col = buf->cursor_col - vc + 1;
-
-    /* Render visible lines. */
-    char line_buf[256];
-    for (size_t r = 0; r < vr; ++r) {
-        size_t buf_row = s_row + r;
-        size_t out_len = 0;
-
-        if (buf_row < buf->line_count) {
-            const TextLine *tl = &buf->lines[buf_row];
-            for (size_t c = s_col; c < tl->len && out_len < vc &&
-                 out_len < sizeof(line_buf) - 1; ++c) {
-                line_buf[out_len++] = tl->data[c];
-            }
-        }
-        /* Pad with spaces. */
-        while (out_len < vc && out_len < sizeof(line_buf) - 1) {
-            line_buf[out_len++] = ' ';
-        }
-        line_buf[out_len] = '\0';
-
-        draw_list_text(draw_list, y + (int)r, x, line_buf, style);
-    }
-
-    /* Draw cursor character with cursor_style. */
-    if (cursor_style &&
-        buf->cursor_row >= s_row && buf->cursor_row < s_row + vr &&
-        buf->cursor_col >= s_col && buf->cursor_col < s_col + vc) {
-        int cy = y + (int)(buf->cursor_row - s_row);
-        int cx = x + (int)(buf->cursor_col - s_col);
-        char cursor_ch[2];
-        if (buf->cursor_col < buf->lines[buf->cursor_row].len) {
-            cursor_ch[0] = buf->lines[buf->cursor_row].data[buf->cursor_col];
-        } else {
-            cursor_ch[0] = ' ';
-        }
-        cursor_ch[1] = '\0';
-        draw_list_text(draw_list, cy, cx, cursor_ch, cursor_style);
-    }
+    text_buffer_render_with_selection(
+        buf, draw_list, y, x, visible_rows, visible_cols,
+        style, cursor_style, NULL);
 }

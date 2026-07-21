@@ -18,15 +18,18 @@ static int is_tty(FILE *stream) {
 #if defined(_WIN32)
 static bool windows_has_console(void) {
     DWORD mode = 0;
-    HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
-    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (in == INVALID_HANDLE_VALUE || out == INVALID_HANDLE_VALUE) return false;
-    if (!GetConsoleMode(in, &mode)) return false;
-    if (!GetConsoleMode(out, &mode)) return false;
+    HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (input == INVALID_HANDLE_VALUE || output == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    if (!GetConsoleMode(input, &mode)) return false;
+    if (!GetConsoleMode(output, &mode)) return false;
     return true;
 }
 
-static bool windows_reopen_stdio(FILE *stream, const char *name, const char *mode) {
+static bool windows_reopen_stdio(FILE *stream, const char *name,
+                                 const char *mode) {
 #if defined(_MSC_VER)
     FILE *opened = NULL;
     return freopen_s(&opened, name, mode, stream) == 0;
@@ -77,7 +80,9 @@ bool platform_enable_xterm_mouse_tracking(void) {
     const char *term = getenv("TERM");
     if (!term || strcmp(term, "dumb") == 0) return false;
     /* 1000: basic click tracking, 1002: button-drag motion, 1006: SGR coords. */
-    if (fputs("\033[?1000h\033[?1002h\033[?1006h", stdout) < 0) return false;
+    if (fputs("\033[?1000h\033[?1002h\033[?1006h", stdout) < 0) {
+        return false;
+    }
     fflush(stdout);
     return true;
 }
@@ -93,7 +98,6 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
     if (!platform) return NULL;
 
 #if defined(_WIN32)
-    /* Windows terminals like Git Bash/mintty can start detached from a real console. */
     if (!windows_ensure_console()) {
         free(platform);
         return NULL;
@@ -127,7 +131,8 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
     return platform;
 }
 
-RetroPollResult platform_poll_event(PlatformBackend *platform, RetroEvent *out_event,
+RetroPollResult platform_poll_event(PlatformBackend *platform,
+                                    RetroEvent *out_event,
                                     int timeout_ms) {
     if (!platform || !out_event) return RETRO_POLL_ERROR;
 
@@ -149,21 +154,16 @@ RetroPollResult platform_poll_event(PlatformBackend *platform, RetroEvent *out_e
 }
 
 const PlatformFeatures *platform_features(const PlatformBackend *platform) {
-    if (!platform) return NULL;
-    return &platform->features;
+    return platform ? &platform->features : NULL;
 }
 
 const char *platform_backend_name(const PlatformBackend *platform) {
     if (!platform) return "unknown";
     switch (platform->features.input_backend) {
-    case INPUT_BACKEND_PDCURSES:
-        return "pdcurses";
-    case INPUT_BACKEND_NCURSES:
-        return "ncurses";
-    case INPUT_BACKEND_TTY_RAW:
-        return "tty-raw";
-    default:
-        return "unknown";
+        case INPUT_BACKEND_PDCURSES: return "pdcurses";
+        case INPUT_BACKEND_NCURSES: return "ncurses";
+        case INPUT_BACKEND_TTY_RAW: return "tty-raw";
+        default: return "unknown";
     }
 }
 
@@ -177,9 +177,7 @@ void platform_destroy(PlatformBackend *platform) {
     platform_destroy_tty_raw_backend(platform);
 #endif
 
-    if (platform->uses_curses) {
-        endwin();
-    }
+    platform_destroy_curses_backend(platform);
     free(platform);
 }
 

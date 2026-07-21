@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "core/key_chord.h"
+#include "core/utf8.h"
 
 enum { TEXT_INPUT_INIT_CAP = 64 };
 
@@ -59,9 +60,10 @@ const char *text_input_text(const TextInput *input) {
 void text_input_set_text(TextInput *input, const char *text) {
     if (!input) return;
     if (!text) text = "";
-    size_t len = strlen(text);
+    size_t source_len = strlen(text);
+    size_t len = source_len;
     if (input->max_len > 0 && len > input->max_len) {
-        len = input->max_len;
+        len = retro_utf8_valid_prefix(text, input->max_len);
     }
     if (!text_input_grow(input, len + 1)) return;
     memcpy(input->buffer, text, len);
@@ -91,37 +93,41 @@ size_t text_input_length(const TextInput *input) {
 
 /* --- editing ---------------------------------------------------------- */
 
-static bool text_input_insert_char(TextInput *input, char ch) {
-    if (!input || ch <= 0) return false;
-    if (input->max_len > 0 && input->len >= input->max_len) return false;
-    if (!text_input_grow(input, input->len + 2)) return false;
+static bool text_input_insert_codepoint(TextInput *input, uint32_t codepoint) {
+    if (!input || codepoint < 0x20u || codepoint == 0x7Fu) return false;
+    char encoded[4] = {0};
+    size_t encoded_len = 0;
+    if (!retro_utf8_encode(codepoint, encoded, &encoded_len)) return false;
+    if (input->max_len > 0 && input->len + encoded_len > input->max_len) return false;
+    if (!text_input_grow(input, input->len + encoded_len + 1)) return false;
 
-    /* Shift right from cursor. */
-    memmove(input->buffer + input->cursor + 1,
+    memmove(input->buffer + input->cursor + encoded_len,
             input->buffer + input->cursor,
-            input->len - input->cursor + 1); /* +1 for null terminator */
-    input->buffer[input->cursor] = ch;
-    input->len++;
-    input->cursor++;
+            input->len - input->cursor + 1);
+    memcpy(input->buffer + input->cursor, encoded, encoded_len);
+    input->len += encoded_len;
+    input->cursor += encoded_len;
     return true;
 }
 
 static bool text_input_delete_backward(TextInput *input) {
     if (!input || input->cursor == 0) return false;
-    memmove(input->buffer + input->cursor - 1,
+    size_t previous = retro_utf8_prev(input->buffer, input->cursor);
+    memmove(input->buffer + previous,
             input->buffer + input->cursor,
             input->len - input->cursor + 1);
-    input->cursor--;
-    input->len--;
+    input->len -= input->cursor - previous;
+    input->cursor = previous;
     return true;
 }
 
 static bool text_input_delete_forward(TextInput *input) {
     if (!input || input->cursor >= input->len) return false;
+    size_t next = retro_utf8_next(input->buffer, input->len, input->cursor);
     memmove(input->buffer + input->cursor,
-            input->buffer + input->cursor + 1,
-            input->len - input->cursor); /* includes null terminator */
-    input->len--;
+            input->buffer + next,
+            input->len - next + 1);
+    input->len -= next - input->cursor;
     return true;
 }
 
@@ -144,12 +150,16 @@ static bool text_input_handle_end(TextInput *input) {
 }
 
 static bool text_input_handle_left(TextInput *input) {
-    if (input->cursor > 0) input->cursor--;
+    if (input->cursor > 0) {
+        input->cursor = retro_utf8_prev(input->buffer, input->cursor);
+    }
     return true;
 }
 
 static bool text_input_handle_right(TextInput *input) {
-    if (input->cursor < input->len) input->cursor++;
+    if (input->cursor < input->len) {
+        input->cursor = retro_utf8_next(input->buffer, input->len, input->cursor);
+    }
     return true;
 }
 
@@ -197,9 +207,12 @@ bool text_input_handle_key(TextInput *input, const RetroKeyEvent *key) {
         }
     }
 
-    /* Fallthrough: printable ASCII characters are inserted verbatim. */
-    if (key->is_printable && key->ascii > 0) {
-        return text_input_insert_char(input, key->ascii);
+    uint32_t codepoint = key->text_codepoint;
+    if (codepoint == 0 && key->is_printable && key->ascii > 0) {
+        codepoint = key->ascii;
+    }
+    if (key->is_printable && codepoint >= 0x20u && codepoint != 0x7Fu) {
+        return text_input_insert_codepoint(input, codepoint);
     }
     return false;
 }
@@ -212,43 +225,54 @@ void text_input_render(const TextInput *input, DrawList *draw_list,
                        const RenderStyle *cursor_style) {
     if (!input || !draw_list || visible_width <= 0) return;
 
-    /* We need a mutable copy of scroll_offset for rendering. The const
-       qualifier on input prevents updating it here, so we compute the
-       effective offset locally. */
-    size_t scroll = input->scroll_offset;
-    size_t vw = (size_t)visible_width;
-    if (input->cursor < scroll) {
-        scroll = input->cursor;
-    }
-    if (input->cursor >= scroll + vw) {
-        scroll = input->cursor - vw + 1;
+    size_t start = 0;
+    size_t width = (size_t)visible_width;
+    while (start < input->cursor &&
+           retro_utf8_columns(input->buffer, input->len, start, input->cursor) >= width) {
+        start = retro_utf8_next(input->buffer, input->len, start);
     }
 
-    /* Build visible text. */
     char line[256];
     size_t out_len = 0;
-    for (size_t i = scroll; i < input->len && out_len < vw && out_len < sizeof(line) - 1; ++i) {
-        line[out_len++] = input->buffer[i];
+    size_t cells = 0;
+    size_t offset = start;
+    while (offset < input->len && cells < width) {
+        uint32_t cp = 0;
+        size_t bytes = 0;
+        if (!retro_utf8_decode(input->buffer, input->len, offset, &cp, &bytes)) {
+            cp = 0xFFFDu;
+            bytes = 1;
+        }
+        int cell_width = retro_utf8_width(cp);
+        if (cell_width > 0 && cells + (size_t)cell_width > width) break;
+        if (out_len + bytes >= sizeof(line)) break;
+        memcpy(line + out_len, input->buffer + offset, bytes);
+        out_len += bytes;
+        if (cell_width > 0) cells += (size_t)cell_width;
+        offset += bytes;
     }
-    /* Pad with spaces to fill visible_width. */
-    while (out_len < vw && out_len < sizeof(line) - 1) {
+    while (cells < width && out_len + 1 < sizeof(line)) {
         line[out_len++] = ' ';
+        cells++;
     }
     line[out_len] = '\0';
-
-    /* Draw the full line with base style. */
     draw_list_text(draw_list, y, x, line, style);
 
-    /* Draw cursor character with cursor_style (reverse). */
     if (cursor_style) {
-        int cursor_x = x + (int)(input->cursor - scroll);
-        char cursor_ch[2];
+        size_t cursor_cells =
+            retro_utf8_columns(input->buffer, input->len, start, input->cursor);
+        int cursor_x = x + (int)cursor_cells;
+        char cursor_text[5] = {' ', '\0', '\0', '\0', '\0'};
         if (input->cursor < input->len) {
-            cursor_ch[0] = input->buffer[input->cursor];
-        } else {
-            cursor_ch[0] = ' ';
+            uint32_t cp = 0;
+            size_t bytes = 0;
+            if (retro_utf8_decode(input->buffer, input->len, input->cursor,
+                                  &cp, &bytes) &&
+                bytes < sizeof(cursor_text)) {
+                memcpy(cursor_text, input->buffer + input->cursor, bytes);
+                cursor_text[bytes] = '\0';
+            }
         }
-        cursor_ch[1] = '\0';
-        draw_list_text(draw_list, y, cursor_x, cursor_ch, cursor_style);
+        draw_list_text(draw_list, y, cursor_x, cursor_text, cursor_style);
     }
 }

@@ -15,6 +15,10 @@ static int is_tty(FILE *stream) {
 }
 #endif
 
+enum {
+    PLATFORM_MOUSE_CLICK_INTERVAL_MS = 150,
+};
+
 #if defined(_WIN32)
 static bool windows_has_console(void) {
     DWORD mode = 0;
@@ -75,6 +79,38 @@ void platform_update_mask(PlatformFeatures *features) {
     features->capability_mask = mask;
 }
 
+static void platform_normalize_pointer_activation(PlatformBackend *platform,
+                                                  RetroEvent *event) {
+    if (!platform || !event || event->type != RETRO_EVENT_MOUSE) return;
+
+    RetroMouseEvent *mouse = &event->data.mouse;
+    if (mouse->button1_pressed) {
+        platform->button1_down = true;
+        platform->button1_dragged = false;
+        platform->button1_press_y = mouse->y;
+        platform->button1_press_x = mouse->x;
+    } else if (platform->button1_down &&
+               (mouse->moved ||
+                mouse->y != platform->button1_press_y ||
+                mouse->x != platform->button1_press_x)) {
+        platform->button1_dragged = true;
+    }
+
+    if (mouse->button1_released) {
+        if (platform->button1_down && !platform->button1_dragged &&
+            !mouse->button1_clicked) {
+            mouse->button1_clicked = true;
+        }
+        platform->button1_down = false;
+        platform->button1_dragged = false;
+    }
+
+    if (mouse->button1_clicked || mouse->button1_dblclick) {
+        platform->button1_down = false;
+        platform->button1_dragged = false;
+    }
+}
+
 #if !defined(_WIN32) && !defined(__DJGPP__)
 bool platform_enable_xterm_mouse_tracking(void) {
     const char *term = getenv("TERM");
@@ -127,6 +163,9 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
         free(platform);
         return NULL;
     }
+    if (platform->features.mouse_basic) {
+        (void)mouseinterval(PLATFORM_MOUSE_CLICK_INTERVAL_MS);
+    }
 
     return platform;
 }
@@ -139,18 +178,22 @@ RetroPollResult platform_poll_event(PlatformBackend *platform,
     memset(out_event, 0, sizeof(*out_event));
     out_event->type = RETRO_EVENT_NONE;
 
+    bool produced_event = false;
 #if !defined(_WIN32) && !defined(__DJGPP__)
     if (platform->features.input_backend == INPUT_BACKEND_TTY_RAW) {
         if (platform->tty_signal_pending) return RETRO_POLL_CLOSED;
-        return platform_poll_event_tty_raw(platform, out_event, timeout_ms)
-                   ? RETRO_POLL_EVENT
-                   : RETRO_POLL_TIMEOUT;
-    }
+        produced_event =
+            platform_poll_event_tty_raw(platform, out_event, timeout_ms);
+    } else
 #endif
+    {
+        produced_event =
+            platform_poll_event_curses(platform, out_event, timeout_ms);
+    }
 
-    return platform_poll_event_curses(platform, out_event, timeout_ms)
-               ? RETRO_POLL_EVENT
-               : RETRO_POLL_TIMEOUT;
+    if (!produced_event) return RETRO_POLL_TIMEOUT;
+    platform_normalize_pointer_activation(platform, out_event);
+    return RETRO_POLL_EVENT;
 }
 
 const PlatformFeatures *platform_features(const PlatformBackend *platform) {

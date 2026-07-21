@@ -6,8 +6,26 @@
 
 #include "core/key_chord.h"
 #include "storage/retro_fs.h"
-#include "ui/text_input.h"
 #include "ui/text_buffer.h"
+#include "ui/text_input.h"
+
+enum {
+    NP_HISTORY_MAX_STATES = 100,
+    NP_HISTORY_MAX_BYTES = 1024 * 1024,
+};
+
+typedef struct NotepadHistoryEntry {
+    char *text;
+    size_t length;
+    size_t cursor_row;
+    size_t cursor_col;
+} NotepadHistoryEntry;
+
+typedef struct NotepadHistoryStack {
+    NotepadHistoryEntry entries[NP_HISTORY_MAX_STATES];
+    size_t count;
+    size_t total_bytes;
+} NotepadHistoryStack;
 
 typedef struct NotepadState {
     TextBuffer *buffer;
@@ -19,6 +37,10 @@ typedef struct NotepadState {
     bool close_after_save;
     bool force_close;
     TextInput *path_input;
+    char *saved_text;
+    size_t saved_length;
+    NotepadHistoryStack undo;
+    NotepadHistoryStack redo;
     bool dirty;
     char error[160];
 } NotepadState;
@@ -27,6 +49,238 @@ static void np_set_error(NotepadState *state, RetroFsError error) {
     if (!state) return;
     snprintf(state->error, sizeof(state->error), "Error: %s",
              retro_fs_error_string(error));
+}
+
+static void np_history_entry_destroy(NotepadHistoryEntry *entry) {
+    if (!entry) return;
+    free(entry->text);
+    *entry = (NotepadHistoryEntry){0};
+}
+
+static void np_history_stack_clear(NotepadHistoryStack *stack) {
+    if (!stack) return;
+    for (size_t i = 0; i < stack->count; ++i) {
+        np_history_entry_destroy(&stack->entries[i]);
+    }
+    stack->count = 0;
+    stack->total_bytes = 0;
+}
+
+static void np_history_stack_drop_oldest(NotepadHistoryStack *stack) {
+    if (!stack || stack->count == 0) return;
+    size_t removed = stack->entries[0].length;
+    np_history_entry_destroy(&stack->entries[0]);
+    if (stack->count > 1) {
+        memmove(&stack->entries[0], &stack->entries[1],
+                (stack->count - 1) * sizeof(stack->entries[0]));
+    }
+    stack->count--;
+    stack->entries[stack->count] = (NotepadHistoryEntry){0};
+    stack->total_bytes = removed <= stack->total_bytes
+                             ? stack->total_bytes - removed
+                             : 0;
+}
+
+static void np_history_stack_push(NotepadHistoryStack *stack,
+                                  NotepadHistoryEntry *entry) {
+    if (!stack || !entry || !entry->text) return;
+    if (entry->length > NP_HISTORY_MAX_BYTES) {
+        np_history_entry_destroy(entry);
+        return;
+    }
+    while (stack->count >= NP_HISTORY_MAX_STATES ||
+           stack->total_bytes + entry->length > NP_HISTORY_MAX_BYTES) {
+        np_history_stack_drop_oldest(stack);
+    }
+    stack->entries[stack->count++] = *entry;
+    stack->total_bytes += entry->length;
+    *entry = (NotepadHistoryEntry){0};
+}
+
+static bool np_history_stack_pop(NotepadHistoryStack *stack,
+                                 NotepadHistoryEntry *entry) {
+    if (!stack || !entry || stack->count == 0) return false;
+    stack->count--;
+    *entry = stack->entries[stack->count];
+    stack->entries[stack->count] = (NotepadHistoryEntry){0};
+    stack->total_bytes = entry->length <= stack->total_bytes
+                             ? stack->total_bytes - entry->length
+                             : 0;
+    return true;
+}
+
+static void np_clear_history(NotepadState *state) {
+    if (!state) return;
+    np_history_stack_clear(&state->undo);
+    np_history_stack_clear(&state->redo);
+}
+
+static bool np_history_capture(const NotepadState *state,
+                               NotepadHistoryEntry *entry) {
+    if (!state || !state->buffer || !entry) return false;
+    size_t length = 0;
+    char *text = text_buffer_to_text(state->buffer, &length);
+    if (!text) return false;
+    if (length > NP_HISTORY_MAX_BYTES) {
+        free(text);
+        return false;
+    }
+    entry->text = text;
+    entry->length = length;
+    entry->cursor_row = text_buffer_cursor_row(state->buffer);
+    entry->cursor_col = text_buffer_cursor_col(state->buffer);
+    return true;
+}
+
+static bool np_text_matches(const char *left, size_t left_length,
+                            const char *right, size_t right_length) {
+    if (left_length != right_length) return false;
+    if (left_length == 0) return true;
+    return left && right && memcmp(left, right, left_length) == 0;
+}
+
+static void np_refresh_dirty(NotepadState *state) {
+    if (!state || !state->buffer) return;
+    size_t length = 0;
+    char *text = text_buffer_to_text(state->buffer, &length);
+    if (!text) {
+        state->dirty = true;
+        return;
+    }
+    state->dirty = !np_text_matches(text, length,
+                                    state->saved_text,
+                                    state->saved_length);
+    free(text);
+}
+
+static bool np_set_saved_snapshot(NotepadState *state,
+                                  char *text, size_t length) {
+    if (!state || !text) return false;
+    free(state->saved_text);
+    state->saved_text = text;
+    state->saved_length = length;
+    state->dirty = false;
+    return true;
+}
+
+static bool np_capture_saved_snapshot(NotepadState *state) {
+    if (!state || !state->buffer) return false;
+    size_t length = 0;
+    char *text = text_buffer_to_text(state->buffer, &length);
+    if (!text) return false;
+    return np_set_saved_snapshot(state, text, length);
+}
+
+static bool np_history_entry_matches_buffer(const NotepadState *state,
+                                            const NotepadHistoryEntry *entry) {
+    if (!state || !entry || !entry->text) return true;
+    size_t length = 0;
+    char *text = text_buffer_to_text(state->buffer, &length);
+    if (!text) return false;
+    bool matches = np_text_matches(text, length,
+                                   entry->text, entry->length);
+    free(text);
+    return matches;
+}
+
+static bool np_restore_history_entry(NotepadState *state,
+                                     const NotepadHistoryEntry *entry) {
+    if (!state || !entry || !entry->text) return false;
+    if (!text_buffer_set_text(state->buffer, entry->text)) return false;
+    text_buffer_set_cursor(state->buffer,
+                           entry->cursor_row, entry->cursor_col);
+    state->force_close = false;
+    state->error[0] = '\0';
+    np_refresh_dirty(state);
+    return true;
+}
+
+static void np_undo(NotepadState *state) {
+    if (!state || state->undo.count == 0) return;
+    NotepadHistoryEntry current = {0};
+    if (!np_history_capture(state, &current)) return;
+
+    NotepadHistoryEntry target = {0};
+    if (!np_history_stack_pop(&state->undo, &target)) {
+        np_history_entry_destroy(&current);
+        return;
+    }
+    if (!np_restore_history_entry(state, &target)) {
+        np_history_stack_push(&state->undo, &target);
+        np_history_entry_destroy(&current);
+        return;
+    }
+    np_history_stack_push(&state->redo, &current);
+    np_history_entry_destroy(&target);
+}
+
+static void np_redo(NotepadState *state) {
+    if (!state || state->redo.count == 0) return;
+    NotepadHistoryEntry current = {0};
+    if (!np_history_capture(state, &current)) return;
+
+    NotepadHistoryEntry target = {0};
+    if (!np_history_stack_pop(&state->redo, &target)) {
+        np_history_entry_destroy(&current);
+        return;
+    }
+    if (!np_restore_history_entry(state, &target)) {
+        np_history_stack_push(&state->redo, &target);
+        np_history_entry_destroy(&current);
+        return;
+    }
+    np_history_stack_push(&state->undo, &current);
+    np_history_entry_destroy(&target);
+}
+
+static bool np_key_may_edit(const RetroKeyEvent *key) {
+    if (!key) return false;
+    switch (key->key_code) {
+        case RETRO_KEY_LF:
+        case RETRO_KEY_CR:
+        case RETRO_KEY_BS:
+        case RETRO_KEY_DEL:
+        case RETRO_KEY_CTRL_K:
+        case RETRO_KEY_CTRL_D:
+        case RETRO_KEY_DC:
+            return true;
+        default:
+            return key->is_printable;
+    }
+}
+
+static void np_handle_editor_key(NotepadState *state,
+                                 const RetroKeyEvent *key) {
+    if (!state || !key) return;
+    bool may_edit = np_key_may_edit(key);
+    NotepadHistoryEntry before = {0};
+    bool captured = false;
+
+    if (may_edit) {
+        captured = np_history_capture(state, &before);
+        if (!captured) np_clear_history(state);
+    }
+
+    bool consumed = text_buffer_handle_key(state->buffer, key);
+    if (!consumed) {
+        np_history_entry_destroy(&before);
+        return;
+    }
+
+    if (may_edit) {
+        bool changed = !captured ||
+                       !np_history_entry_matches_buffer(state, &before);
+        if (changed) {
+            if (captured) {
+                np_history_stack_push(&state->undo, &before);
+                np_history_stack_clear(&state->redo);
+            }
+            state->force_close = false;
+            state->error[0] = '\0';
+            np_refresh_dirty(state);
+        }
+    }
+    np_history_entry_destroy(&before);
 }
 
 static bool np_save(NotepadState *state) {
@@ -47,13 +301,13 @@ static bool np_save(NotepadState *state) {
     RetroFsError error = retro_fs_write_atomic(
         &state->path, text, length,
         (state->version.inode != 0) ? &state->version : NULL, &written);
-    free(text);
     if (error != RETRO_FS_OK) {
+        free(text);
         np_set_error(state, error);
         return false;
     }
     state->version = written;
-    state->dirty = false;
+    (void)np_set_saved_snapshot(state, text, length);
     state->error[0] = '\0';
     return true;
 }
@@ -75,7 +329,8 @@ static bool np_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
     }
 
     if (ctx->resource_path && *ctx->resource_path) {
-        RetroFsError error = retro_fs_path_init(&state->path, ctx->resource_path);
+        RetroFsError error = retro_fs_path_init(&state->path,
+                                                ctx->resource_path);
         if (error != RETRO_FS_OK) {
             text_buffer_destroy(state->buffer);
             text_input_destroy(state->path_input);
@@ -84,7 +339,8 @@ static bool np_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
         }
         char *text = NULL;
         size_t length = 0;
-        error = retro_fs_read_text(&state->path, &text, &length, &state->version);
+        error = retro_fs_read_text(&state->path, &text, &length,
+                                   &state->version);
         if (error != RETRO_FS_OK ||
             !text_buffer_set_text(state->buffer, text ? text : "")) {
             free(text);
@@ -97,11 +353,20 @@ static bool np_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
         free(text);
         state->has_path = true;
     }
+
+    if (!np_capture_saved_snapshot(state)) {
+        retro_fs_path_destroy(&state->path);
+        text_buffer_destroy(state->buffer);
+        text_input_destroy(state->path_input);
+        free(state);
+        return false;
+    }
     instance->state = state;
     return true;
 }
 
-static void np_finish_close(RetroAppInstance *instance, NotepadState *state) {
+static void np_finish_close(RetroAppInstance *instance,
+                            NotepadState *state) {
     if (!instance || !state) return;
     state->close_prompt = false;
     state->close_after_save = false;
@@ -139,9 +404,7 @@ static void np_handle_close_prompt(RetroAppInstance *instance,
         return;
     }
 
-    if (np_save(state)) {
-        np_finish_close(instance, state);
-    }
+    if (np_save(state)) np_finish_close(instance, state);
 }
 
 static void np_handle_save_as(RetroAppInstance *instance,
@@ -208,6 +471,16 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
         return;
     }
 
+    if (key->key_code == RETRO_KEY_CTRL_Z) {
+        np_undo(state);
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_Y) {
+        np_redo(state);
+        return;
+    }
+
     if (key->key_code == RETRO_KEY_CTRL_S) {
         state->close_after_save = false;
         if (state->has_path) {
@@ -229,11 +502,7 @@ static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
         return;
     }
 
-    if (text_buffer_handle_key(state->buffer, key)) {
-        state->dirty = true;
-        state->force_close = false;
-        state->error[0] = '\0';
-    }
+    np_handle_editor_key(state, key);
 }
 
 static void np_render_close_prompt(const NotepadState *state,
@@ -265,7 +534,8 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
              name, state->dirty ? " *" : "");
     draw_list_text(draw_list, 1, 2, title, accent);
     draw_list_text(draw_list, 2, 2,
-                   "Ctrl+S save | F3 Save As | Ctrl+W close", text);
+                   "Ctrl+S save | F3 Save As | Ctrl+Z/Y undo/redo | Ctrl+W close",
+                   text);
 
     if (state->close_prompt) {
         text_buffer_render(state->buffer, draw_list, 4, 2, 11, 64,
@@ -290,6 +560,8 @@ static void np_destroy(RetroAppInstance *instance) {
     if (!instance) return;
     NotepadState *state = instance->state;
     if (!state) return;
+    np_clear_history(state);
+    free(state->saved_text);
     text_buffer_destroy(state->buffer);
     text_input_destroy(state->path_input);
     retro_fs_path_destroy(&state->path);
@@ -329,6 +601,31 @@ bool notepad_close_after_save_for_test(const RetroAppInstance *instance) {
     if (!instance || !instance->state) return false;
     const NotepadState *state = instance->state;
     return state->close_after_save;
+}
+
+size_t notepad_undo_count_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return 0;
+    const NotepadState *state = instance->state;
+    return state->undo.count;
+}
+
+size_t notepad_redo_count_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return 0;
+    const NotepadState *state = instance->state;
+    return state->redo.count;
+}
+
+const char *notepad_line_for_test(const RetroAppInstance *instance,
+                                  size_t row) {
+    if (!instance || !instance->state) return "";
+    const NotepadState *state = instance->state;
+    return text_buffer_line(state->buffer, row);
+}
+
+size_t notepad_cursor_col_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return 0;
+    const NotepadState *state = instance->state;
+    return text_buffer_cursor_col(state->buffer);
 }
 
 const RetroAppDescriptor *notepad_app_descriptor(void) {

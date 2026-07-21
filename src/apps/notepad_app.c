@@ -1,8 +1,10 @@
 #include "app/app_runtime.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "core/clipboard.h"
 #include "core/key_chord.h"
@@ -14,6 +16,8 @@ enum {
     NP_HISTORY_MAX_STATES = 100,
     NP_HISTORY_MAX_BYTES = 1024 * 1024,
     NP_WRAP_COLUMNS = 64,
+    NP_RECOVERY_PATH_CAP = 768,
+    NP_RECOVERY_ATTEMPTS = 32,
 };
 
 typedef struct NotepadHistoryEntry {
@@ -757,10 +761,94 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
     }
 }
 
+static const char *np_recovery_directory(void) {
+    const char *directory = getenv("RETRODESK_RECOVERY_DIR");
+    if (directory && directory[0]) return directory;
+#if defined(_WIN32)
+    directory = getenv("TEMP");
+    if (directory && directory[0]) return directory;
+    directory = getenv("TMP");
+    if (directory && directory[0]) return directory;
+#else
+    directory = getenv("TMPDIR");
+    if (directory && directory[0]) return directory;
+#endif
+    return ".";
+}
+
+static bool np_recovery_path(const RetroAppInstance *instance,
+                             const NotepadState *state,
+                             unsigned int attempt,
+                             char *path, size_t path_size) {
+    if (!instance || !state || !path || path_size == 0) return false;
+    const char *directory = np_recovery_directory();
+    size_t directory_length = strlen(directory);
+    const char *separator =
+        directory_length > 0 &&
+                (directory[directory_length - 1] == '/' ||
+                 directory[directory_length - 1] == '\\')
+            ? ""
+            : "/";
+    long long timestamp = (long long)time(NULL);
+    unsigned long long identity =
+        (unsigned long long)(uintptr_t)state;
+    int written = snprintf(
+        path, path_size,
+        "%s%sretrodesk-notepad-recovery-%lld-%llx-%u.txt",
+        directory, separator, timestamp, identity, attempt);
+    return written > 0 && (size_t)written < path_size;
+}
+
+static bool np_write_recovery(RetroAppInstance *instance,
+                              NotepadState *state) {
+    if (!instance || !state || !state->dirty || !state->buffer ||
+        !instance->ctx.desktop) {
+        return true;
+    }
+
+    size_t length = 0;
+    char *text = text_buffer_to_text(state->buffer, &length);
+    if (!text) return false;
+
+    bool recovered = false;
+    char path[NP_RECOVERY_PATH_CAP];
+    for (unsigned int attempt = 0;
+         attempt < NP_RECOVERY_ATTEMPTS; ++attempt) {
+        if (!np_recovery_path(instance, state, attempt,
+                              path, sizeof(path))) {
+            break;
+        }
+
+        FILE *existing = fopen(path, "rb");
+        if (existing) {
+            fclose(existing);
+            continue;
+        }
+
+        FILE *stream = fopen(path, "wb");
+        if (!stream) continue;
+        size_t stored = fwrite(text, 1, length, stream);
+        bool flushed = fflush(stream) == 0;
+        bool closed = fclose(stream) == 0;
+        if (stored == length && flushed && closed) {
+            fprintf(stderr, "\nRetroDesk recovered unsaved Notepad to %s\n",
+                    path);
+            fflush(stderr);
+            recovered = true;
+            break;
+        }
+        (void)remove(path);
+    }
+
+    free(text);
+    return recovered;
+}
+
 static void np_destroy(RetroAppInstance *instance) {
     if (!instance) return;
     NotepadState *state = instance->state;
     if (!state) return;
+    (void)np_write_recovery(instance, state);
     np_clear_history(state);
     free(state->saved_text);
     text_buffer_destroy(state->buffer);

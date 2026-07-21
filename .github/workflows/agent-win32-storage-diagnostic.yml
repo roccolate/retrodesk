@@ -1,0 +1,48 @@
+name: Agent Win32 Storage Diagnostic
+
+on:
+  push:
+    branches: [agent/native-win32-storage]
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_COMMIT: f87344cac03158cbf1467264565f1fd36b382a24
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout RetroDesk
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install pinned vcpkg
+        shell: powershell
+        run: |
+          git clone --quiet https://github.com/microsoft/vcpkg.git vcpkg
+          git -C vcpkg checkout --quiet --detach $env:VCPKG_COMMIT
+          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics | Out-Null
+          .\vcpkg\vcpkg.exe install pdcurses:x64-windows | Out-Null
+
+      - name: Capture strict Win32 build
+        shell: powershell
+        run: |
+          $toolchain = "$PWD\vcpkg\scripts\buildsystems\vcpkg.cmake"
+          $pdcursesRoot = "$PWD\vcpkg\installed\x64-windows"
+          $commands = @(
+            "cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=`"$toolchain`" -DVCPKG_TARGET_TRIPLET=x64-windows -DPDCURSES_ROOT=`"$pdcursesRoot`"",
+            "cmake --build build --config Debug --parallel"
+          )
+          cmd /d /s /c ($commands -join " && ") *> win32-storage-build.log
+          $code = $LASTEXITCODE
+          Get-Content win32-storage-build.log -Tail 240
+          exit $code
+
+      - name: Upload diagnostic log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: win32-storage-build-log
+          path: win32-storage-build.log
+          if-no-files-found: error

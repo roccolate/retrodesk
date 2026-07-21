@@ -52,7 +52,7 @@ Directory listing:
 
 - is bounded by the caller-provided maximum;
 - sorts directories before regular files, then other entry types;
-- includes entry name, mode, and size metadata;
+- includes entry name, portable kind, and `uint64_t` size metadata;
 - fails before delivering an intentionally partial oversized result;
 - leaves hidden-file filtering to File Manager policy.
 
@@ -91,6 +91,15 @@ A successful save must:
 
 A stale expected version returns a conflict without silently overwriting changes
 made outside RetroDesk.
+
+## Public Metadata Contract
+
+`retro_fs.h` exposes only fixed-width and domain-owned types. `RetroFsKind`
+classifies regular files, directories, symbolic links, and other targets without
+exporting `mode_t` or `S_IS*` macros. `RetroFsVersion` is an adapter-neutral
+optimistic-concurrency token containing fixed-width identity, size, kind, and
+nanosecond modification fields. Applications may retain and return the token but
+must not assign platform meaning to its identity fields.
 
 ## Portability Status
 

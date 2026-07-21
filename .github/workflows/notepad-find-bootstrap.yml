@@ -1,8 +1,8 @@
 name: Materialize Notepad find
 
 on:
-  pull_request:
-    branches: [main, master]
+  push:
+    branches: [agent/notepad-find]
     paths:
       - scripts/apply_notepad_find.py
       - scripts/run_notepad_find_ci.sh
@@ -13,7 +13,6 @@ permissions:
 
 jobs:
   materialize:
-    if: github.head_ref == 'agent/notepad-find'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source branch

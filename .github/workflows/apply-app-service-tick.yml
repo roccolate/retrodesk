@@ -6,6 +6,7 @@ on:
       - agent/app-service-tick
     paths:
       - scripts/apply_app_service_tick.py
+      - scripts/app_service_tick.trigger
 
 permissions:
   contents: write

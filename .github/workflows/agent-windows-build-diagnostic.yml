@@ -1,0 +1,73 @@
+name: Agent Windows Build Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-windows-build-diagnostic
+  cancel-in-progress: true
+
+env:
+  RETROCORE_SPEC_COMMIT: fa027a04fca45728c2c09833388c553bfa8a5a54
+  VCPKG_COMMIT: f87344cac03158cbf1467264565f1fd36b382a24
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout RetroDesk
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Checkout pinned retrocore-spec fixtures
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: roccolate/retrocore-spec
+          ref: ${{ env.RETROCORE_SPEC_COMMIT }}
+          path: retrocore-spec
+
+      - name: Install pinned vcpkg
+        shell: powershell
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git vcpkg
+          git -C vcpkg checkout --detach $env:VCPKG_COMMIT
+          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          .\vcpkg\vcpkg.exe install pdcurses:x64-windows
+
+      - name: Configure and build with native log capture
+        id: diagnose
+        continue-on-error: true
+        shell: cmd
+        run: |
+          @echo off
+          setlocal EnableDelayedExpansion
+          set LOG=windows-build-diagnostic.log
+          set CODE=0
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="%CD%\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DPDCURSES_ROOT="%CD%\vcpkg\installed\x64-windows" -DRETROCORE_SPEC_DIR="%CD%\retrocore-spec" -DRETROCORE_SPEC_REQUIRED=ON > "%LOG%" 2>&1
+          set CODE=!ERRORLEVEL!
+          if not "!CODE!"=="0" goto finish
+          cmake --build build --config Debug --parallel >> "%LOG%" 2>&1
+          set CODE=!ERRORLEVEL!
+          :finish
+          echo exit_code=!CODE!> windows-build-exit.txt
+          type "%LOG%"
+          exit /b !CODE!
+
+      - name: Upload diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-diagnostic
+          path: |
+            windows-build-diagnostic.log
+            windows-build-exit.txt
+          if-no-files-found: error
+
+      - name: Preserve failure
+        if: steps.diagnose.outcome == 'failure'
+        shell: cmd
+        run: exit /b 1

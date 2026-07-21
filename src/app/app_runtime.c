@@ -92,11 +92,46 @@ void app_destroy(RetroAppInstance *app) {
     free(app);
 }
 
-void app_request_close(RetroAppInstance *app) {
-    if (!app) return;
+RetroCloseResult app_request_close(RetroAppInstance *app) {
+    if (!app) return RETRO_CLOSE_CANCELLED;
+
+    app->close_requested = false;
+    app->close_pending = false;
+    app->close_result = RETRO_CLOSE_ALLOWED;
+
+    if (app->descriptor && app->descriptor->can_close &&
+        !app->descriptor->can_close(app)) {
+        app->close_pending = true;
+        app->close_result = RETRO_CLOSE_DEFERRED;
+        return RETRO_CLOSE_DEFERRED;
+    }
+
     app->close_requested = true;
+    return RETRO_CLOSE_ALLOWED;
+}
+
+void app_resolve_close(RetroAppInstance *app, RetroCloseResult result) {
+    if (!app || !app->close_pending || result == RETRO_CLOSE_DEFERRED) return;
+    app->close_pending = false;
+    app->close_result = result;
+    app->close_requested = result == RETRO_CLOSE_ALLOWED;
+}
+
+void app_reset_close_request(RetroAppInstance *app) {
+    if (!app) return;
+    app->close_requested = false;
+    app->close_pending = false;
+    app->close_result = RETRO_CLOSE_ALLOWED;
 }
 
 bool app_is_close_requested(const RetroAppInstance *app) {
     return app && app->close_requested;
+}
+
+bool app_is_close_pending(const RetroAppInstance *app) {
+    return app && app->close_pending;
+}
+
+RetroCloseResult app_close_result(const RetroAppInstance *app) {
+    return app ? app->close_result : RETRO_CLOSE_CANCELLED;
 }

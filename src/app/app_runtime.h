@@ -21,6 +21,12 @@ typedef struct PlatformFeatures DesktopCapabilities;
 typedef struct RetroAppInstance RetroAppInstance;
 typedef struct AppRegistry AppRegistry;
 
+typedef enum RetroCloseResult {
+    RETRO_CLOSE_ALLOWED = 0,
+    RETRO_CLOSE_DEFERRED,
+    RETRO_CLOSE_CANCELLED,
+} RetroCloseResult;
+
 typedef struct RetroAppContext {
     Desktop *desktop;
     WindowId window_id;
@@ -54,6 +60,8 @@ struct RetroAppInstance {
     RetroAppContext ctx;
     void *state;
     bool close_requested;
+    bool close_pending;
+    RetroCloseResult close_result;
     char *resource_path_owned;
 };
 
@@ -70,7 +78,11 @@ const RetroAppDescriptor *app_registry_descriptor_at(const AppRegistry *registry
 void app_handle_event(RetroAppInstance *app, const RetroEvent *event);
 void app_render(RetroAppInstance *app, DrawList *draw_list);
 void app_destroy(RetroAppInstance *app);
-void app_request_close(RetroAppInstance *app);
+RetroCloseResult app_request_close(RetroAppInstance *app);
+void app_resolve_close(RetroAppInstance *app, RetroCloseResult result);
+void app_reset_close_request(RetroAppInstance *app);
 bool app_is_close_requested(const RetroAppInstance *app);
+bool app_is_close_pending(const RetroAppInstance *app);
+RetroCloseResult app_close_result(const RetroAppInstance *app);
 
 #endif

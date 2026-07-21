@@ -13,7 +13,7 @@ rather than being guessed.
 | `F6` | Focus the next window |
 | `F9` | Enter move/resize mode for the active window |
 | `Ctrl+W` | Request close of the active app window |
-| `Ctrl+Q` | Quit RetroDesk |
+| `Ctrl+Q` | Request coordinated shutdown; dirty apps may Save, Discard, or Cancel |
 
 Printable keys, ordinary `Tab`, and unclaimed function keys are left to the
 focused application. In particular, `F2` is application-local and reaches File

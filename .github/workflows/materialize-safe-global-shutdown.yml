@@ -65,8 +65,24 @@ jobs:
 
       - name: Build and test
         run: |
-          cmake --build build/safe-shutdown --parallel
-          ctest --test-dir build/safe-shutdown --output-on-failure
+          set +e
+          cmake --build build/safe-shutdown --parallel > /tmp/safe-shutdown-build.log 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            ctest --test-dir build/safe-shutdown --output-on-failure >> /tmp/safe-shutdown-build.log 2>&1
+            status=$?
+          fi
+          if [ "$status" -ne 0 ]; then
+            mkdir -p ci-artifacts
+            cp /tmp/safe-shutdown-build.log ci-artifacts/safe-shutdown-build.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add ci-artifacts/safe-shutdown-build.log
+            git commit -m "test: capture safe shutdown build failure"
+            git push origin HEAD:${{ github.head_ref }}
+            tail -n 160 /tmp/safe-shutdown-build.log
+            exit "$status"
+          fi
 
       - name: Publish verified source tree
         run: |
@@ -74,6 +90,7 @@ jobs:
           rm -f tools/repair_safe_shutdown_materializer.py
           rm -f .github/workflows/materialize-safe-global-shutdown.yml
           rm -f ci-artifacts/safe-shutdown-apply.log
+          rm -f ci-artifacts/safe-shutdown-build.log
           rmdir ci-artifacts 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

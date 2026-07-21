@@ -54,6 +54,7 @@ int main(void) {
     char path_missing[512];
     char path_utf8[512];
     char path_invalid[512];
+    char path_link[512];
     TEST_REQUIRE(snprintf(path_a, sizeof(path_a), "%s/a.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_b, sizeof(path_b), "%s/b.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_new, sizeof(path_new), "%s/new.txt", dir) > 0);
@@ -63,6 +64,7 @@ int main(void) {
     TEST_REQUIRE(snprintf(path_missing, sizeof(path_missing), "%s/missing.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_utf8, sizeof(path_utf8), "%s/utf8.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_invalid, sizeof(path_invalid), "%s/invalid.txt", dir) > 0);
+    TEST_REQUIRE(snprintf(path_link, sizeof(path_link), "%s/link.txt", dir) > 0);
     write_file(path_a, "one\ntwo\n");
     write_file(path_b, "b\n");
 
@@ -76,6 +78,10 @@ int main(void) {
     TEST_REQUIRE(strcmp(names.items[2], "b.txt") == 0);
     free_names(&names);
 
+    RetroFsPath empty_join = {0};
+    TEST_REQUIRE(retro_fs_path_join(&root, "", &empty_join) ==
+                 RETRO_FS_INVALID_ARGUMENT);
+
     RetroFsPath a = {0};
     TEST_REQUIRE(retro_fs_path_init(&a, path_a) == RETRO_FS_OK);
     char *text = NULL;
@@ -86,6 +92,8 @@ int main(void) {
     TEST_REQUIRE(strcmp(text, "one\ntwo\n") == 0);
     free(text);
 
+    TEST_REQUIRE(retro_fs_write_atomic(&a, "unversioned\n", 12,
+                                        NULL, NULL) == RETRO_FS_CONFLICT);
     TEST_REQUIRE(retro_fs_write_atomic(&a, "changed\n", 8, &version, &version) ==
                  RETRO_FS_OK);
     TEST_REQUIRE(retro_fs_read_text(&a, &text, &length, NULL) == RETRO_FS_OK);
@@ -96,6 +104,17 @@ int main(void) {
     write_file(path_a, "external\n");
     TEST_REQUIRE(retro_fs_write_atomic(&a, "blocked\n", 8, &stale, NULL) ==
                  RETRO_FS_CONFLICT);
+
+    TEST_REQUIRE(symlink(path_a, path_link) == 0);
+    RetroFsPath link_path = {0};
+    TEST_REQUIRE(retro_fs_path_init(&link_path, path_link) == RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_stat(&link_path, &version) == RETRO_FS_OK);
+    TEST_REQUIRE(version.kind == RETRO_FS_KIND_SYMLINK);
+    TEST_REQUIRE(retro_fs_read_text(&link_path, &text, &length, NULL) ==
+                 RETRO_FS_UNSUPPORTED);
+    TEST_REQUIRE(text == NULL);
+    TEST_REQUIRE(retro_fs_write_atomic(&link_path, "blocked\n", 8,
+                                        NULL, NULL) == RETRO_FS_UNSUPPORTED);
 
     RetroFsPath fresh = {0};
     TEST_REQUIRE(retro_fs_path_init(&fresh, path_new) == RETRO_FS_OK);
@@ -137,7 +156,6 @@ int main(void) {
     TEST_REQUIRE(retro_fs_write_atomic(&invalid, c1_control, 3,
                                        NULL, NULL) == RETRO_FS_INVALID_TEXT);
 
-
     RetroFsPath created = {0};
     RetroFsPath renamed = {0};
     RetroFsPath directory = {0};
@@ -169,6 +187,7 @@ int main(void) {
     TEST_REQUIRE(version.valid);
     TEST_REQUIRE(version.kind == RETRO_FS_KIND_DIRECTORY);
 
+    retro_fs_path_destroy(&link_path);
     retro_fs_path_destroy(&invalid);
     retro_fs_path_destroy(&utf8);
     retro_fs_path_destroy(&missing);
@@ -179,6 +198,7 @@ int main(void) {
     retro_fs_path_destroy(&fresh);
     retro_fs_path_destroy(&a);
     retro_fs_path_destroy(&root);
+    unlink(path_link);
     unlink(path_a);
     unlink(path_b);
     unlink(path_new);

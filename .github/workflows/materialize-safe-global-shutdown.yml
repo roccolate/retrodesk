@@ -29,8 +29,24 @@ jobs:
 
       - name: Apply safe shutdown slice
         run: |
-          python3 tools/repair_safe_shutdown_materializer.py
-          python3 tools/materialize_safe_global_shutdown.py
+          set +e
+          python3 tools/repair_safe_shutdown_materializer.py > /tmp/safe-shutdown-apply.log 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            python3 tools/materialize_safe_global_shutdown.py >> /tmp/safe-shutdown-apply.log 2>&1
+            status=$?
+          fi
+          if [ "$status" -ne 0 ]; then
+            mkdir -p ci-artifacts
+            cp /tmp/safe-shutdown-apply.log ci-artifacts/safe-shutdown-apply.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add ci-artifacts/safe-shutdown-apply.log
+            git commit -m "test: capture safe shutdown materializer failure"
+            git push origin HEAD:${{ github.head_ref }}
+            cat /tmp/safe-shutdown-apply.log
+            exit "$status"
+          fi
 
       - name: Guard generated tree
         run: |
@@ -57,6 +73,8 @@ jobs:
           rm -f tools/materialize_safe_global_shutdown.py
           rm -f tools/repair_safe_shutdown_materializer.py
           rm -f .github/workflows/materialize-safe-global-shutdown.yml
+          rm -f ci-artifacts/safe-shutdown-apply.log
+          rmdir ci-artifacts 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A

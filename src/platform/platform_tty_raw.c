@@ -11,32 +11,34 @@
 
 #include "core/key_chord.h"
 
-/* The handler only records a signal.  Terminal restoration happens from the
+/* The handler only records a signal. Terminal restoration happens from the
    normal platform_destroy path, where stdio and termios are safe to use. */
 static PlatformBackend *g_tty_signal_platform = NULL;
 
-static void platform_tty_signal_handler(int sig) {
-    (void)sig;
-    if (g_tty_signal_platform) g_tty_signal_platform->tty_signal_pending = 1;
+static void platform_tty_signal_handler(int signal_number) {
+    (void)signal_number;
+    if (g_tty_signal_platform) {
+        g_tty_signal_platform->tty_signal_pending = 1;
+    }
 }
 
 static bool platform_query_tty_size(int *rows, int *cols) {
     if (!rows || !cols) return false;
-    struct winsize ws = {0};
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0) return false;
-    if (ws.ws_row <= 0 || ws.ws_col <= 0) return false;
-    *rows = ws.ws_row;
-    *cols = ws.ws_col;
+    struct winsize size = {0};
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) != 0) return false;
+    if (size.ws_row <= 0 || size.ws_col <= 0) return false;
+    *rows = size.ws_row;
+    *cols = size.ws_col;
     return true;
 }
 
 static void platform_make_raw_mode(struct termios *term) {
     if (!term) return;
-    term->c_iflag &= (tcflag_t) ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR |
-                                  ICRNL | IXON);
-    term->c_oflag &= (tcflag_t) ~OPOST;
-    term->c_lflag &= (tcflag_t) ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    term->c_cflag &= (tcflag_t) ~(CSIZE | PARENB);
+    term->c_iflag &= (tcflag_t)~(IGNBRK | BRKINT | PARMRK | ISTRIP |
+                                 INLCR | IGNCR | ICRNL | IXON);
+    term->c_oflag &= (tcflag_t)~OPOST;
+    term->c_lflag &= (tcflag_t)~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    term->c_cflag &= (tcflag_t)~(CSIZE | PARENB);
     term->c_cflag |= CS8;
 }
 
@@ -44,7 +46,9 @@ static bool platform_enable_tty_raw(PlatformBackend *platform) {
     if (!platform) return false;
 
     struct termios raw = {0};
-    if (tcgetattr(STDIN_FILENO, &platform->tty_saved_mode) != 0) return false;
+    if (tcgetattr(STDIN_FILENO, &platform->tty_saved_mode) != 0) {
+        return false;
+    }
     platform->tty_has_saved_mode = true;
     raw = platform->tty_saved_mode;
     platform_make_raw_mode(&raw);
@@ -78,14 +82,17 @@ static TtyDecoderKeyMap platform_tty_key_map(void) {
 }
 
 static bool platform_emit_tty_resize_if_needed(PlatformBackend *platform,
-                                               RetroEvent *out_event) {
-    if (!platform || !out_event || !platform->features.resize_events) return false;
+                                                RetroEvent *out_event) {
+    if (!platform || !out_event || !platform->features.resize_events) {
+        return false;
+    }
 
     int rows = 0;
     int cols = 0;
     if (!platform_query_tty_size(&rows, &cols)) return false;
-
-    if (rows == platform->tty_rows && cols == platform->tty_cols) return false;
+    if (rows == platform->tty_rows && cols == platform->tty_cols) {
+        return false;
+    }
     platform->tty_rows = rows;
     platform->tty_cols = cols;
 
@@ -95,10 +102,21 @@ static bool platform_emit_tty_resize_if_needed(PlatformBackend *platform,
     return true;
 }
 
-static bool platform_decode_tty_key(PlatformBackend *platform, RetroEvent *out_event) {
+static bool platform_decode_tty_key(PlatformBackend *platform,
+                                    RetroEvent *out_event) {
     if (!platform || !out_event) return false;
     TtyDecoderKeyMap keys = platform_tty_key_map();
     return tty_decoder_decode(&platform->tty_decoder, &keys, out_event);
+}
+
+static void platform_emit_synthetic_quit(RetroEvent *out_event) {
+    if (!out_event) return;
+    out_event->type = RETRO_EVENT_KEY;
+    out_event->data.key.key_code = 'q';
+    out_event->data.key.is_printable = true;
+    out_event->data.key.ascii = 'q';
+    out_event->data.key.text_codepoint = 'q';
+    out_event->data.key.modifiers = RETRO_MOD_NONE;
 }
 
 bool platform_init_tty_raw_backend(PlatformBackend *platform) {
@@ -112,11 +130,12 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     platform->features.input_backend = INPUT_BACKEND_TTY_RAW;
     platform->features.keyboard_basic = true;
     platform->features.unicode_basic = true;
-    platform->features.color = (term && strcmp(term, "dumb") != 0);
+    platform->features.color = term && strcmp(term, "dumb") != 0;
     platform->features.resize_events =
         platform_query_tty_size(&platform->tty_rows, &platform->tty_cols);
     if (!term_is_linux_vc) {
-        platform->xterm_mouse_tracking_forced = platform_enable_xterm_mouse_tracking();
+        platform->xterm_mouse_tracking_forced =
+            platform_enable_xterm_mouse_tracking();
         if (platform->xterm_mouse_tracking_forced) {
             platform->features.mouse_basic = true;
             platform->features.drag_reliable = true;
@@ -130,7 +149,6 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     tty_decoder_init(&platform->tty_decoder);
     platform_update_mask(&platform->features);
 
-    /* Signal handlers only record termination; normal loop cleanup restores tty. */
     g_tty_signal_platform = platform;
     signal(SIGINT, platform_tty_signal_handler);
     signal(SIGTERM, platform_tty_signal_handler);
@@ -138,7 +156,8 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     return true;
 }
 
-bool platform_poll_event_tty_raw(PlatformBackend *platform, RetroEvent *out_event,
+bool platform_poll_event_tty_raw(PlatformBackend *platform,
+                                 RetroEvent *out_event,
                                  int timeout_ms) {
     if (!platform || !out_event) return false;
     if (platform->tty_signal_pending) return false;
@@ -147,35 +166,30 @@ bool platform_poll_event_tty_raw(PlatformBackend *platform, RetroEvent *out_even
     if (platform_decode_tty_key(platform, out_event)) return true;
     if (platform_emit_tty_resize_if_needed(platform, out_event)) return true;
 
-    struct pollfd pfd = {.fd = STDIN_FILENO, .events = POLLIN, .revents = 0};
-    int rc = poll(&pfd, 1, timeout_ms);
-    if (rc < 0) return false;
-    if (rc == 0) {
+    struct pollfd descriptor = {
+        .fd = STDIN_FILENO,
+        .events = POLLIN,
+        .revents = 0,
+    };
+    int result = poll(&descriptor, 1, timeout_ms);
+    if (result < 0) return false;
+    if (result == 0) {
         return platform_emit_tty_resize_if_needed(platform, out_event);
     }
 
-    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        /* stdin closed or errored — synthesize an Escape key so the desktop
-           loop can detect quit cleanly. */
-        out_event->type = RETRO_EVENT_KEY;
-        out_event->data.key.key_code = 'q';
-        out_event->data.key.is_printable = true;
-        out_event->data.key.ascii = 'q';
+    if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+        platform_emit_synthetic_quit(out_event);
         return true;
     }
 
-    if (pfd.revents & POLLIN) {
-        unsigned char buf[32];
-        ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
-        if (n <= 0) {
-            /* EOF or read error — synthesize quit. */
-            out_event->type = RETRO_EVENT_KEY;
-            out_event->data.key.key_code = 'q';
-            out_event->data.key.is_printable = true;
-            out_event->data.key.ascii = 'q';
+    if (descriptor.revents & POLLIN) {
+        unsigned char bytes[32];
+        ssize_t count = read(STDIN_FILENO, bytes, sizeof(bytes));
+        if (count <= 0) {
+            platform_emit_synthetic_quit(out_event);
             return true;
         }
-        tty_decoder_append(&platform->tty_decoder, buf, (size_t)n);
+        tty_decoder_append(&platform->tty_decoder, bytes, (size_t)count);
     }
 
     if (platform_decode_tty_key(platform, out_event)) return true;

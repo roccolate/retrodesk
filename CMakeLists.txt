@@ -80,11 +80,15 @@ set(RETRODESK_DJGPP_SOURCES
     src/apps/terminal_app.c
 )
 
-# The first product slice uses the POSIX storage adapter. Windows and DOS use
-# the header-only unsupported adapter until their native implementations land.
+# Select the native storage adapter for each supported host. DOS keeps the
+# header-only unsupported adapter until its dedicated implementation lands.
 set(RETRODESK_STORAGE_SOURCE)
-if (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
+if (WIN32)
+    set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_win32.c)
+elseif (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
     set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_posix.c)
+endif()
+if (RETRODESK_STORAGE_SOURCE)
     list(APPEND RETRODESK_SOURCES ${RETRODESK_STORAGE_SOURCE})
 endif()
 
@@ -437,7 +441,15 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     target_include_directories(desktop_runtime_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
     add_test(NAME desktop_runtime_test COMMAND desktop_runtime_test)
 
-    if (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    if (WIN32)
+        add_executable(storage_test
+            tests/storage_win32_test.c
+            src/storage/retro_fs_win32.c
+            src/core/utf8.c
+        )
+        target_include_directories(storage_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        add_test(NAME storage_test COMMAND storage_test)
+    elseif (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
         add_executable(storage_test
             tests/storage_test.c
             src/storage/retro_fs_posix.c

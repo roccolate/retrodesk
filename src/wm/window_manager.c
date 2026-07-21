@@ -1,8 +1,10 @@
 #include "wm/window_manager.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "core/checked_size.h"
 #include "ui/theme.h"
 
 struct RetroWindow {
@@ -26,6 +28,7 @@ struct WindowManager {
     RetroWindow **windows;
     size_t count;
     size_t capacity;
+    bool fail_next_growth_for_test;
     WindowId next_id;
     WindowId active_id;
     bool drag_enabled;
@@ -53,14 +56,38 @@ static RetroWindow *wm_find_window(const WindowManager *wm, WindowId id) {
 }
 
 static bool wm_reserve(WindowManager *wm, size_t want) {
+    if (!wm) return false;
     if (want <= wm->capacity) return true;
-    size_t new_cap = wm->capacity ? wm->capacity * 2 : 8;
-    while (new_cap < want) new_cap *= 2;
-    RetroWindow **next = realloc(wm->windows, new_cap * sizeof(*next));
+
+    size_t next_capacity = 0;
+    if (!retro_checked_capacity_grow(wm->capacity, want,
+                                     sizeof(*wm->windows), 8,
+                                     &next_capacity)) {
+        return false;
+    }
+    if (wm->fail_next_growth_for_test) {
+        wm->fail_next_growth_for_test = false;
+        return false;
+    }
+
+    RetroWindow **next = realloc(wm->windows,
+                                 next_capacity * sizeof(*wm->windows));
     if (!next) return false;
     wm->windows = next;
-    wm->capacity = new_cap;
+    wm->capacity = next_capacity;
     return true;
+}
+
+static bool wm_peek_next_id(const WindowManager *wm, WindowId *out_id) {
+    if (!wm || !out_id || wm->next_id <= 0) return false;
+    if (wm_find_index(wm, wm->next_id) >= 0) return false;
+    *out_id = wm->next_id;
+    return true;
+}
+
+static void wm_commit_window_id(WindowManager *wm, WindowId id) {
+    if (!wm) return;
+    wm->next_id = id == INT_MAX ? WINDOW_ID_INVALID : id + 1;
 }
 
 static void wm_update_active_flags(WindowManager *wm) {
@@ -200,22 +227,23 @@ void wm_set_drag_auto_degrade(WindowManager *wm, bool enabled) {
 }
 
 WindowId wm_create_window(WindowManager *wm, const RetroWindowSpec *spec) {
-    if (!wm || !spec) return WINDOW_ID_INVALID;
+    if (!wm || !spec || wm->count == SIZE_MAX) return WINDOW_ID_INVALID;
 
-    if (!wm_reserve(wm, wm->count + 1)) return WINDOW_ID_INVALID;
+    WindowId new_id = WINDOW_ID_INVALID;
+    if (!wm_peek_next_id(wm, &new_id)) return WINDOW_ID_INVALID;
+
+    int rows = 0;
+    int cols = 0;
+    renderer_get_screen_size(wm->renderer, &rows, &cols);
+    if (rows < 4 || cols < 8) return WINDOW_ID_INVALID;
+
+    size_t required_count = wm->count + 1;
+    if (!wm_reserve(wm, required_count)) return WINDOW_ID_INVALID;
 
     RetroWindow *window = calloc(1, sizeof(*window));
     if (!window) return WINDOW_ID_INVALID;
 
-    window->id = wm->next_id++;
-    int rows = 0;
-    int cols = 0;
-    renderer_get_screen_size(wm->renderer, &rows, &cols);
-
-    if (rows < 4 || cols < 8) {
-        free(window);
-        return WINDOW_ID_INVALID;
-    }
+    window->id = new_id;
 
     int max_h = rows - 1; /* reserve bottom row for status bar */
     int max_w = cols;
@@ -248,7 +276,9 @@ WindowId wm_create_window(WindowManager *wm, const RetroWindowSpec *spec) {
     }
 
     wm_clamp_window(wm, window);
-    wm->windows[wm->count++] = window;
+    wm->windows[wm->count] = window;
+    wm->count = required_count;
+    wm_commit_window_id(wm, new_id);
     wm->active_id = window->id;
     wm_update_active_flags(wm);
     return window->id;
@@ -522,6 +552,16 @@ void wm_render(WindowManager *wm, Renderer *renderer, const RetroTheme *theme) {
         renderer_draw_list(ctx, window->draw_list);
         renderer_end(renderer, ctx);
     }
+}
+
+void wm_fail_next_growth_for_test(WindowManager *wm) {
+    if (wm) wm->fail_next_growth_for_test = true;
+}
+
+bool wm_set_next_id_for_test(WindowManager *wm, WindowId next_id) {
+    if (!wm || next_id <= 0 || wm_find_index(wm, next_id) >= 0) return false;
+    wm->next_id = next_id;
+    return true;
 }
 
 RetroWindow *wm_window(WindowManager *wm, WindowId id) {

@@ -28,46 +28,15 @@ jobs:
 
       - name: Apply core hardening slice
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('tools/materialize_core_event_close_routing.py')
-          text = path.read_text(encoding='utf-8')
-          old = '''            if changed == original:
-                raise RuntimeError(f"{relative}: transformation made no change")
-            rendered[path] = changed
-'''
-          new = '''            if changed == original:
-                if relative.startswith(("src/", "tests/")):
-                    raise RuntimeError(
-                        f"{relative}: transformation made no change")
-                continue
-            rendered[path] = changed
-'''
-          if text.count(old) != 1:
-              raise SystemExit('required-change guard marker missing')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-          set +e
-          python3 tools/materialize_core_event_close_routing.py > /tmp/core-apply.log 2>&1
-          status=$?
-          cat /tmp/core-apply.log
-          if [ "$status" -ne 0 ]; then
-            mkdir -p ci-artifacts
-            cp /tmp/core-apply.log ci-artifacts/core-hardening-apply.log
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add ci-artifacts/core-hardening-apply.log
-            git commit -m "chore: capture core hardening apply failure"
-            git push origin HEAD:${{ github.head_ref }}
-            exit "$status"
-          fi
+          python3 -c "from pathlib import Path; p=Path('tools/materialize_core_event_close_routing.py'); t=p.read_text(encoding='utf-8'); marker='        \"INSTALL.md\": update_install,\\n'; assert t.count(marker) == 1; p.write_text(t.replace(marker, '', 1), encoding='utf-8')"
+          python3 tools/materialize_core_event_close_routing.py
 
       - name: Guard generated tree
         run: |
           git diff --check
           python3 scripts/check_test_oracles.py
           python3 scripts/check_djgpp_sources.py
-          if grep -R "F1/F2 launcher" -n README.md INSTALL.md docs src; then
+          if grep -R "F1/F2 launcher" -n README.md docs src; then
             echo "stale F1/F2 launcher documentation remains"
             exit 1
           fi

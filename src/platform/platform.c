@@ -61,6 +61,58 @@ static bool windows_ensure_console(void) {
 }
 #endif
 
+#if !defined(_WIN32) && !defined(__DJGPP__)
+/* RetroDesk owns one interactive terminal backend at a time. Signal handlers
+   only set a sig_atomic_t flag; cleanup and recovery remain in normal code. */
+static PlatformBackend *g_signal_platform = NULL;
+
+static void platform_signal_handler(int signal_number) {
+    (void)signal_number;
+    if (g_signal_platform) g_signal_platform->tty_signal_pending = 1;
+}
+
+static void platform_restore_signal_handlers(PlatformBackend *platform) {
+    if (!platform || !platform->signal_handlers_installed) return;
+    if (platform->previous_sigint != SIG_ERR) {
+        (void)signal(SIGINT, platform->previous_sigint);
+    }
+    if (platform->previous_sigterm != SIG_ERR) {
+        (void)signal(SIGTERM, platform->previous_sigterm);
+    }
+    if (platform->previous_sighup != SIG_ERR) {
+        (void)signal(SIGHUP, platform->previous_sighup);
+    }
+    platform->signal_handlers_installed = false;
+    if (g_signal_platform == platform) g_signal_platform = NULL;
+}
+
+static bool platform_install_signal_handlers(PlatformBackend *platform) {
+    if (!platform || (g_signal_platform && g_signal_platform != platform)) {
+        return false;
+    }
+
+    g_signal_platform = platform;
+    platform->previous_sigint = signal(SIGINT, platform_signal_handler);
+    if (platform->previous_sigint == SIG_ERR) goto fail;
+    platform->previous_sigterm = signal(SIGTERM, platform_signal_handler);
+    if (platform->previous_sigterm == SIG_ERR) goto fail;
+    platform->previous_sighup = signal(SIGHUP, platform_signal_handler);
+    if (platform->previous_sighup == SIG_ERR) goto fail;
+    platform->signal_handlers_installed = true;
+    return true;
+
+fail:
+    if (platform->previous_sigint != SIG_ERR) {
+        (void)signal(SIGINT, platform->previous_sigint);
+    }
+    if (platform->previous_sigterm != SIG_ERR) {
+        (void)signal(SIGTERM, platform->previous_sigterm);
+    }
+    g_signal_platform = NULL;
+    return false;
+}
+#endif
+
 bool platform_is_linux_virtual_console(void) {
 #if defined(_WIN32)
     return false;
@@ -139,6 +191,9 @@ static RetroPollResult platform_poll_curses_result(
     };
     int ready = poll(&descriptor, 1, 0);
     if (ready < 0) {
+        if (errno == EINTR && platform->tty_signal_pending) {
+            return RETRO_POLL_CLOSED;
+        }
         return errno == EINTR ? RETRO_POLL_TIMEOUT : RETRO_POLL_ERROR;
     }
     if (ready > 0) {
@@ -190,7 +245,9 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
     InputBackendKind requested_backend =
         config ? config->requested_input_backend : INPUT_BACKEND_UNKNOWN;
     if (requested_backend == INPUT_BACKEND_TTY_RAW) {
-        if (!platform_init_tty_raw_backend(platform)) {
+        if (!platform_init_tty_raw_backend(platform) ||
+            !platform_install_signal_handlers(platform)) {
+            platform_destroy_tty_raw_backend(platform);
             free(platform);
             return NULL;
         }
@@ -204,6 +261,13 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
         free(platform);
         return NULL;
     }
+#if !defined(_WIN32) && !defined(__DJGPP__)
+    if (!platform_install_signal_handlers(platform)) {
+        platform_destroy_curses_backend(platform);
+        free(platform);
+        return NULL;
+    }
+#endif
     if (platform->features.mouse_basic) {
         (void)mouseinterval(PLATFORM_MOUSE_CLICK_INTERVAL_MS);
     }
@@ -218,6 +282,10 @@ RetroPollResult platform_poll_event(PlatformBackend *platform,
 
     memset(out_event, 0, sizeof(*out_event));
     out_event->type = RETRO_EVENT_NONE;
+
+#if !defined(_WIN32) && !defined(__DJGPP__)
+    if (platform->tty_signal_pending) return RETRO_POLL_CLOSED;
+#endif
 
     RetroPollResult result = RETRO_POLL_TIMEOUT;
 #if !defined(_WIN32) && !defined(__DJGPP__)
@@ -262,6 +330,9 @@ void platform_destroy(PlatformBackend *platform) {
 #endif
 
     platform_destroy_curses_backend(platform);
+#if !defined(_WIN32) && !defined(__DJGPP__)
+    platform_restore_signal_handlers(platform);
+#endif
     free(platform);
 }
 

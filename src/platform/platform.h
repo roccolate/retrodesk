@@ -55,9 +55,28 @@ typedef enum RetroPollResult {
     RETRO_POLL_ERROR = -2,
 } RetroPollResult;
 
+/* The raw-TTY decoder depends on POSIX poll/ioctl/termios and is not part of
+   the Windows/PDCurses or DJGPP/DOS profiles. Reject it explicitly rather than
+   silently substituting curses while the renderer remains ANSI. */
+static inline bool platform_input_backend_supported(InputBackendKind backend) {
+    if (backend == INPUT_BACKEND_UNKNOWN ||
+        backend == INPUT_BACKEND_NCURSES ||
+        backend == INPUT_BACKEND_PDCURSES) {
+        return true;
+    }
+    if (backend == INPUT_BACKEND_TTY_RAW) {
+#if defined(_WIN32) || defined(__DJGPP__)
+        return false;
+#else
+        return true;
+#endif
+    }
+    return false;
+}
+
 PlatformBackend *platform_create(const PlatformConfig *config);
 RetroPollResult platform_poll_event(PlatformBackend *platform,
-                                     RetroEvent *out_event, int timeout_ms);
+                                    RetroEvent *out_event, int timeout_ms);
 const PlatformFeatures *platform_features(const PlatformBackend *platform);
 const char *platform_backend_name(const PlatformBackend *platform);
 void platform_destroy(PlatformBackend *platform);

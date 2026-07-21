@@ -80,15 +80,18 @@ set(RETRODESK_DJGPP_SOURCES
     src/apps/terminal_app.c
 )
 
-# The first product slice uses the POSIX storage adapter.  Keep it out of the
-# DOS and Windows source profiles until their native adapters exist.
+# The first product slice uses the POSIX storage adapter. Windows and DOS use
+# the header-only unsupported adapter until their native implementations land.
+set(RETRODESK_STORAGE_SOURCE)
 if (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
-    list(APPEND RETRODESK_SOURCES src/storage/retro_fs_posix.c)
+    set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_posix.c)
+    list(APPEND RETRODESK_SOURCES ${RETRODESK_STORAGE_SOURCE})
 endif()
 
 function(retrodesk_apply_quality target)
     target_compile_features(${target} PRIVATE c_std_11)
     target_compile_definitions(${target} PRIVATE
+        $<$<C_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>
         $<$<NOT:$<C_COMPILER_ID:MSVC>>:_POSIX_C_SOURCE=200809L>
     )
     if (ENABLE_STRICT_WARNINGS)
@@ -424,7 +427,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         src/apps/filemanager_app.c
         src/apps/notepad_app.c
         src/apps/terminal_app.c
-        src/storage/retro_fs_posix.c
+        ${RETRODESK_STORAGE_SOURCE}
         src/ui/text_buffer.c
         src/ui/text_input.c
         src/wm/window_manager.c
@@ -449,14 +452,14 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             tests/retrocore_event_fixture_test.c
             tests/wm_render_stub.c
             src/core/desktop.c
-        src/core/clipboard.c
+            src/core/clipboard.c
             src/core/utf8.c
             src/app/app_runtime.c
             src/apps/apps.c
             src/apps/filemanager_app.c
             src/apps/notepad_app.c
             src/apps/terminal_app.c
-            src/storage/retro_fs_posix.c
+            ${RETRODESK_STORAGE_SOURCE}
             src/ui/text_buffer.c
             src/ui/text_input.c
             src/wm/window_manager.c
@@ -600,5 +603,10 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     endif()
     foreach(_test_target IN LISTS RETRODESK_TEST_TARGETS)
         retrodesk_apply_quality(${_test_target})
+        if (MSVC)
+            # Boundary tests intentionally materialize truncated byte values.
+            # Keep /W4 /WX for all other diagnostics without weakening product code.
+            target_compile_options(${_test_target} PRIVATE /wd4310)
+        endif()
     endforeach()
 endif()

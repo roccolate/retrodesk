@@ -6,7 +6,7 @@ dos_dir=${1:-$repo_root/build/dos}
 dos_dir=$(realpath "$dos_dir")
 dosbox_log="$dos_dir/DOSBOX.LOG"
 
-for file in retrodesk.exe CWSDPMI.EXE; do
+for file in retrodesk.exe FSTEST.EXE CWSDPMI.EXE; do
     if [[ ! -s "$dos_dir/$file" ]]; then
         echo "run_dosbox_smoke: missing $dos_dir/$file" >&2
         exit 2
@@ -17,6 +17,8 @@ cat >"$dos_dir/SMOKE.BAT" <<'BAT'
 @echo off
 if exist SMOKE.OK del SMOKE.OK
 if exist SMOKE.FAIL del SMOKE.FAIL
+FSTEST.EXE
+if errorlevel 1 goto failed
 RETRODESK.EXE --diagnose
 if errorlevel 1 goto failed
 echo RETRODESK_DOS_SMOKE_OK>SMOKE.OK

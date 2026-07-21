@@ -66,6 +66,17 @@ static const LauncherItem k_launcher_items[] = {
     {"Close Launcher", LAUNCHER_ACTION_CLOSE_MENU},
 };
 
+typedef struct TaskbarCatalogItem {
+    const char *app_id;
+    const char *label;
+} TaskbarCatalogItem;
+
+static const TaskbarCatalogItem k_taskbar_catalog[] = {
+    {"filemanager", "Files"},
+    {"notepad", "Notepad"},
+    {"diagnostics", "Diag"},
+};
+
 static bool desktop_app_is_running(const Desktop *desktop, const char *app_id) {
     if (!desktop || !app_id) return false;
     for (size_t i = 0; i < desktop->app_count; ++i) {
@@ -556,14 +567,61 @@ static void desktop_cleanup_apps(Desktop *desktop) {
     }
 }
 
+static void desktop_update_taskbar_snapshot(Desktop *desktop,
+                                            const char *clock_text) {
+    if (!desktop || !desktop->statusbar) return;
+
+    StatusBarSnapshot snapshot = {0};
+    snapshot.menu_open = desktop->launcher.open;
+    snprintf(snapshot.clock_text, sizeof(snapshot.clock_text), "%s",
+             clock_text ? clock_text : "--:--:--");
+
+    size_t catalog_count =
+        sizeof(k_taskbar_catalog) / sizeof(k_taskbar_catalog[0]);
+    if (catalog_count > STATUSBAR_MAX_APPS) {
+        catalog_count = STATUSBAR_MAX_APPS;
+    }
+    snapshot.app_count = catalog_count;
+
+    WindowId active = wm_active_window(desktop->wm);
+    for (size_t catalog_index = 0;
+         catalog_index < catalog_count; ++catalog_index) {
+        const TaskbarCatalogItem *catalog =
+            &k_taskbar_catalog[catalog_index];
+        StatusBarAppSnapshot *app =
+            &snapshot.apps[catalog_index];
+        app->app_id = catalog->app_id;
+        app->label = catalog->label;
+
+        for (size_t i = 0; i < desktop->app_count; ++i) {
+            RetroAppInstance *instance = desktop->apps[i].app;
+            if (!instance || !instance->descriptor ||
+                !instance->descriptor->app_id ||
+                strcmp(instance->descriptor->app_id,
+                       catalog->app_id) != 0) {
+                continue;
+            }
+            app->instance_count++;
+            if (desktop->apps[i].window_id == active) {
+                app->focused = true;
+            }
+        }
+    }
+    statusbar_set_snapshot(desktop->statusbar, &snapshot);
+}
+
 static void desktop_update_status(Desktop *desktop) {
     time_t now = time(NULL);
-    if (now == desktop->last_status_tick && !desktop->needs_redraw) return;
+    if (now == desktop->last_status_tick && !desktop->needs_redraw) {
+        return;
+    }
     bool tick_changed = now != desktop->last_status_tick;
     desktop->last_status_tick = now;
 
-    desktop->diagnostics.drag_enabled = wm_drag_is_enabled(desktop->wm);
-    desktop->diagnostics.drag_degraded = wm_drag_is_degraded(desktop->wm);
+    desktop->diagnostics.drag_enabled =
+        wm_drag_is_enabled(desktop->wm);
+    desktop->diagnostics.drag_degraded =
+        wm_drag_is_degraded(desktop->wm);
 
     struct tm tm_buf;
     struct tm *tm_now = NULL;
@@ -572,34 +630,12 @@ static void desktop_update_status(Desktop *desktop) {
 #else
     tm_now = localtime_r(&now, &tm_buf);
 #endif
-    char timestr[32] = "--:--:--";
-    if (tm_now) strftime(timestr, sizeof(timestr), "%H:%M:%S", tm_now);
-
-    WindowId drag_id = WINDOW_ID_INVALID;
-    int drag_y = 0;
-    int drag_x = 0;
-    bool dragging = wm_get_drag_preview(desktop->wm, &drag_id, &drag_y, &drag_x);
-
-    const char *mouse = desktop->diagnostics.mouse_enabled ? "on" : "off";
-    const char *drag = desktop->diagnostics.drag_enabled ? "on" : "off";
-    char middle[96];
-
-    if (desktop->diagnostics.drag_degraded) {
-        snprintf(middle, sizeof(middle), "mouse=%s drag=auto-off(%d) use HJKL", mouse,
-                 wm_drag_no_motion_sessions(desktop->wm));
-    } else if (dragging) {
-        snprintf(middle, sizeof(middle), "mouse=%s drag=%s #%d->%d,%d", mouse, drag, drag_id,
-                 drag_x, drag_y);
-    } else {
-        snprintf(middle, sizeof(middle), "mouse=%s drag=%s", mouse, drag);
+    char timestr[9] = "--:--:--";
+    if (tm_now) {
+        strftime(timestr, sizeof(timestr), "%H:%M:%S", tm_now);
     }
+    desktop_update_taskbar_snapshot(desktop, timestr);
 
-    statusbar_set_text(
-        desktop->statusbar,
-        "RetroDesk | windows=%zu apps=%zu | in=%s out=%s theme=%s | %s | %s",
-        wm_window_count(desktop->wm), desktop->app_count,
-        desktop->diagnostics.backend_name, desktop->diagnostics.render_backend_name,
-        desktop->diagnostics.theme_name, middle, timestr);
     if (tick_changed) desktop->needs_redraw = true;
 }
 
@@ -623,6 +659,76 @@ static void desktop_render_frame(Desktop *desktop) {
 
     renderer_flush(desktop->renderer);
     desktop->needs_redraw = false;
+}
+
+static void desktop_activate_taskbar_app(
+    Desktop *desktop, const char *app_id) {
+    if (!desktop || !app_id) return;
+
+    size_t first = desktop->app_count;
+    size_t next = desktop->app_count;
+    bool active_seen = false;
+    WindowId active = wm_active_window(desktop->wm);
+
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        RetroAppInstance *instance = desktop->apps[i].app;
+        if (!instance || !instance->descriptor ||
+            !instance->descriptor->app_id ||
+            strcmp(instance->descriptor->app_id, app_id) != 0) {
+            continue;
+        }
+        if (first == desktop->app_count) first = i;
+        if (active_seen && next == desktop->app_count) next = i;
+        if (desktop->apps[i].window_id == active) {
+            active_seen = true;
+        }
+    }
+
+    if (first == desktop->app_count) {
+        (void)app_launch(desktop, app_id);
+        return;
+    }
+
+    size_t target =
+        active_seen && next < desktop->app_count ? next : first;
+    wm_focus_window(desktop->wm,
+                    desktop->apps[target].window_id);
+    wm_bring_to_front(desktop->wm,
+                      desktop->apps[target].window_id);
+    desktop_request_redraw(desktop);
+}
+
+static bool desktop_handle_taskbar_mouse(
+    Desktop *desktop, const RetroMouseEvent *mouse) {
+    if (!desktop || !mouse || !mouse->button1_clicked) return false;
+
+    StatusBarAction action =
+        statusbar_hit_test(desktop->statusbar, mouse->y, mouse->x);
+    if (action.kind == STATUSBAR_ACTION_NONE) return false;
+
+    if (action.kind == STATUSBAR_ACTION_TOGGLE_MENU) {
+        if (desktop->launcher.open) {
+            desktop_launcher_close(desktop);
+        } else {
+            desktop_launcher_open(desktop);
+        }
+        desktop_request_redraw(desktop);
+        return true;
+    }
+
+    size_t catalog_count =
+        sizeof(k_taskbar_catalog) / sizeof(k_taskbar_catalog[0]);
+    if (action.kind == STATUSBAR_ACTION_ACTIVATE_APP &&
+        action.app_index < catalog_count) {
+        if (desktop->launcher.open) {
+            desktop_launcher_close(desktop);
+        }
+        desktop_activate_taskbar_app(
+            desktop,
+            k_taskbar_catalog[action.app_index].app_id);
+        return true;
+    }
+    return false;
 }
 
 static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *key) {
@@ -727,6 +833,9 @@ int desktop_run(Desktop *desktop) {
             bool consumed = false;
             if (event.type == RETRO_EVENT_KEY) {
                 consumed = desktop_handle_key_command(desktop, &event.data.key);
+            } else if (event.type == RETRO_EVENT_MOUSE) {
+                consumed = desktop_handle_taskbar_mouse(
+                    desktop, &event.data.mouse);
             }
             if (!consumed) {
                 wm_handle_event(desktop->wm, &event);

@@ -15,6 +15,11 @@ static int is_tty(FILE *stream) {
 }
 #endif
 
+#if !defined(_WIN32) && !defined(__DJGPP__)
+#include <errno.h>
+#include <poll.h>
+#endif
+
 enum {
     PLATFORM_MOUSE_CLICK_INTERVAL_MS = 150,
 };
@@ -111,6 +116,42 @@ static void platform_normalize_pointer_activation(PlatformBackend *platform,
     }
 }
 
+static RetroPollResult platform_poll_curses_result(
+    PlatformBackend *platform, RetroEvent *out_event, int timeout_ms) {
+#if !defined(_WIN32) && !defined(__DJGPP__)
+    errno = 0;
+#endif
+    if (platform_poll_event_curses(platform, out_event, timeout_ms)) {
+        return RETRO_POLL_EVENT;
+    }
+
+#if !defined(_WIN32) && !defined(__DJGPP__)
+    int read_errno = errno;
+    if (read_errno == EIO || read_errno == ENXIO) {
+        return RETRO_POLL_CLOSED;
+    }
+    if (read_errno == EBADF) return RETRO_POLL_ERROR;
+
+    struct pollfd descriptor = {
+        .fd = STDIN_FILENO,
+        .events = POLLIN,
+        .revents = 0,
+    };
+    int ready = poll(&descriptor, 1, 0);
+    if (ready < 0) {
+        return errno == EINTR ? RETRO_POLL_TIMEOUT : RETRO_POLL_ERROR;
+    }
+    if (ready > 0) {
+        if (descriptor.revents & POLLHUP) return RETRO_POLL_CLOSED;
+        if (descriptor.revents & (POLLERR | POLLNVAL)) {
+            return RETRO_POLL_ERROR;
+        }
+    }
+#endif
+
+    return RETRO_POLL_TIMEOUT;
+}
+
 #if !defined(_WIN32) && !defined(__DJGPP__)
 bool platform_enable_xterm_mouse_tracking(void) {
     const char *term = getenv("TERM");
@@ -186,10 +227,8 @@ RetroPollResult platform_poll_event(PlatformBackend *platform,
     } else
 #endif
     {
-        result = platform_poll_event_curses(
-                     platform, out_event, timeout_ms)
-                     ? RETRO_POLL_EVENT
-                     : RETRO_POLL_TIMEOUT;
+        result = platform_poll_curses_result(
+            platform, out_event, timeout_ms);
     }
 
     if (result == RETRO_POLL_EVENT) {

@@ -362,7 +362,7 @@ static bool np_save(NotepadState *state) {
     RetroFsVersion written = {0};
     RetroFsError error = retro_fs_write_atomic(
         &state->path, text, length,
-        (state->version.inode != 0) ? &state->version : NULL, &written);
+        state->version.valid ? &state->version : NULL, &written);
     if (error != RETRO_FS_OK) {
         free(text);
         np_set_error(state, error);

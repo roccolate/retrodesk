@@ -111,7 +111,7 @@ make smoke-linux-vc # TERM=linux keyboard-first smoke test
 | `F1` | Help |
 | `F2` | Launcher |
 | `F6` | Next window |
-| `F7` | Move/resize mode |
+| `F9` | Move/resize mode |
 | `Ctrl+W` | Close active window |
 | `Ctrl+Q` | Quit |
 | `Esc` | Close focused app |
@@ -196,7 +196,7 @@ Tests run without a terminal (no `initscr`).
 - Destructive filesystem operations (delete, rename, copy, move) are outside v1.
 - Diagnostics is not a shell.
 - Minimize, maximize, Settings, plugins, and session persistence are absent.
-- The visible text contract is byte/ASCII oriented; Unicode is not supported.
+- Linux curses input and File Manager text fields support basic UTF-8 (including ñ, tildes, and ü). The ANSI backend and full Unicode width handling remain incomplete.
 
 ## Troubleshooting
 

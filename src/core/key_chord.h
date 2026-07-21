@@ -76,8 +76,9 @@
 #define RETRO_KEY_F11    0x110A
 #define RETRO_KEY_F12    0x110B
 
-/* Modifier masks. Not yet threaded through RetroKeyEvent but reserved
-   for future use by accelerators, focus rings, and chord dispatch. */
+/* Modifier masks carried by RetroKeyEvent.modifiers. Backends report only
+   combinations they can distinguish reliably; unsupported combinations remain
+   RETRO_MOD_NONE rather than being inferred from locale-dependent bytes. */
 #define RETRO_MOD_NONE   0x0000
 #define RETRO_MOD_SHIFT  0x0001
 #define RETRO_MOD_CTRL   0x0002

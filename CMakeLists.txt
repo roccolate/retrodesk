@@ -17,8 +17,10 @@ set(RETROCORE_SPEC_DIR "${CMAKE_SOURCE_DIR}/../retrocore-spec" CACHE PATH
 set(RETRODESK_SOURCES
     src/main.c
     src/core/cli.c
+    src/core/clipboard.c
     src/core/desktop.c
     src/core/key_chord.c
+    src/core/utf8.c
     src/platform/platform.c
     src/platform/platform_curses.c
     src/platform/platform_tty_raw.c
@@ -50,8 +52,10 @@ set(RETRODESK_SOURCES
 set(RETRODESK_DJGPP_SOURCES
     src/main.c
     src/core/cli.c
+    src/core/clipboard.c
     src/core/desktop.c
     src/core/key_chord.c
+    src/core/utf8.c
     src/platform/platform.c
     src/platform/platform_curses.c
     src/platform/tty_decoder.c
@@ -130,9 +134,25 @@ if (ENABLE_TESTS)
         add_executable(key_chord_test
             tests/key_chord_test.c
             src/core/key_chord.c
+            src/core/utf8.c
         )
         target_include_directories(key_chord_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
         add_test(NAME key_chord_test COMMAND key_chord_test)
+
+        add_executable(utf8_test
+            tests/utf8_test.c
+            src/core/utf8.c
+        )
+        target_include_directories(utf8_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        add_test(NAME utf8_test COMMAND utf8_test)
+
+        add_executable(clipboard_test
+            tests/clipboard_test.c
+            src/core/clipboard.c
+            src/core/utf8.c
+        )
+        target_include_directories(clipboard_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        add_test(NAME clipboard_test COMMAND clipboard_test)
 
         add_executable(app_registry_test
             tests/app_registry_test.c
@@ -177,6 +197,9 @@ if (PDCURSES_ROOT)
     target_link_libraries(retrodesk PRIVATE "${_curses_lib}")
     target_compile_definitions(retrodesk PRIVATE HAVE_PDCURSES PDC_NCMOUSE)
 else()
+    if (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
+        set(CURSES_NEED_WIDE TRUE)
+    endif()
     find_package(Curses REQUIRED)
     if (CURSES_INCLUDE_DIRS)
         target_include_directories(retrodesk PRIVATE ${CURSES_INCLUDE_DIRS})
@@ -204,6 +227,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(draw_list_contract_test
         tests/draw_list_contract_test.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -217,6 +241,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(statusbar_drawlist_test
         tests/statusbar_drawlist_test.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -231,6 +256,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     add_executable(ansi_renderer_diff_test
         tests/ansi_renderer_diff_test.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -252,6 +278,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/text_input_test.c
         src/ui/text_input.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -266,6 +293,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/scroll_list_test.c
         src/ui/scroll_list.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -281,6 +309,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         src/ui/text_buffer.c
         src/ui/text_input.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -295,6 +324,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/button_test.c
         src/ui/button.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -311,6 +341,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         src/ui/button.c
         src/ui/text_input.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -325,6 +356,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/menu_bar_test.c
         src/ui/menu_bar.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -339,6 +371,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/progress_bar_test.c
         src/ui/progress_bar.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -353,6 +386,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/tab_test.c
         src/ui/tab.c
         src/core/key_chord.c
+        src/core/utf8.c
         src/platform/platform.c
         src/platform/platform_curses.c
         src/platform/platform_tty_raw.c
@@ -367,6 +401,8 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/desktop_runtime_test.c
         tests/wm_render_stub.c
         src/core/desktop.c
+        src/core/clipboard.c
+        src/core/utf8.c
         src/app/app_runtime.c
         src/apps/apps.c
         src/apps/filemanager_app.c
@@ -386,6 +422,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         add_executable(storage_test
             tests/storage_test.c
             src/storage/retro_fs_posix.c
+            src/core/utf8.c
         )
         target_include_directories(storage_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
         add_test(NAME storage_test COMMAND storage_test)
@@ -396,6 +433,8 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             tests/retrocore_event_fixture_test.c
             tests/wm_render_stub.c
             src/core/desktop.c
+        src/core/clipboard.c
+            src/core/utf8.c
             src/app/app_runtime.c
             src/apps/apps.c
             src/apps/filemanager_app.c
@@ -517,6 +556,8 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     set(RETRODESK_TEST_TARGETS
         cli_parse_test
         key_chord_test
+        utf8_test
+        clipboard_test
         app_registry_test
         platform_features_test
         wm_event_replay_test

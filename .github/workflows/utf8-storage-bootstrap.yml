@@ -50,10 +50,14 @@ jobs:
       - name: Build
         run: |
           cmake --build build --parallel >/tmp/build.log 2>&1 || {
-            echo "---- compiler/linker errors ----"
-            grep -nE "error:|undefined reference|fatal error|FAILED:|collect2:" /tmp/build.log || true
-            echo "---- build tail ----"
-            tail -n 100 /tmp/build.log
+            mkdir -p ci-artifacts
+            cp /tmp/build.log ci-artifacts/utf8-storage-build.log
+            git config user.name "RetroDesk CI"
+            git config user.email "actions@users.noreply.github.com"
+            git add ci-artifacts/utf8-storage-build.log
+            git commit -m "ci: capture UTF-8 storage build failure" -- \
+              ci-artifacts/utf8-storage-build.log
+            git push origin HEAD:agent/notepad-utf8-storage
             exit 1
           }
 
@@ -64,6 +68,7 @@ jobs:
         run: |
           rm -f scripts/apply_utf8_storage_port.py
           rm -f .github/workflows/utf8-storage-bootstrap.yml
+          rm -f ci-artifacts/utf8-storage-build.log
           git config user.name "RetroDesk CI"
           git config user.email "actions@users.noreply.github.com"
           git add -A

@@ -1,5 +1,7 @@
 #include "storage/retro_fs.h"
 
+#if defined(_WIN32)
+
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0601
 #endif
@@ -884,3 +886,5 @@ const char *retro_fs_error_string(RetroFsError error) {
     };
     return error <= RETRO_FS_INVALID_ARGUMENT ? messages[error] : "unknown";
 }
+
+#endif /* _WIN32 */

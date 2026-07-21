@@ -40,6 +40,10 @@ struct PlatformBackend {
     int tty_rows;
     int tty_cols;
     volatile sig_atomic_t tty_signal_pending;
+    bool signal_handlers_installed;
+    void (*previous_sigint)(int);
+    void (*previous_sigterm)(int);
+    void (*previous_sighup)(int);
     TtyDecoder tty_decoder;
 #endif
 };

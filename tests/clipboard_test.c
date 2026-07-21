@@ -1,5 +1,6 @@
 #include "test_harness.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "core/clipboard.h"
@@ -30,6 +31,9 @@ int main(void) {
     const char embedded_nul[] = {'a', '\0', 'b'};
     TEST_REQUIRE(!retro_clipboard_set_text(first, embedded_nul,
                                             sizeof(embedded_nul)));
+    TEST_REQUIRE(strcmp(retro_clipboard_text(first, NULL), utf8) == 0);
+
+    TEST_REQUIRE(!retro_clipboard_set_text(first, "x", SIZE_MAX));
     TEST_REQUIRE(strcmp(retro_clipboard_text(first, NULL), utf8) == 0);
 
     TEST_REQUIRE(retro_clipboard_set_text(first, "", 0));

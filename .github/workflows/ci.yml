@@ -94,15 +94,17 @@ jobs:
       matrix:
         config: [Debug, Release]
     steps:
-      - name: Checkout RetroDesk
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Checkout pinned retrocore-spec fixtures
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          repository: roccolate/retrocore-spec
-          ref: ${{ env.RETROCORE_SPEC_COMMIT }}
-          path: retrocore-spec
+      - name: Checkout pinned sources quietly
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          git init --quiet .
+          git remote add origin "https://github.com/${{ github.repository }}.git"
+          git fetch --quiet --no-tags --depth=1 origin "+${{ github.ref }}:refs/remotes/origin/ci"
+          git checkout --quiet --detach refs/remotes/origin/ci
+          git clone --quiet --no-checkout https://github.com/roccolate/retrocore-spec.git retrocore-spec
+          git -C retrocore-spec fetch --quiet --depth=1 origin $env:RETROCORE_SPEC_COMMIT
+          git -C retrocore-spec checkout --quiet --detach $env:RETROCORE_SPEC_COMMIT
 
       - name: Install pinned vcpkg
         shell: powershell

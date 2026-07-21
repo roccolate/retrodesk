@@ -16,6 +16,7 @@ run_logged() {
     fi
 }
 
+run_logged repair python3 scripts/fix_notepad_find_apply.py
 run_logged apply python3 scripts/apply_notepad_find.py
 sudo apt-get update -qq >/dev/null
 sudo apt-get install -y -qq cmake gcc libncurses-dev python3 >/dev/null

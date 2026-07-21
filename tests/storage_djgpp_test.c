@@ -92,6 +92,13 @@ static void remove_directory_if_present(const char *path) {
     }
 }
 
+static void remove_directory_verified(const char *path) {
+    if (rmdir(path) == 0) return;
+    struct stat remaining;
+    errno = 0;
+    TEST_REQUIRE(stat(path, &remaining) < 0 && errno == ENOENT);
+}
+
 int main(void) {
     FILE *log_file = freopen("FSTEST.LOG", "w", stderr);
     TEST_REQUIRE(log_file != NULL);
@@ -209,7 +216,7 @@ int main(void) {
     remove_if_present(retro_fs_path_cstr(&utf8));
     remove_if_present(retro_fs_path_cstr(&invalid));
     remove_if_present(retro_fs_path_cstr(&renamed));
-    TEST_REQUIRE(rmdir(retro_fs_path_cstr(&directory)) == 0);
+    remove_directory_verified(retro_fs_path_cstr(&directory));
 
     retro_fs_path_destroy(&missing);
     retro_fs_path_destroy(&directory);
@@ -219,7 +226,7 @@ int main(void) {
     retro_fs_path_destroy(&utf8);
     retro_fs_path_destroy(&b);
     retro_fs_path_destroy(&a);
-    TEST_REQUIRE(rmdir(retro_fs_path_cstr(&root)) == 0);
+    remove_directory_verified(retro_fs_path_cstr(&root));
     retro_fs_path_destroy(&root);
     return 0;
 }

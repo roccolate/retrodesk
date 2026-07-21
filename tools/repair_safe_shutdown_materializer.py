@@ -107,6 +107,34 @@ runtime_replacement = r'''def update_runtime_test(text: str) -> str:
         "TEST_REQUIRE(!instance.descriptor->can_close(&instance));",
         "TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);",
     )
+    text = replace_once(
+        text,
+        """    app_request_close(diagnostics);
+    const RetroEvent events[] = {key_event(RETRO_KEY_CTRL_Q, '\\0')};
+    platform_stub_set_events(platform, events, 1);
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
+
+    /* Close request should have removed terminal app/window before exit. */
+    TEST_REQUIRE(desktop_app_count(desktop) == base_apps);
+    TEST_REQUIRE(desktop_window_count(desktop) == base_windows);
+""",
+        """    RetroEvent close = key_event(RETRO_KEY_CTRL_W, '\\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &close));
+
+    /* A normal close removes only the active Diagnostics instance. */
+    TEST_REQUIRE(desktop_app_count(desktop) == base_apps);
+    TEST_REQUIRE(desktop_window_count(desktop) == base_windows);
+
+    const RetroEvent events[] = {key_event(RETRO_KEY_CTRL_Q, '\\0')};
+    platform_stub_set_events(platform, events, 1);
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
+
+    /* A clean global shutdown commits every app close atomically. */
+    TEST_REQUIRE(desktop_app_count(desktop) == 0);
+    TEST_REQUIRE(desktop_window_count(desktop) == base_windows - base_apps);
+""",
+        "clean close and global shutdown test migration",
+    )
     tests = r'''
 if text.count(runtime_marker) != 1:
     raise SystemExit(f"repair expected one runtime test marker, found {text.count(runtime_marker)}")

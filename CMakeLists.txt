@@ -411,6 +411,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         add_executable(storage_test
             tests/storage_test.c
             src/storage/retro_fs_posix.c
+            src/core/utf8.c
         )
         target_include_directories(storage_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
         add_test(NAME storage_test COMMAND storage_test)

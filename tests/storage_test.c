@@ -52,6 +52,8 @@ int main(void) {
     char path_renamed[512];
     char path_directory[512];
     char path_missing[512];
+    char path_utf8[512];
+    char path_invalid[512];
     TEST_REQUIRE(snprintf(path_a, sizeof(path_a), "%s/a.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_b, sizeof(path_b), "%s/b.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_new, sizeof(path_new), "%s/new.txt", dir) > 0);
@@ -59,6 +61,8 @@ int main(void) {
     TEST_REQUIRE(snprintf(path_renamed, sizeof(path_renamed), "%s/renamed.txt", dir) > 0);
     TEST_REQUIRE(snprintf(path_directory, sizeof(path_directory), "%s/docs", dir) > 0);
     TEST_REQUIRE(snprintf(path_missing, sizeof(path_missing), "%s/missing.txt", dir) > 0);
+    TEST_REQUIRE(snprintf(path_utf8, sizeof(path_utf8), "%s/utf8.txt", dir) > 0);
+    TEST_REQUIRE(snprintf(path_invalid, sizeof(path_invalid), "%s/invalid.txt", dir) > 0);
     write_file(path_a, "one\ntwo\n");
     write_file(path_b, "b\n");
 
@@ -99,6 +103,40 @@ int main(void) {
     TEST_REQUIRE(retro_fs_read_text(&fresh, &text, &length, NULL) == RETRO_FS_OK);
     TEST_REQUIRE(strcmp(text, "new\n") == 0);
     free(text);
+    text = NULL;
+
+    RetroFsPath utf8 = {0};
+    RetroFsPath invalid = {0};
+    TEST_REQUIRE(retro_fs_path_init(&utf8, path_utf8) == RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_path_init(&invalid, path_invalid) == RETRO_FS_OK);
+
+    const char *utf8_text = "niño\npingüino\ndiseños\n";
+    size_t utf8_length = strlen(utf8_text);
+    TEST_REQUIRE(retro_fs_write_atomic(&utf8, utf8_text, utf8_length,
+                                       NULL, NULL) == RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_read_text(&utf8, &text, &length, NULL) == RETRO_FS_OK);
+    TEST_REQUIRE(length == utf8_length);
+    TEST_REQUIRE(strcmp(text, utf8_text) == 0);
+    free(text);
+    text = NULL;
+
+    const char invalid_utf8[] = {(char)0xC3, '\0'};
+    TEST_REQUIRE(retro_fs_write_atomic(&invalid, invalid_utf8, 1,
+                                       NULL, NULL) == RETRO_FS_INVALID_TEXT);
+    write_file(path_invalid, invalid_utf8);
+    TEST_REQUIRE(retro_fs_read_text(&invalid, &text, &length, NULL) ==
+                 RETRO_FS_INVALID_TEXT);
+    TEST_REQUIRE(text == NULL);
+
+    write_file(path_invalid, "lf\ncrlf\r\n");
+    TEST_REQUIRE(retro_fs_read_text(&invalid, &text, &length, NULL) ==
+                 RETRO_FS_INVALID_TEXT);
+    TEST_REQUIRE(text == NULL);
+
+    const char c1_control[] = {'a', (char)0xC2, (char)0x85, '\0'};
+    TEST_REQUIRE(retro_fs_write_atomic(&invalid, c1_control, 3,
+                                       NULL, NULL) == RETRO_FS_INVALID_TEXT);
+
 
     RetroFsPath created = {0};
     RetroFsPath renamed = {0};
@@ -129,6 +167,8 @@ int main(void) {
     TEST_REQUIRE(retro_fs_stat(&directory, &version) == RETRO_FS_OK);
     TEST_REQUIRE(S_ISDIR(version.mode));
 
+    retro_fs_path_destroy(&invalid);
+    retro_fs_path_destroy(&utf8);
     retro_fs_path_destroy(&missing);
     retro_fs_path_destroy(&existing);
     retro_fs_path_destroy(&directory);
@@ -140,6 +180,8 @@ int main(void) {
     unlink(path_a);
     unlink(path_b);
     unlink(path_new);
+    unlink(path_utf8);
+    unlink(path_invalid);
     unlink(path_renamed);
     TEST_REQUIRE(rmdir(path_directory) == 0);
     TEST_REQUIRE(rmdir(dir) == 0);

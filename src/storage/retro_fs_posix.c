@@ -12,6 +12,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "core/utf8.h"
+
 #define RETRO_FS_MAX_TEXT (1024u * 1024u)
 
 static RetroFsError map_errno(int e) {
@@ -172,6 +174,42 @@ RetroFsError retro_fs_list(const RetroFsPath *p, size_t max_entries,
     return RETRO_FS_OK;
 }
 
+static bool valid_text_content(const char *data, size_t length) {
+    if ((!data && length != 0) || !retro_utf8_validate(data, length)) {
+        return false;
+    }
+
+    bool saw_lf = false;
+    bool saw_crlf = false;
+    size_t offset = 0;
+    while (offset < length) {
+        uint32_t codepoint = 0;
+        size_t byte_len = 0;
+        if (!retro_utf8_decode(data, length, offset,
+                               &codepoint, &byte_len)) {
+            return false;
+        }
+
+        if (codepoint == 0 || codepoint == 27 ||
+            (codepoint < 32 && codepoint != '\t' &&
+             codepoint != '\n' && codepoint != '\r') ||
+            (codepoint >= 0x7Fu && codepoint < 0xA0u)) {
+            return false;
+        }
+
+        if (codepoint == '\r') {
+            if (offset + 1 >= length || data[offset + 1] != '\n') {
+                return false;
+            }
+            saw_crlf = true;
+        } else if (codepoint == '\n') {
+            if (offset == 0 || data[offset - 1] != '\r') saw_lf = true;
+        }
+        offset += byte_len;
+    }
+    return !(saw_lf && saw_crlf);
+}
+
 RetroFsError retro_fs_read_text(const RetroFsPath *p, char **out, size_t *len,
                                  RetroFsVersion *v) {
     int fd;
@@ -210,26 +248,7 @@ RetroFsError retro_fs_read_text(const RetroFsPath *p, char **out, size_t *len,
     }
     close(fd);
     buf[got] = 0;
-    bool saw_lf = false;
-    bool saw_crlf = false;
-    for (size_t i = 0; i < got; ++i) {
-        unsigned char c = (unsigned char)buf[i];
-        if (c == 0 || c == 27 ||
-            (c < 32 && c != '\t' && c != '\n' && c != '\r') || c >= 127) {
-            free(buf);
-            return RETRO_FS_INVALID_TEXT;
-        }
-        if (c == '\r') {
-            if (i + 1 >= got || buf[i + 1] != '\n') {
-                free(buf);
-                return RETRO_FS_INVALID_TEXT;
-            }
-            saw_crlf = true;
-        } else if (c == '\n') {
-            if (i == 0 || buf[i - 1] != '\r') saw_lf = true;
-        }
-    }
-    if (saw_lf && saw_crlf) {
+    if (!valid_text_content(buf, got)) {
         free(buf);
         return RETRO_FS_INVALID_TEXT;
     }
@@ -245,6 +264,7 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *p, const char *data, size_
     struct stat old = {0};
     if (!p || !p->value || (!data && n)) return RETRO_FS_INVALID_ARGUMENT;
     if (n > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;
+    if (!valid_text_content(data, n)) return RETRO_FS_INVALID_TEXT;
     bool exists = lstat(p->value, &old) == 0;
     if (!exists && errno != ENOENT) return map_errno(errno);
     if (exists && (!S_ISREG(old.st_mode) || S_ISLNK(old.st_mode))) {

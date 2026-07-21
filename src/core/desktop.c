@@ -173,7 +173,7 @@ static void desktop_launcher_execute(Desktop *desktop, LauncherAction action) {
         desktop_launcher_close(desktop);
         WindowId active = wm_active_window(desktop->wm);
         if (active != WINDOW_ID_INVALID && active != desktop->shell_window_id) {
-            wm_close_window(desktop->wm, active);
+            (void)desktop_request_app_close(desktop, active);
         }
         desktop_request_redraw(desktop);
         return;
@@ -285,7 +285,7 @@ static void shell_draw(RetroWindow *window, DrawList *draw_list, void *user_data
     draw_list_text(draw_list, 1, 2, "RetroDesk Foundation Runtime", accent);
     draw_list_text(
         draw_list, 2, 2,
-        "F1/F2 launcher | F6 focus | F9 move/resize | Ctrl+W close | Ctrl+Q quit",
+        "F1/F10 launcher | F6 focus | F9 move/resize | Ctrl+W close | Ctrl+Q quit",
         text);
 
     snprintf(line, sizeof(line), "Window: %dx%d @ %d,%d", w, h, x, y);
@@ -742,7 +742,7 @@ static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
             desktop->running = false;
             return true;
         }
-        if (key->key_code == RETRO_KEY_F2) {
+        if (key->key_code == RETRO_KEY_F10) {
             desktop_launcher_close(desktop);
             return true;
         }
@@ -779,12 +779,8 @@ static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
         return true;
     }
 
-    if (key->key_code == RETRO_KEY_F2) {
-        desktop_launcher_open(desktop);
-        return true;
-    }
-
-    if (key->key_code == RETRO_KEY_F1) {
+    if (key->key_code == RETRO_KEY_F1 ||
+        key->key_code == RETRO_KEY_F10) {
         desktop_launcher_open(desktop);
         return true;
     }
@@ -814,6 +810,43 @@ static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
     return false;
 }
 
+static bool desktop_dispatch_event(Desktop *desktop,
+                                   const RetroEvent *event) {
+    if (!desktop || !event) return false;
+
+    bool consumed = false;
+    if (event->type == RETRO_EVENT_KEY) {
+        consumed = desktop_handle_key_command(desktop, &event->data.key);
+    } else if (event->type == RETRO_EVENT_MOUSE) {
+        consumed = desktop_handle_taskbar_mouse(desktop, &event->data.mouse);
+    }
+    if (!consumed) {
+        (void)wm_handle_event(desktop->wm, event);
+    }
+    desktop_cleanup_apps(desktop);
+    desktop_request_redraw(desktop);
+    return true;
+}
+
+bool desktop_dispatch_event_for_test(Desktop *desktop,
+                                     const RetroEvent *event) {
+    return desktop_dispatch_event(desktop, event);
+}
+
+RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
+                                                const char *app_id) {
+    if (!desktop || !app_id) return NULL;
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        RetroAppInstance *instance = desktop->apps[i].app;
+        if (instance && instance->descriptor &&
+            instance->descriptor->app_id &&
+            strcmp(instance->descriptor->app_id, app_id) == 0) {
+            return instance;
+        }
+    }
+    return NULL;
+}
+
 int desktop_run(Desktop *desktop) {
     if (!desktop) return EXIT_FAILURE;
 
@@ -830,21 +863,13 @@ int desktop_run(Desktop *desktop) {
             desktop->platform, &event, desktop->config.input_timeout_ms);
 
         if (poll_result == RETRO_POLL_EVENT) {
-            bool consumed = false;
-            if (event.type == RETRO_EVENT_KEY) {
-                consumed = desktop_handle_key_command(desktop, &event.data.key);
-            } else if (event.type == RETRO_EVENT_MOUSE) {
-                consumed = desktop_handle_taskbar_mouse(
-                    desktop, &event.data.mouse);
-            }
-            if (!consumed) {
-                wm_handle_event(desktop->wm, &event);
-            }
-            desktop_cleanup_apps(desktop);
-            desktop_request_redraw(desktop);
-        } else if (poll_result == RETRO_POLL_CLOSED || poll_result == RETRO_POLL_ERROR) {
+            (void)desktop_dispatch_event(desktop, &event);
+        } else if (poll_result == RETRO_POLL_CLOSED ||
+                   poll_result == RETRO_POLL_ERROR) {
             desktop->running = false;
-            return poll_result == RETRO_POLL_CLOSED ? EXIT_SUCCESS : EXIT_FAILURE;
+            return poll_result == RETRO_POLL_CLOSED
+                       ? EXIT_SUCCESS
+                       : EXIT_FAILURE;
         }
 
         desktop_update_status(desktop);

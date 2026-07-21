@@ -624,6 +624,108 @@ static void test_notepad_shift_selection_replacement(void) {
     instance.descriptor->destroy(&instance);
 }
 
+static Desktop *create_test_desktop(PlatformBackend **out_platform) {
+    PlatformBackend *platform = platform_stub_new(true);
+    TEST_REQUIRE(platform != NULL);
+    DesktopConfig cfg = {
+        .platform = platform,
+        .input_timeout_ms = 20,
+        .bench_mode = false,
+        .render_backend = RENDER_BACKEND_CURSES,
+        .theme_kind = RETRO_THEME_XP,
+    };
+    Desktop *desktop = desktop_create(&cfg);
+    TEST_REQUIRE(desktop != NULL);
+    if (out_platform) *out_platform = platform;
+    return desktop;
+}
+
+static void destroy_test_desktop(Desktop *desktop,
+                                 PlatformBackend *platform) {
+    desktop_shutdown(desktop);
+    platform_destroy(platform);
+}
+
+static int g_key_sink_f2_count;
+
+static bool key_sink_create(RetroAppInstance *instance,
+                            const RetroAppContext *ctx) {
+    TEST_REQUIRE(instance != NULL);
+    TEST_REQUIRE(ctx != NULL);
+    instance->state = &g_key_sink_f2_count;
+    return true;
+}
+
+static void key_sink_event(RetroAppInstance *instance,
+                           const RetroEvent *event) {
+    TEST_REQUIRE(instance != NULL);
+    if (event && event->type == RETRO_EVENT_KEY &&
+        event->data.key.key_code == RETRO_KEY_F2) {
+        g_key_sink_f2_count++;
+    }
+}
+
+static void key_sink_destroy(RetroAppInstance *instance) {
+    TEST_REQUIRE(instance != NULL);
+    instance->state = NULL;
+}
+
+static const RetroAppDescriptor k_key_sink_descriptor = {
+    .app_id = "test-key-sink",
+    .display_name = "Key Sink",
+    .required_capabilities = PLATFORM_CAP_KEYBOARD_BASIC,
+    .default_height = 6,
+    .default_width = 24,
+    .default_y = 2,
+    .default_x = 4,
+    .window_flags = WINDOW_FLAG_APP_OWNED,
+    .create = key_sink_create,
+    .on_event = key_sink_event,
+    .destroy = key_sink_destroy,
+};
+
+static void test_desktop_f2_reaches_focused_app(void) {
+    PlatformBackend *platform = NULL;
+    Desktop *desktop = create_test_desktop(&platform);
+    TEST_REQUIRE(desktop_register_app_for_test(
+        desktop, &k_key_sink_descriptor));
+    g_key_sink_f2_count = 0;
+    RetroAppInstance *sink = app_launch(desktop, "test-key-sink");
+    TEST_REQUIRE(sink != NULL);
+    TEST_REQUIRE(desktop_active_window(desktop) == sink->ctx.window_id);
+
+    RetroEvent f2 = key_event(RETRO_KEY_F2, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &f2));
+    TEST_REQUIRE(g_key_sink_f2_count == 1);
+    TEST_REQUIRE(desktop_active_window(desktop) == sink->ctx.window_id);
+    destroy_test_desktop(desktop, platform);
+}
+
+static void test_launcher_close_respects_dirty_notepad(void) {
+    PlatformBackend *platform = NULL;
+    Desktop *desktop = create_test_desktop(&platform);
+    RetroAppInstance *notepad = app_launch(desktop, "notepad");
+    TEST_REQUIRE(notepad != NULL);
+    type_notepad_char(notepad, 'x');
+    TEST_REQUIRE(notepad_dirty_for_test(notepad));
+    size_t app_count = desktop_app_count(desktop);
+
+    RetroEvent launcher = key_event(RETRO_KEY_F10, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &launcher));
+    for (int i = 0; i < 3; ++i) {
+        RetroEvent down = key_event('j', 'j');
+        TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &down));
+    }
+    RetroEvent enter = key_event(RETRO_KEY_CR, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &enter));
+
+    TEST_REQUIRE(desktop_app_count(desktop) == app_count);
+    TEST_REQUIRE(desktop_app_instance_for_test(desktop, "notepad") == notepad);
+    TEST_REQUIRE(notepad_close_prompt_for_test(notepad));
+    TEST_REQUIRE(notepad_dirty_for_test(notepad));
+    destroy_test_desktop(desktop, platform);
+}
+
 #if !defined(_WIN32)
 static void create_fixture_file(const char *directory, const char *name) {
     char path[512];
@@ -912,6 +1014,8 @@ int main(void) {
     test_notepad_utf8_find();
     test_notepad_word_wrap_navigation();
     test_notepad_shift_selection_replacement();
+    test_desktop_f2_reaches_focused_app();
+    test_launcher_close_respects_dirty_notepad();
 #if !defined(_WIN32)
     test_notepad_saved_baseline_tracks_undo();
     test_notepad_save_before_close();

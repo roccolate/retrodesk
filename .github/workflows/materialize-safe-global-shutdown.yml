@@ -1,0 +1,60 @@
+name: Materialize safe global shutdown
+
+on:
+  pull_request:
+    branches: [core/harden-event-close-routing]
+    paths:
+      - tools/materialize_safe_global_shutdown.py
+      - .github/workflows/materialize-safe-global-shutdown.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'core/safe-global-shutdown'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libncurses-dev python3
+
+      - name: Apply safe shutdown slice
+        run: python3 tools/materialize_safe_global_shutdown.py
+
+      - name: Guard generated tree
+        run: |
+          git diff --check
+          python3 scripts/check_test_oracles.py
+          python3 scripts/check_djgpp_sources.py
+          ! grep -R "desktop->running = false" -n src/core/desktop.c | grep CTRL_Q
+
+      - name: Configure strict Debug build
+        run: |
+          cmake -S . -B build/safe-shutdown \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_TESTS=ON \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DENABLE_WERROR=ON
+
+      - name: Build and test
+        run: |
+          cmake --build build/safe-shutdown --parallel
+          ctest --test-dir build/safe-shutdown --output-on-failure
+
+      - name: Publish verified source tree
+        run: |
+          rm -f tools/materialize_safe_global_shutdown.py
+          rm -f .github/workflows/materialize-safe-global-shutdown.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "core: coordinate safe global shutdown"
+          git push origin HEAD:${{ github.head_ref }}

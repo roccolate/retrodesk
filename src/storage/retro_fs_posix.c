@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include "storage/retro_fs.h"
 
@@ -12,6 +13,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#if defined(__linux__)
+#include <sys/syscall.h>
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE 1
+#endif
+#endif
+
 #include "core/utf8.h"
 
 #define RETRO_FS_MAX_TEXT (1024u * 1024u)
@@ -20,6 +28,9 @@ static RetroFsError map_errno(int e) {
     if (e == ENOENT || e == ENOTDIR) return RETRO_FS_NOT_FOUND;
     if (e == EACCES || e == EPERM) return RETRO_FS_PERMISSION;
     if (e == EEXIST || e == ENOTEMPTY) return RETRO_FS_CONFLICT;
+#ifdef ELOOP
+    if (e == ELOOP) return RETRO_FS_UNSUPPORTED;
+#endif
     if (e == ENOMEM) return RETRO_FS_OOM;
     return RETRO_FS_IO;
 }
@@ -43,6 +54,7 @@ static int64_t modified_time_ns(const struct stat *s) {
 
 static void fill_version(const struct stat *s, RetroFsVersion *v) {
     if (!s || !v) return;
+    *v = (RetroFsVersion){0};
     v->valid = true;
     v->kind = kind_from_mode(s->st_mode);
     v->volume_id = (uint64_t)s->st_dev;
@@ -58,6 +70,11 @@ static bool same_version(const RetroFsVersion *a, const RetroFsVersion *b) {
            a->file_id == b->file_id &&
            a->size == b->size &&
            a->modified_ns == b->modified_ns;
+}
+
+static bool same_stat_identity(const struct stat *a, const struct stat *b) {
+    return a && b && a->st_dev == b->st_dev && a->st_ino == b->st_ino &&
+           kind_from_mode(a->st_mode) == kind_from_mode(b->st_mode);
 }
 
 RetroFsError retro_fs_path_init(RetroFsPath *p, const char *v) {
@@ -98,11 +115,12 @@ RetroFsError retro_fs_path_parent(const RetroFsPath *p, RetroFsPath *out) {
 
 RetroFsError retro_fs_path_join(const RetroFsPath *b, const char *name,
                                  RetroFsPath *o) {
-    if (!b || !b->value || !name || !o || strchr(name, '/')) {
+    if (!b || !b->value || !name || !name[0] || !o || strchr(name, '/')) {
         return RETRO_FS_INVALID_ARGUMENT;
     }
     size_t n = strlen(b->value);
     size_t m = strlen(name);
+    if (n > SIZE_MAX - m - 2) return RETRO_FS_TOO_LARGE;
     char *s = malloc(n + m + 2);
     if (!s) return RETRO_FS_OOM;
     memcpy(s, b->value, n);
@@ -115,7 +133,7 @@ RetroFsError retro_fs_path_join(const RetroFsPath *b, const char *name,
 RetroFsError retro_fs_stat(const RetroFsPath *p, RetroFsVersion *v) {
     struct stat s;
     if (!p || !p->value || !v) return RETRO_FS_INVALID_ARGUMENT;
-    if (stat(p->value, &s) < 0) return map_errno(errno);
+    if (lstat(p->value, &s) < 0) return map_errno(errno);
     fill_version(&s, v);
     return RETRO_FS_OK;
 }
@@ -139,6 +157,28 @@ static void free_entries(RetroFsEntry *entries, size_t count) {
     free(entries);
 }
 
+static bool reserve_entries(RetroFsEntry **entries, size_t *capacity,
+                            size_t want) {
+    if (!entries || !capacity) return false;
+    if (want <= *capacity) return true;
+    if (want > SIZE_MAX / sizeof(**entries)) return false;
+
+    size_t next = *capacity ? *capacity : 64;
+    while (next < want) {
+        if (next > SIZE_MAX / 2) {
+            next = want;
+            break;
+        }
+        next *= 2;
+    }
+
+    RetroFsEntry *grown = realloc(*entries, next * sizeof(*grown));
+    if (!grown) return false;
+    *entries = grown;
+    *capacity = next;
+    return true;
+}
+
 RetroFsError retro_fs_list(const RetroFsPath *p, size_t max_entries,
                             RetroFsListFn cb, void *u) {
     if (!p || !p->value || !cb || max_entries == 0) {
@@ -148,8 +188,10 @@ RetroFsError retro_fs_list(const RetroFsPath *p, size_t max_entries,
     if (!d) return map_errno(errno);
     RetroFsEntry *entries = NULL;
     size_t count = 0;
+    size_t capacity = 0;
     RetroFsError result = RETRO_FS_OK;
     struct dirent *de;
+    errno = 0;
     while ((de = readdir(d)) != NULL) {
         if (!strcmp(de->d_name, ".")) continue;
         if (count == max_entries) {
@@ -175,16 +217,16 @@ RetroFsError retro_fs_list(const RetroFsPath *p, size_t max_entries,
         fill_version(&s, &entry.version);
         entry.kind = entry.version.kind;
         entry.size = entry.version.size;
-        RetroFsEntry *next = realloc(entries, (count + 1) * sizeof(*next));
-        if (!next) {
+        if (!reserve_entries(&entries, &capacity, count + 1)) {
             free(entry.name);
             result = RETRO_FS_OOM;
             break;
         }
-        entries = next;
         entries[count++] = entry;
+        errno = 0;
     }
-    closedir(d);
+    if (result == RETRO_FS_OK && errno != 0) result = map_errno(errno);
+    if (closedir(d) < 0 && result == RETRO_FS_OK) result = map_errno(errno);
     if (result != RETRO_FS_OK) {
         free_entries(entries, count);
         return result;
@@ -235,123 +277,240 @@ static bool valid_text_content(const char *data, size_t length) {
 
 RetroFsError retro_fs_read_text(const RetroFsPath *p, char **out, size_t *len,
                                  RetroFsVersion *v) {
-    int fd;
-    struct stat s;
-    size_t got = 0;
-    char *buf;
     if (!p || !p->value || !out || !len) return RETRO_FS_INVALID_ARGUMENT;
-    fd = open(p->value, O_RDONLY);
+    *out = NULL;
+    *len = 0;
+
+    struct stat before;
+    if (lstat(p->value, &before) < 0) return map_errno(errno);
+    if (!S_ISREG(before.st_mode) || S_ISLNK(before.st_mode)) {
+        return RETRO_FS_UNSUPPORTED;
+    }
+
+    int flags = O_RDONLY;
+#ifdef O_NOFOLLOW
+    flags |= O_NOFOLLOW;
+#endif
+    int fd = open(p->value, flags);
     if (fd < 0) return map_errno(errno);
-    if (fstat(fd, &s) < 0) {
+
+    struct stat opened;
+    if (fstat(fd, &opened) < 0) {
         int e = errno;
         close(fd);
         return map_errno(e);
     }
-    if (!S_ISREG(s.st_mode)) {
+    if (!S_ISREG(opened.st_mode) || !same_stat_identity(&before, &opened)) {
         close(fd);
-        return RETRO_FS_UNSUPPORTED;
+        return RETRO_FS_CONFLICT;
     }
-    if ((uintmax_t)s.st_size > RETRO_FS_MAX_TEXT) {
+    if (opened.st_size < 0 || (uintmax_t)opened.st_size > RETRO_FS_MAX_TEXT) {
         close(fd);
         return RETRO_FS_TOO_LARGE;
     }
-    buf = malloc((size_t)s.st_size + 1);
+
+    size_t expected = (size_t)opened.st_size;
+    char *buf = malloc(expected + 1);
     if (!buf) {
         close(fd);
         return RETRO_FS_OOM;
     }
-    while (got < (size_t)s.st_size) {
-        ssize_t n = read(fd, buf + got, (size_t)s.st_size - got);
-        if (n <= 0) {
+
+    size_t got = 0;
+    while (got < expected) {
+        ssize_t amount = read(fd, buf + got, expected - got);
+        if (amount < 0 && errno == EINTR) continue;
+        if (amount <= 0) {
             free(buf);
             close(fd);
             return RETRO_FS_IO;
         }
-        got += (size_t)n;
+        got += (size_t)amount;
     }
-    close(fd);
-    buf[got] = 0;
+    if (close(fd) < 0) {
+        free(buf);
+        return RETRO_FS_IO;
+    }
+
+    buf[got] = '\0';
     if (!valid_text_content(buf, got)) {
         free(buf);
         return RETRO_FS_INVALID_TEXT;
     }
     *out = buf;
     *len = got;
-    if (v) fill_version(&s, v);
+    if (v) fill_version(&opened, v);
     return RETRO_FS_OK;
+}
+
+static void cleanup_temporary(const char *path, int fd) {
+    if (fd >= 0) (void)close(fd);
+    if (path) (void)unlink(path);
+}
+
+static RetroFsError current_version(const char *path, bool *exists,
+                                    struct stat *metadata,
+                                    RetroFsVersion *version) {
+    if (!path || !exists || !metadata) return RETRO_FS_INVALID_ARGUMENT;
+    errno = 0;
+    *exists = lstat(path, metadata) == 0;
+    if (!*exists) {
+        if (errno == ENOENT) {
+            if (version) *version = (RetroFsVersion){0};
+            return RETRO_FS_OK;
+        }
+        return map_errno(errno);
+    }
+    if (!S_ISREG(metadata->st_mode) || S_ISLNK(metadata->st_mode)) {
+        return RETRO_FS_UNSUPPORTED;
+    }
+    if (version) fill_version(metadata, version);
+    return RETRO_FS_OK;
+}
+
+static int rename_without_replace(const char *source, const char *destination) {
+#if defined(__linux__) && defined(SYS_renameat2)
+    return (int)syscall(SYS_renameat2, AT_FDCWD, source,
+                        AT_FDCWD, destination, RENAME_NOREPLACE);
+#else
+    (void)source;
+    (void)destination;
+    errno = ENOSYS;
+    return -1;
+#endif
 }
 
 RetroFsError retro_fs_write_atomic(const RetroFsPath *p, const char *data, size_t n,
                                     const RetroFsVersion *exp,
                                     RetroFsVersion *written) {
-    struct stat old = {0};
     if (!p || !p->value || (!data && n)) return RETRO_FS_INVALID_ARGUMENT;
     if (n > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;
     if (!valid_text_content(data, n)) return RETRO_FS_INVALID_TEXT;
-    bool exists = lstat(p->value, &old) == 0;
-    if (!exists && errno != ENOENT) return map_errno(errno);
-    if (exists && (!S_ISREG(old.st_mode) || S_ISLNK(old.st_mode))) {
-        return RETRO_FS_UNSUPPORTED;
+
+    bool existed = false;
+    struct stat original = {0};
+    RetroFsVersion original_version = {0};
+    RetroFsError status = current_version(
+        p->value, &existed, &original, &original_version);
+    if (status != RETRO_FS_OK) return status;
+    if (existed && !exp) return RETRO_FS_CONFLICT;
+    if (exp && (!existed || !same_version(exp, &original_version))) {
+        return RETRO_FS_CONFLICT;
     }
-    if (exp) {
-        RetroFsVersion current = {0};
-        if (exists) fill_version(&old, &current);
-        if (!exists || !same_version(exp, &current)) {
-            return RETRO_FS_CONFLICT;
-        }
+
+    RetroFsPath parent = {0};
+    status = retro_fs_path_parent(p, &parent);
+    if (status != RETRO_FS_OK) return status;
+    size_t parent_length = strlen(parent.value);
+    if (parent_length > SIZE_MAX - 32) {
+        retro_fs_path_destroy(&parent);
+        return RETRO_FS_TOO_LARGE;
     }
-    RetroFsPath par = {0};
-    RetroFsError er = retro_fs_path_parent(p, &par);
-    if (er) return er;
-    size_t m = strlen(par.value) + 32;
-    char *tmp = malloc(m);
-    if (!tmp) {
-        retro_fs_path_destroy(&par);
+
+    size_t temporary_size = parent_length + 32;
+    char *temporary = malloc(temporary_size);
+    if (!temporary) {
+        retro_fs_path_destroy(&parent);
         return RETRO_FS_OOM;
     }
-    snprintf(tmp, m, "%s/.retro-tmp-XXXXXX", par.value);
-    int fd = mkstemp(tmp);
+    snprintf(temporary, temporary_size,
+             "%s/.retro-tmp-XXXXXX", parent.value);
+
+    int fd = mkstemp(temporary);
     if (fd < 0) {
-        free(tmp);
-        retro_fs_path_destroy(&par);
-        return map_errno(errno);
-    }
-    fchmod(fd, exists ? old.st_mode & 07777 : 0666);
-    size_t w = 0;
-    while (w < n) {
-        ssize_t x = write(fd, data + w, n - w);
-        if (x <= 0) {
-            close(fd);
-            unlink(tmp);
-            free(tmp);
-            retro_fs_path_destroy(&par);
-            return RETRO_FS_IO;
-        }
-        w += (size_t)x;
-    }
-    if (fsync(fd) < 0) {
-        close(fd);
-        unlink(tmp);
-        free(tmp);
-        retro_fs_path_destroy(&par);
-        return RETRO_FS_IO;
-    }
-    close(fd);
-    if (rename(tmp, p->value) < 0) {
         int e = errno;
-        unlink(tmp);
-        free(tmp);
-        retro_fs_path_destroy(&par);
+        free(temporary);
+        retro_fs_path_destroy(&parent);
         return map_errno(e);
     }
-    int dfd = open(par.value, O_RDONLY | O_DIRECTORY);
-    if (dfd >= 0) {
-        fsync(dfd);
-        close(dfd);
+
+    mode_t mode = existed ? original.st_mode & 07777 : 0666;
+    if (fchmod(fd, mode) < 0) {
+        cleanup_temporary(temporary, fd);
+        free(temporary);
+        retro_fs_path_destroy(&parent);
+        return map_errno(errno);
     }
-    free(tmp);
-    retro_fs_path_destroy(&par);
-    if (written) retro_fs_stat(p, written);
+
+    size_t offset = 0;
+    while (offset < n) {
+        ssize_t amount = write(fd, data + offset, n - offset);
+        if (amount < 0 && errno == EINTR) continue;
+        if (amount <= 0) {
+            cleanup_temporary(temporary, fd);
+            free(temporary);
+            retro_fs_path_destroy(&parent);
+            return RETRO_FS_IO;
+        }
+        offset += (size_t)amount;
+    }
+    if (fsync(fd) < 0) {
+        cleanup_temporary(temporary, fd);
+        free(temporary);
+        retro_fs_path_destroy(&parent);
+        return RETRO_FS_IO;
+    }
+    if (close(fd) < 0) {
+        fd = -1;
+        (void)unlink(temporary);
+        free(temporary);
+        retro_fs_path_destroy(&parent);
+        return RETRO_FS_IO;
+    }
+    fd = -1;
+
+    bool still_exists = false;
+    struct stat current = {0};
+    RetroFsVersion current_token = {0};
+    status = current_version(
+        p->value, &still_exists, &current, &current_token);
+    if (status != RETRO_FS_OK || still_exists != existed ||
+        (existed && !same_version(&original_version, &current_token))) {
+        (void)unlink(temporary);
+        free(temporary);
+        retro_fs_path_destroy(&parent);
+        return status == RETRO_FS_OK ? RETRO_FS_CONFLICT : status;
+    }
+
+    int rename_result;
+    if (existed) {
+        rename_result = rename(temporary, p->value);
+    } else {
+        rename_result = rename_without_replace(temporary, p->value);
+        if (rename_result < 0 && (errno == ENOSYS || errno == EINVAL)) {
+            struct stat destination;
+            if (lstat(p->value, &destination) == 0) {
+                errno = EEXIST;
+                rename_result = -1;
+            } else if (errno == ENOENT) {
+                rename_result = rename(temporary, p->value);
+            }
+        }
+    }
+    if (rename_result < 0) {
+        int e = errno;
+        (void)unlink(temporary);
+        free(temporary);
+        retro_fs_path_destroy(&parent);
+        return map_errno(e);
+    }
+
+    int directory_flags = O_RDONLY;
+#ifdef O_DIRECTORY
+    directory_flags |= O_DIRECTORY;
+#endif
+    int directory_fd = open(parent.value, directory_flags);
+    if (directory_fd >= 0) {
+        (void)fsync(directory_fd);
+        (void)close(directory_fd);
+    }
+
+    free(temporary);
+    retro_fs_path_destroy(&parent);
+    if (written) {
+        RetroFsError stat_result = retro_fs_stat(p, written);
+        if (stat_result != RETRO_FS_OK) *written = (RetroFsVersion){0};
+    }
     return RETRO_FS_OK;
 }
 
@@ -359,9 +518,9 @@ RetroFsError retro_fs_create_file(const RetroFsPath *path) {
     if (!path || !path->value || !path->value[0]) return RETRO_FS_INVALID_ARGUMENT;
     int fd = open(path->value, O_WRONLY | O_CREAT | O_EXCL, 0666);
     if (fd < 0) return map_errno(errno);
-    if (close(fd) < 0) {
+    if (fsync(fd) < 0 || close(fd) < 0) {
         int e = errno;
-        unlink(path->value);
+        (void)unlink(path->value);
         return map_errno(e);
     }
     return RETRO_FS_OK;
@@ -380,13 +539,29 @@ RetroFsError retro_fs_rename(const RetroFsPath *source,
         return RETRO_FS_INVALID_ARGUMENT;
     }
 
+    if (rename_without_replace(source->value, destination->value) == 0) {
+        return RETRO_FS_OK;
+    }
+    int native_error = errno;
+    if (native_error != ENOSYS && native_error != EINVAL) {
+        return map_errno(native_error);
+    }
+
+    struct stat source_metadata;
+    if (lstat(source->value, &source_metadata) < 0) return map_errno(errno);
+    if (S_ISREG(source_metadata.st_mode)) {
+        if (link(source->value, destination->value) < 0) return map_errno(errno);
+        if (unlink(source->value) < 0) {
+            int e = errno;
+            (void)unlink(destination->value);
+            return map_errno(e);
+        }
+        return RETRO_FS_OK;
+    }
+
     struct stat existing;
     if (lstat(destination->value, &existing) == 0) return RETRO_FS_CONFLICT;
     if (errno != ENOENT) return map_errno(errno);
-
-    /* POSIX rename can replace a destination. The lstat guard keeps the public
-       contract non-destructive; a future adapter may use a native no-replace
-       primitive where one is available. */
     if (rename(source->value, destination->value) < 0) return map_errno(errno);
     return RETRO_FS_OK;
 }

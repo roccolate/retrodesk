@@ -1,0 +1,68 @@
+name: DOS
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+env:
+  DJGPP_RELEASE: v3.4
+  DJGPP_ARCHIVE: djgpp-linux64-gcc1220.tar.bz2
+  PDCURSES_COMMIT: 6c1f95c4fa9f9f105879c2d99dd72a5bf335c046
+
+jobs:
+  djgpp-dosbox:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout RetroDesk
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install DOSBox-X runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dosbox-x xvfb
+
+      - name: Install pinned DJGPP toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/${DJGPP_ARCHIVE}"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/$DJGPP_ARCHIVE" "$url"
+          sha256sum "$RUNNER_TEMP/$DJGPP_ARCHIVE"
+          tar -xjf "$RUNNER_TEMP/$DJGPP_ARCHIVE" -C "$GITHUB_WORKSPACE"
+          test -x "$GITHUB_WORKSPACE/djgpp/bin/i586-pc-msdosdjgpp-gcc"
+          echo "DJGPP_ROOT=$GITHUB_WORKSPACE/djgpp" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/djgpp/bin" >> "$GITHUB_PATH"
+
+      - name: Checkout pinned PDCurses
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init --quiet "$RUNNER_TEMP/PDCurses"
+          git -C "$RUNNER_TEMP/PDCurses" remote add origin https://github.com/wmcbrine/PDCurses.git
+          git -C "$RUNNER_TEMP/PDCurses" fetch --quiet --depth=1 origin "$PDCURSES_COMMIT"
+          git -C "$RUNNER_TEMP/PDCurses" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/PDCurses" rev-parse HEAD)" = "$PDCURSES_COMMIT"
+          echo "PDCURSES_DIR=$RUNNER_TEMP/PDCurses" >> "$GITHUB_ENV"
+
+      - name: Build DJGPP executable
+        shell: bash
+        run: |
+          chmod +x scripts/build_djgpp_ci.sh scripts/run_dosbox_smoke.sh
+          scripts/build_djgpp_ci.sh
+
+      - name: Smoke test in DOSBox-X
+        shell: bash
+        run: scripts/run_dosbox_smoke.sh build/dos
+
+      - name: Upload DOS distribution
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: retrodesk-dos-djgpp
+          path: build/dos
+          if-no-files-found: error

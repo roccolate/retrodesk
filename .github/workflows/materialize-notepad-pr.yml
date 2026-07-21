@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   materialize:
@@ -24,9 +26,11 @@ jobs:
           sudo apt-get install -y libncurses-dev
 
       - name: Apply native Notepad UX slice
+        id: apply
         shell: bash
         run: |
-          python3 - <<'PY'
+          set +e
+          python3 - <<'PY' > /tmp/notepad-materializer.log 2>&1
           from pathlib import Path
           import textwrap
 
@@ -37,8 +41,29 @@ jobs:
           payload = source.split(start, 1)[1].split(end, 1)[0]
           exec(compile(textwrap.dedent(payload), str(workflow), 'exec'), {})
           PY
+          status=$?
+          cat /tmp/notepad-materializer.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Report materializer failure
+        if: steps.apply.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo 'The native Notepad materializer stopped before compilation:'
+            echo
+            echo '```text'
+            cat /tmp/notepad-materializer.log
+            echo '```'
+          } > /tmp/notepad-materializer-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body-file /tmp/notepad-materializer-comment.md
+          exit 1
 
       - name: Validate strict Linux gates
+        if: steps.apply.outputs.status == '0'
         shell: bash
         run: |
           cmake -S . -B build-materialize \
@@ -51,6 +76,7 @@ jobs:
           python3 scripts/check_djgpp_sources.py
 
       - name: Publish one focused commit
+        if: steps.apply.outputs.status == '0'
         shell: bash
         run: |
           rm -f .github/workflows/materialize-notepad-native-ux.yml

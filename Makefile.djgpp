@@ -20,7 +20,7 @@ CC ?= gcc
 RM ?= rm -f
 
 CPPFLAGS ?=
-CPPFLAGS += -D__DJGPP__ -DHAVE_PDCURSES -DPDC_NCMOUSE
+CPPFLAGS += -DHAVE_PDCURSES -DPDC_NCMOUSE
 CPPFLAGS += -I./src -I$(PDC_INCLUDE)
 CFLAGS ?= -O2 -std=gnu11 -Wall -Wextra -Wpedantic
 LDFLAGS ?= -s

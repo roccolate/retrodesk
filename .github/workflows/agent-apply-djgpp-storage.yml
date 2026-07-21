@@ -36,8 +36,8 @@ jobs:
           cmake = cmake_path.read_text()
           cmake = replace_once(
               cmake,
-              "    src/core/utf8.c\n    src/platform/platform.c\n",
-              "    src/core/utf8.c\n    src/storage/retro_fs_djgpp.c\n    src/platform/platform.c\n",
+              "set(RETRODESK_DJGPP_SOURCES\n    src/main.c\n    src/core/cli.c\n    src/core/clipboard.c\n    src/core/desktop.c\n    src/core/key_chord.c\n    src/core/utf8.c\n    src/platform/platform.c\n",
+              "set(RETRODESK_DJGPP_SOURCES\n    src/main.c\n    src/core/cli.c\n    src/core/clipboard.c\n    src/core/desktop.c\n    src/core/key_chord.c\n    src/core/utf8.c\n    src/storage/retro_fs_djgpp.c\n    src/platform/platform.c\n",
               "CMake DJGPP source",
           )
           cmake = replace_once(

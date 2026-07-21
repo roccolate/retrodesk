@@ -27,19 +27,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake gcc libncurses-dev python3
 
-      - name: Apply and validate storage port
+      - name: Apply storage port
+        run: python3 scripts/apply_utf8_storage_port.py
+
+      - name: Run source guards
         run: |
-          python3 scripts/apply_utf8_storage_port.py
           git diff --check
           python3 scripts/check_test_oracles.py
           python3 scripts/check_djgpp_sources.py
+
+      - name: Configure
+        run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug \
             -DENABLE_TESTS=ON \
             -DENABLE_STRICT_WARNINGS=ON \
             -DENABLE_WERROR=ON
-          cmake --build build --parallel
-          ctest --test-dir build --output-on-failure
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
 
       - name: Publish verified storage port
         run: |

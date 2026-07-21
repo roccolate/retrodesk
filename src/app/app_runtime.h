@@ -21,6 +21,17 @@ typedef struct PlatformFeatures DesktopCapabilities;
 typedef struct RetroAppInstance RetroAppInstance;
 typedef struct AppRegistry AppRegistry;
 
+/* Close negotiation is separate from destruction. ALLOWED means the app has
+   authorized a close request; Desktop may still defer window destruction until
+   every app has authorized a transactional global shutdown. DEFERRED means the
+   app owns a pending user decision. CANCELLED aborts that request and causes a
+   Desktop transaction to reset every earlier authorization. */
+typedef enum RetroCloseResult {
+    RETRO_CLOSE_ALLOWED = 0,
+    RETRO_CLOSE_DEFERRED,
+    RETRO_CLOSE_CANCELLED,
+} RetroCloseResult;
+
 typedef struct RetroAppContext {
     Desktop *desktop;
     WindowId window_id;
@@ -54,6 +65,8 @@ struct RetroAppInstance {
     RetroAppContext ctx;
     void *state;
     bool close_requested;
+    bool close_pending;
+    RetroCloseResult close_result;
     char *resource_path_owned;
 };
 
@@ -62,15 +75,19 @@ void app_registry_destroy(AppRegistry *registry);
 void app_registry_reset(AppRegistry *registry);
 bool app_registry_register(AppRegistry *registry, const RetroAppDescriptor *desc);
 const RetroAppDescriptor *app_registry_find(const AppRegistry *registry,
-                                            const char *app_id);
+                                             const char *app_id);
 size_t app_registry_count(const AppRegistry *registry);
 const RetroAppDescriptor *app_registry_descriptor_at(const AppRegistry *registry,
-                                                     size_t index);
+                                                      size_t index);
 
 void app_handle_event(RetroAppInstance *app, const RetroEvent *event);
 void app_render(RetroAppInstance *app, DrawList *draw_list);
 void app_destroy(RetroAppInstance *app);
-void app_request_close(RetroAppInstance *app);
+RetroCloseResult app_request_close(RetroAppInstance *app);
+void app_resolve_close(RetroAppInstance *app, RetroCloseResult result);
+void app_reset_close_request(RetroAppInstance *app);
 bool app_is_close_requested(const RetroAppInstance *app);
+bool app_is_close_pending(const RetroAppInstance *app);
+RetroCloseResult app_close_result(const RetroAppInstance *app);
 
 #endif

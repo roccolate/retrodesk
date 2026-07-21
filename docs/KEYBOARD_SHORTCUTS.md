@@ -13,12 +13,18 @@ rather than being guessed.
 | `F6` | Focus the next window |
 | `F9` | Enter move/resize mode for the active window |
 | `Ctrl+W` | Request close of the active app window |
-| `Ctrl+Q` | Quit RetroDesk |
+| `Ctrl+Q` | Request coordinated shutdown; dirty apps may Save, Discard, or Cancel |
 
 Printable keys, ordinary `Tab`, and unclaimed function keys are left to the
 focused application. In particular, `F2` is application-local and reaches File
 Manager Rename instead of being consumed by Desktop. A dirty app may reject
 `Ctrl+W` temporarily and present its own close workflow.
+
+Global shutdown is transactional. Clean applications authorize their close but
+remain alive until every running application has also authorized. If one dirty
+application cancels, Desktop resets the complete negotiation and destroys no
+application window. Cancelling or failing a Save As that was opened by shutdown
+also cancels the global shutdown.
 
 ## Move/resize mode
 

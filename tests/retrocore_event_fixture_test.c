@@ -70,7 +70,7 @@ RetroPollResult platform_poll_event(PlatformBackend *platform, RetroEvent *out_e
                                     int timeout_ms) {
     (void)timeout_ms;
     if (!platform || !out_event) return RETRO_POLL_ERROR;
-    if (platform->next_event >= platform->event_count) return RETRO_POLL_TIMEOUT;
+    if (platform->next_event >= platform->event_count) return RETRO_POLL_CLOSED;
     *out_event = platform->events[platform->next_event++];
     return RETRO_POLL_EVENT;
 }
@@ -194,15 +194,6 @@ static bool find_event_field_int(const char *fixture, const char *event_type,
     if (field == endptr) return false;
     if (out_value) *out_value = (int)value;
     return true;
-}
-
-static RetroEvent make_quit_event(void) {
-    RetroEvent event = {0};
-    event.type = RETRO_EVENT_KEY;
-    event.data.key.key_code = RETRO_KEY_CTRL_Q;
-    event.data.key.is_printable = false;
-    event.data.key.ascii = '\0';
-    return event;
 }
 
 static RetroEvent make_focus_next_event(void) {
@@ -410,7 +401,7 @@ static void replay_window_drag_basic_if_available(void) {
     int dy;
     int local_down_x;
     int local_down_y;
-    RetroEvent events[4];
+    RetroEvent events[3];
 
     if (!fixture) {
         printf("retrocore: skipping window-drag-basic fixture; file not found at %s\n",
@@ -448,7 +439,6 @@ static void replay_window_drag_basic_if_available(void) {
     events[0] = make_pointer_down_event(local_down_x, local_down_y);
     events[1] = make_pointer_move_event(local_down_x + dx, local_down_y + dy);
     events[2] = make_pointer_up_event(local_down_x + dx, local_down_y + dy);
-    events[3] = make_quit_event();
     platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
 
     TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
@@ -473,7 +463,7 @@ static void replay_focus_next_basic_if_available(void) {
     WindowId notes_window;
     size_t app_count_before;
     size_t window_count_before;
-    RetroEvent events[2];
+    RetroEvent event;
 
     if (!fixture) {
         printf("retrocore: skipping focus-next-basic fixture; file not found at %s\n",
@@ -502,9 +492,8 @@ static void replay_focus_next_basic_if_available(void) {
     app_count_before = desktop_app_count(desktop);
     window_count_before = desktop_window_count(desktop);
 
-    events[0] = make_focus_next_event();
-    events[1] = make_quit_event();
-    platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
+    event = make_focus_next_event();
+    platform_stub_set_events(platform, &event, 1);
 
     TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
     TEST_REQUIRE(desktop_active_window(desktop) == files_window);
@@ -526,7 +515,7 @@ static void replay_close_focused_window_if_available(void) {
     WindowId files_window;
     size_t app_count_before;
     size_t window_count_before;
-    RetroEvent events[2];
+    RetroEvent event;
 
     if (!fixture) {
         printf("retrocore: skipping close-focused-window fixture; file not found at %s\n",
@@ -550,9 +539,8 @@ static void replay_close_focused_window_if_available(void) {
     TEST_REQUIRE(app_count_before > 0);
     TEST_REQUIRE(window_count_before > 0);
 
-    events[0] = make_close_focused_window_event();
-    events[1] = make_quit_event();
-    platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
+    event = make_close_focused_window_event();
+    platform_stub_set_events(platform, &event, 1);
 
     TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
     TEST_REQUIRE(desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == WINDOW_ID_INVALID);

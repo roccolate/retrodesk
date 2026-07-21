@@ -25,6 +25,10 @@ struct PlatformBackend {
     PlatformFeatures features;
     int last_mouse_y;
     int last_mouse_x;
+    bool button1_down;
+    bool button1_dragged;
+    int button1_press_y;
+    int button1_press_x;
     bool xterm_mouse_tracking_forced;
     bool uses_curses;
 #if !defined(_WIN32) && !defined(__DJGPP__)

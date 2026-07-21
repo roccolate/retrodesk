@@ -4,6 +4,7 @@
  M CMakeLists.txt
  M Makefile
  D ci-artifacts/sanitizer-apply.log
+ D ci-artifacts/sanitizer-publish.log
  M docs/RELEASE_0.1_CHECKLIST.md
  M docs/TESTING.md
  D tools/materialize_sanitizer_baseline.py
@@ -14,16 +15,18 @@
  CMakeLists.txt                                     |  16 ++
  Makefile                                           |  12 +-
  ci-artifacts/sanitizer-apply.log                   |   1 -
+ ci-artifacts/sanitizer-publish.log                 |  32 ---
  docs/RELEASE_0.1_CHECKLIST.md                      |   2 +
  docs/TESTING.md                                    |  11 +
  tools/materialize_sanitizer_baseline.py            | 259 ---------------------
  tools/repair_sanitizer_materializer.py             |  48 ----
- 9 files changed, 54 insertions(+), 441 deletions(-)
+ 10 files changed, 54 insertions(+), 473 deletions(-)
 === COMMIT ===
-[core/sanitizer-baseline ab5c4d4] core: add sanitizer and startup-smoke gates
- 9 files changed, 54 insertions(+), 441 deletions(-)
+[core/sanitizer-baseline 9dcaadd] core: add sanitizer and startup-smoke gates
+ 10 files changed, 54 insertions(+), 473 deletions(-)
  delete mode 100644 .github/workflows/materialize-sanitizer-baseline.yml
  delete mode 100644 ci-artifacts/sanitizer-apply.log
+ delete mode 100644 ci-artifacts/sanitizer-publish.log
  delete mode 100644 tools/materialize_sanitizer_baseline.py
  delete mode 100644 tools/repair_sanitizer_materializer.py
 === PUSH ===

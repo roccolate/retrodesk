@@ -50,6 +50,9 @@ struct Desktop {
     bool needs_redraw;
     bool window_mode;
     bool window_resize_mode;
+    bool shutdown_requested;
+    size_t shutdown_index;
+    WindowId shutdown_waiting_window;
     time_t last_status_tick;
     WindowId shell_window_id;
     LauncherState launcher;
@@ -123,10 +126,9 @@ static void app_window_event(RetroWindow *window, const RetroEvent *event, void 
     RetroAppInstance *app = (RetroAppInstance *)user_data;
     app_handle_event(app, event);
     if (app_is_close_requested(app)) {
-        if (!app->descriptor->can_close || app->descriptor->can_close(app)) {
+        Desktop *desktop = app->ctx.desktop;
+        if (!desktop || !desktop->shutdown_requested) {
             retro_window_request_close(window);
-        } else {
-            app->close_requested = false;
         }
     }
 }
@@ -136,9 +138,8 @@ static bool desktop_request_app_close(Desktop *desktop, WindowId window_id) {
     for (size_t i = 0; i < desktop->app_count; ++i) {
         RunningApp *running = &desktop->apps[i];
         if (running->window_id != window_id || !running->app) continue;
-        RetroAppInstance *app = running->app;
-        if (app->descriptor->can_close && !app->descriptor->can_close(app)) return false;
-        app_request_close(app);
+        RetroCloseResult result = app_request_close(running->app);
+        if (result != RETRO_CLOSE_ALLOWED) return false;
         wm_close_window(desktop->wm, window_id);
         return true;
     }
@@ -348,6 +349,7 @@ Desktop *desktop_create(const DesktopConfig *config) {
     desktop->theme = retro_theme_get(desktop->config.theme_kind);
     desktop->last_status_tick = (time_t)-1;
     desktop->launcher.window_id = WINDOW_ID_INVALID;
+    desktop->shutdown_waiting_window = WINDOW_ID_INVALID;
 
     desktop->app_registry = app_registry_create();
     if (!desktop->app_registry) goto fail;
@@ -549,22 +551,111 @@ static void desktop_cleanup_apps(Desktop *desktop) {
         bool should_close = app_is_close_requested(slot->app);
         bool window_exists = wm_window_exists(desktop->wm, slot->window_id);
 
-        if (should_close && window_exists && slot->app->descriptor->can_close &&
-            !slot->app->descriptor->can_close(slot->app)) {
-            slot->app->close_requested = false;
-            should_close = false;
-        }
-        if (should_close && window_exists) {
+        if (should_close && window_exists && !desktop->shutdown_requested) {
             wm_close_window(desktop->wm, slot->window_id);
             window_exists = false;
         }
 
-        if (!window_exists || should_close) {
+        if (!window_exists || (should_close && !desktop->shutdown_requested)) {
             desktop_remove_app_at(desktop, i);
             continue;
         }
         ++i;
     }
+}
+
+static RunningApp *desktop_find_running_app(Desktop *desktop,
+                                            WindowId window_id) {
+    if (!desktop || window_id == WINDOW_ID_INVALID) return NULL;
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        if (desktop->apps[i].window_id == window_id) return &desktop->apps[i];
+    }
+    return NULL;
+}
+
+static void desktop_reset_shutdown_requests(Desktop *desktop) {
+    if (!desktop) return;
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        app_reset_close_request(desktop->apps[i].app);
+    }
+}
+
+static void desktop_cancel_shutdown(Desktop *desktop) {
+    if (!desktop) return;
+    desktop_reset_shutdown_requests(desktop);
+    desktop->shutdown_requested = false;
+    desktop->shutdown_index = 0;
+    desktop->shutdown_waiting_window = WINDOW_ID_INVALID;
+    desktop_request_redraw(desktop);
+}
+
+static void desktop_commit_shutdown(Desktop *desktop) {
+    if (!desktop) return;
+    desktop->shutdown_requested = false;
+    desktop->shutdown_waiting_window = WINDOW_ID_INVALID;
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        if (wm_window_exists(desktop->wm, desktop->apps[i].window_id)) {
+            wm_close_window(desktop->wm, desktop->apps[i].window_id);
+        }
+    }
+    desktop_cleanup_apps(desktop);
+    desktop->shutdown_index = 0;
+    desktop->running = false;
+}
+
+static void desktop_continue_shutdown(Desktop *desktop) {
+    if (!desktop || !desktop->shutdown_requested) return;
+
+    if (desktop->shutdown_waiting_window != WINDOW_ID_INVALID) {
+        RunningApp *waiting = desktop_find_running_app(
+            desktop, desktop->shutdown_waiting_window);
+        if (!waiting || !waiting->app) {
+            desktop_cancel_shutdown(desktop);
+            return;
+        }
+        if (app_is_close_pending(waiting->app)) return;
+        if (app_close_result(waiting->app) == RETRO_CLOSE_CANCELLED) {
+            desktop_cancel_shutdown(desktop);
+            return;
+        }
+        if (!app_is_close_requested(waiting->app)) {
+            desktop_cancel_shutdown(desktop);
+            return;
+        }
+        desktop->shutdown_waiting_window = WINDOW_ID_INVALID;
+        desktop->shutdown_index++;
+    }
+
+    while (desktop->shutdown_index < desktop->app_count) {
+        RunningApp *running = &desktop->apps[desktop->shutdown_index];
+        RetroCloseResult result = app_request_close(running->app);
+        if (result == RETRO_CLOSE_ALLOWED) {
+            desktop->shutdown_index++;
+            continue;
+        }
+        if (result == RETRO_CLOSE_CANCELLED) {
+            desktop_cancel_shutdown(desktop);
+            return;
+        }
+        desktop->shutdown_waiting_window = running->window_id;
+        wm_focus_window(desktop->wm, running->window_id);
+        wm_bring_to_front(desktop->wm, running->window_id);
+        desktop_request_redraw(desktop);
+        return;
+    }
+
+    desktop_commit_shutdown(desktop);
+}
+
+static void desktop_begin_shutdown(Desktop *desktop) {
+    if (!desktop || desktop->shutdown_requested) return;
+    if (desktop->launcher.open) desktop_launcher_close(desktop);
+    desktop->window_mode = false;
+    desktop->window_resize_mode = false;
+    desktop->shutdown_requested = true;
+    desktop->shutdown_index = 0;
+    desktop->shutdown_waiting_window = WINDOW_ID_INVALID;
+    desktop_continue_shutdown(desktop);
 }
 
 static void desktop_update_taskbar_snapshot(Desktop *desktop,
@@ -701,6 +792,7 @@ static void desktop_activate_taskbar_app(
 static bool desktop_handle_taskbar_mouse(
     Desktop *desktop, const RetroMouseEvent *mouse) {
     if (!desktop || !mouse || !mouse->button1_clicked) return false;
+    if (desktop->shutdown_requested) return true;
 
     StatusBarAction action =
         statusbar_hit_test(desktop->statusbar, mouse->y, mouse->x);
@@ -734,12 +826,16 @@ static bool desktop_handle_taskbar_mouse(
 static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *key) {
     if (!desktop || !key) return false;
 
+    if (desktop->shutdown_requested) {
+        return key->key_code == RETRO_KEY_CTRL_Q;
+    }
+
     /* Global accelerators must not consume printable text.  The previous
        implementation stole q/m/w/1..3/HJKL from every app, making editing
        impossible.  Control chords and function keys are unambiguous. */
     if (desktop->launcher.open) {
         if (key->key_code == RETRO_KEY_CTRL_Q) {
-            desktop->running = false;
+            desktop_begin_shutdown(desktop);
             return true;
         }
         if (key->key_code == RETRO_KEY_F10) {
@@ -775,7 +871,7 @@ static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
     }
 
     if (key->key_code == RETRO_KEY_CTRL_Q) {
-        desktop->running = false;
+        desktop_begin_shutdown(desktop);
         return true;
     }
 
@@ -824,6 +920,7 @@ static bool desktop_dispatch_event(Desktop *desktop,
         (void)wm_handle_event(desktop->wm, event);
     }
     desktop_cleanup_apps(desktop);
+    desktop_continue_shutdown(desktop);
     desktop_request_redraw(desktop);
     return true;
 }
@@ -845,6 +942,10 @@ RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
         }
     }
     return NULL;
+}
+
+bool desktop_shutdown_pending_for_test(const Desktop *desktop) {
+    return desktop && desktop->shutdown_requested;
 }
 
 int desktop_run(Desktop *desktop) {

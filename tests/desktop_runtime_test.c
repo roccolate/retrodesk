@@ -266,17 +266,23 @@ static void test_repeat_create_run_shutdown(void) {
     }
 }
 
-static RetroAppInstance create_untitled_notepad(void) {
+static RetroAppInstance create_untitled_notepad_with_clipboard(
+    RetroClipboard *clipboard) {
     const RetroAppDescriptor *desc = notepad_app_descriptor();
     TEST_REQUIRE(desc != NULL);
     RetroAppContext ctx = {
         .desktop = NULL,
+        .clipboard = clipboard,
         .theme = retro_theme_get(RETRO_THEME_XP),
         .resource_path = NULL,
     };
     RetroAppInstance instance = {.descriptor = desc, .ctx = ctx};
     TEST_REQUIRE(desc->create(&instance, &ctx));
     return instance;
+}
+
+static RetroAppInstance create_untitled_notepad(void) {
+    return create_untitled_notepad_with_clipboard(NULL);
 }
 
 static void type_notepad_char(RetroAppInstance *instance, char ch) {
@@ -426,9 +432,10 @@ static void test_notepad_history_limit_and_noop(void) {
 }
 
 static void test_notepad_selection_clipboard_between_instances(void) {
-    retro_clipboard_clear();
-    RetroAppInstance first = create_untitled_notepad();
-    RetroAppInstance second = create_untitled_notepad();
+    RetroClipboard *clipboard = retro_clipboard_create();
+    TEST_REQUIRE(clipboard != NULL);
+    RetroAppInstance first = create_untitled_notepad_with_clipboard(clipboard);
+    RetroAppInstance second = create_untitled_notepad_with_clipboard(clipboard);
 
     type_notepad_char(&first, 'n');
     type_notepad_char(&first, 'i');
@@ -442,8 +449,8 @@ static void test_notepad_selection_clipboard_between_instances(void) {
     app_handle_event(&first, &select_all);
     app_handle_event(&first, &copy);
     TEST_REQUIRE(notepad_undo_count_for_test(&first) == history_before_copy);
-    TEST_REQUIRE(retro_clipboard_has_text());
-    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "niño") == 0);
+    TEST_REQUIRE(retro_clipboard_has_text(clipboard));
+    TEST_REQUIRE(strcmp(retro_clipboard_text(clipboard, NULL), "niño") == 0);
 
     RetroEvent paste = key_event(RETRO_KEY_CTRL_V, '\0');
     app_handle_event(&second, &paste);
@@ -459,18 +466,19 @@ static void test_notepad_selection_clipboard_between_instances(void) {
     RetroEvent cut = key_event(RETRO_KEY_CTRL_X, '\0');
     app_handle_event(&first, &cut);
     TEST_REQUIRE(strcmp(notepad_line_for_test(&first, 0), "") == 0);
-    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "niño") == 0);
+    TEST_REQUIRE(strcmp(retro_clipboard_text(clipboard, NULL), "niño") == 0);
     app_handle_event(&first, &undo);
     TEST_REQUIRE(strcmp(notepad_line_for_test(&first, 0), "niño") == 0);
 
     first.descriptor->destroy(&first);
     second.descriptor->destroy(&second);
-    retro_clipboard_clear();
+    retro_clipboard_destroy(clipboard);
 }
 
 static void test_notepad_utf8_find(void) {
-    retro_clipboard_clear();
-    RetroAppInstance instance = create_untitled_notepad();
+    RetroClipboard *clipboard = retro_clipboard_create();
+    TEST_REQUIRE(clipboard != NULL);
+    RetroAppInstance instance = create_untitled_notepad_with_clipboard(clipboard);
 
     type_notepad_codepoint(&instance, 0x00C1u);
     type_notepad_char(&instance, 'r');
@@ -515,7 +523,7 @@ static void test_notepad_utf8_find(void) {
     TEST_REQUIRE(!notepad_search_mode_for_test(&instance));
     RetroEvent copy = key_event(RETRO_KEY_CTRL_C, '\0');
     app_handle_event(&instance, &copy);
-    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "Árbol") == 0);
+    TEST_REQUIRE(strcmp(retro_clipboard_text(clipboard, NULL), "Árbol") == 0);
 
     app_handle_event(&instance, &find);
     type_notepad_codepoint(&instance, 0x00E1u);
@@ -528,7 +536,7 @@ static void test_notepad_utf8_find(void) {
     TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 12);
     app_handle_event(&instance, &escape);
     app_handle_event(&instance, &copy);
-    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "árbol") == 0);
+    TEST_REQUIRE(strcmp(retro_clipboard_text(clipboard, NULL), "árbol") == 0);
 
     app_handle_event(&instance, &find);
     type_notepad_codepoint(&instance, 0x00E1u);
@@ -541,15 +549,17 @@ static void test_notepad_utf8_find(void) {
     TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 6);
     app_handle_event(&instance, &escape);
     app_handle_event(&instance, &copy);
-    TEST_REQUIRE(strcmp(retro_clipboard_text(NULL), "ÁRBOL") == 0);
+    TEST_REQUIRE(strcmp(retro_clipboard_text(clipboard, NULL), "ÁRBOL") == 0);
 
     TEST_REQUIRE(notepad_undo_count_for_test(&instance) == history_before_find);
     instance.descriptor->destroy(&instance);
-    retro_clipboard_clear();
+    retro_clipboard_destroy(clipboard);
 }
 
 static void test_notepad_word_wrap_navigation(void) {
-    RetroAppInstance instance = create_untitled_notepad();
+    RetroClipboard *clipboard = retro_clipboard_create();
+    TEST_REQUIRE(clipboard != NULL);
+    RetroAppInstance instance = create_untitled_notepad_with_clipboard(clipboard);
     TEST_REQUIRE(!notepad_wrap_mode_for_test(&instance));
     TEST_REQUIRE(!notepad_dirty_for_test(&instance));
     TEST_REQUIRE(notepad_undo_count_for_test(&instance) == 0);
@@ -584,8 +594,8 @@ static void test_notepad_word_wrap_navigation(void) {
     TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 6);
     RetroEvent copy = key_event(RETRO_KEY_CTRL_C, '\0');
     app_handle_event(&instance, &copy);
-    TEST_REQUIRE(retro_clipboard_has_text());
-    TEST_REQUIRE(strlen(retro_clipboard_text(NULL)) == 64);
+    TEST_REQUIRE(retro_clipboard_has_text(clipboard));
+    TEST_REQUIRE(strlen(retro_clipboard_text(clipboard, NULL)) == 64);
     TEST_REQUIRE(notepad_undo_count_for_test(&instance) ==
                  history_before_navigation);
 
@@ -602,7 +612,7 @@ static void test_notepad_word_wrap_navigation(void) {
                  history_before_navigation);
 
     instance.descriptor->destroy(&instance);
-    retro_clipboard_clear();
+    retro_clipboard_destroy(clipboard);
 }
 
 static void test_notepad_shift_selection_replacement(void) {
@@ -650,6 +660,42 @@ static void destroy_test_desktop(Desktop *desktop,
                                  PlatformBackend *platform) {
     desktop_shutdown(desktop);
     platform_destroy(platform);
+}
+
+static void test_desktop_clipboards_are_isolated(void) {
+    PlatformBackend *first_platform = NULL;
+    PlatformBackend *second_platform = NULL;
+    Desktop *first_desktop = create_test_desktop(&first_platform);
+    Desktop *second_desktop = create_test_desktop(&second_platform);
+    TEST_REQUIRE(first_desktop != NULL);
+    TEST_REQUIRE(second_desktop != NULL);
+
+    RetroAppInstance *first = app_launch(first_desktop, "notepad");
+    RetroAppInstance *second = app_launch(second_desktop, "notepad");
+    TEST_REQUIRE(first != NULL);
+    TEST_REQUIRE(second != NULL);
+
+    type_notepad_char(first, 'x');
+    RetroEvent select_all = key_event(RETRO_KEY_CTRL_A, '\0');
+    RetroEvent copy = key_event(RETRO_KEY_CTRL_C, '\0');
+    RetroEvent paste = key_event(RETRO_KEY_CTRL_V, '\0');
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(first, &select_all);
+    app_handle_event(first, &copy);
+
+    app_handle_event(second, &paste);
+    TEST_REQUIRE(strcmp(notepad_line_for_test(second, 0), "") == 0);
+
+    type_notepad_char(second, 'y');
+    app_handle_event(second, &select_all);
+    app_handle_event(second, &copy);
+
+    app_handle_event(first, &escape);
+    app_handle_event(first, &paste);
+    TEST_REQUIRE(strcmp(notepad_line_for_test(first, 0), "xx") == 0);
+
+    destroy_test_desktop(first_desktop, first_platform);
+    destroy_test_desktop(second_desktop, second_platform);
 }
 
 static int g_key_sink_f2_count;
@@ -1067,6 +1113,7 @@ int main(void) {
     test_notepad_utf8_find();
     test_notepad_word_wrap_navigation();
     test_notepad_shift_selection_replacement();
+    test_desktop_clipboards_are_isolated();
     test_desktop_f2_reaches_focused_app();
     test_launcher_close_respects_dirty_notepad();
     test_ctrl_q_cancel_preserves_all_apps();

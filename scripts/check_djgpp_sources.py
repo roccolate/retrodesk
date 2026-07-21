@@ -9,10 +9,10 @@ CMake support on DOS; it must therefore be derived from the CMake list,
 not maintained by hand.
 
 This script:
-  1. Extracts the RETRODESK_DJGPP_SOURCES list from CMakeLists.txt
-     (the same list that CMake targets use for DOS).
+  1. Extracts the RETRODESK_DJGPP_SOURCES list from CMakeLists.txt.
   2. Extracts the SRCS list from Makefile.djgpp.
-  3. Diffs both and exits non-zero on any divergence.
+  3. Normalizes slash and backslash separators.
+  4. Diffs both and exits non-zero on any divergence.
 
 It is intentionally dependency-free (only Python 3 stdlib) so it can
 run inside CI, in a developer shell, or as part of `make check`.
@@ -29,10 +29,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CMAKE_FILE = REPO_ROOT / "CMakeLists.txt"
 MAKEFILE_FILE = REPO_ROOT / "Makefile.djgpp"
 
-# Matches a "set(RETRODESK_..._SOURCES ...)" block. We need to find
-# the right variable by name (DJGPP takes priority over plain SOURCES
-# if both exist) because the regex would otherwise stop at the first
-# matching set() call. We iterate all matches and pick the named one.
 CMAKE_BLOCK_RE = re.compile(
     r"set\s*\(\s*(RETRODESK_(?:DJGPP_)?SOURCES)\b"
     r"(.*?)"
@@ -40,15 +36,13 @@ CMAKE_BLOCK_RE = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 
-# Matches the SRCS = ... block in Makefile.djgpp (line continuations).
 MAKEFILE_SRCS_RE = re.compile(
     r"^SRCS\s*=\s*\\\s*\n(.*?)(?=^\)|^\S)",
     re.DOTALL | re.MULTILINE,
 )
 
 CMAKE_ENTRY_RE = re.compile(r"src/[\w/]+\.c")
-# DJGPP entries look like src\foo\bar.c (single backslash separators).
-MAKEFILE_ENTRY_RE = re.compile(r"src(?:\\[\w/]+)+\.c")
+MAKEFILE_ENTRY_RE = re.compile(r"src(?:[\\/][\w/]+)+\.c")
 
 
 def extract_cmake_sources(path: Path, var_name: str) -> list[str]:
@@ -57,12 +51,12 @@ def extract_cmake_sources(path: Path, var_name: str) -> list[str]:
     if not matches:
         die(f"could not find RETRODESK_SOURCES block in {path}")
     target = None
-    for m in matches:
-        if m.group(1) == var_name:
-            target = m
+    for match in matches:
+        if match.group(1) == var_name:
+            target = match
             break
     if target is None:
-        available = sorted({m.group(1) for m in matches})
+        available = sorted({match.group(1) for match in matches})
         die(
             f"requested {var_name} not found in {path}; "
             f"available variables: {', '.join(available)}"
@@ -77,8 +71,9 @@ def extract_makefile_sources(path: Path) -> list[str]:
     if not match:
         die(f"could not find SRCS block in {path}")
     entries = MAKEFILE_ENTRY_RE.findall(match.group(1))
-    # Normalize Windows-style backslash separators to forward slashes.
-    normalized = sorted(set(e.replace("\\", "/") for e in entries))
+    normalized = sorted(
+        set(entry.replace("\\", "/") for entry in entries)
+    )
     return normalized
 
 
@@ -148,16 +143,16 @@ def main() -> int:
             f"({len(only_cmake)}):",
             file=sys.stderr,
         )
-        for s in only_cmake:
-            print(f"    + {s}", file=sys.stderr)
+        for source in only_cmake:
+            print(f"    + {source}", file=sys.stderr)
     if only_makefile:
         print(
             "  in Makefile.djgpp but missing from "
             f"{args.var} ({len(only_makefile)}):",
             file=sys.stderr,
         )
-        for s in only_makefile:
-            print(f"    - {s}", file=sys.stderr)
+        for source in only_makefile:
+            print(f"    - {source}", file=sys.stderr)
     print(
         "\nFix: update Makefile.djgpp SRCS list, or update the "
         f"{args.var} block in CMakeLists.txt.",

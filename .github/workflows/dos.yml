@@ -1,0 +1,121 @@
+name: DOS
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+env:
+  DJGPP_RELEASE: v3.4
+  DJGPP_ARCHIVE: djgpp-linux64-gcc1220.tar.bz2
+  DJGPP_SHA256: 8464f17017d6ab1b2bb2df4ed82357b5bf692e6e2b7fee37e315638f3d505f00
+  PDCURSES_COMMIT: 6c1f95c4fa9f9f105879c2d99dd72a5bf335c046
+  CWSDPMI_URL: https://www.delorie.com/pub/djgpp/current/v2misc/csdpmi7b.zip
+  CWSDPMI_SHA256: deacda0488e1cdd7c4a9f32fab45662b34c0ed6b2d7d4d13bc07041b62004a8c
+
+jobs:
+  djgpp-dosbox:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout RetroDesk
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install DOS build/runtime dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dosbox-x xvfb libfl2 unzip >/dev/null
+
+      - name: Install pinned DJGPP toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/$DJGPP_ARCHIVE"
+          url="https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/${DJGPP_ARCHIVE}"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$archive" "$url"
+          echo "$DJGPP_SHA256  $archive" | sha256sum -c -
+          sha256sum "$archive" | tee djgpp-toolchain.sha256
+          tar -xjf "$archive" -C "$GITHUB_WORKSPACE"
+          test -x "$GITHUB_WORKSPACE/djgpp/bin/i586-pc-msdosdjgpp-gcc"
+          echo "DJGPP_ROOT=$GITHUB_WORKSPACE/djgpp" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/djgpp/bin" >> "$GITHUB_PATH"
+
+      - name: Install official CWSDPMI runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/csdpmi7b.zip"
+          runtime="$RUNNER_TEMP/CWSDPMI.EXE"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$archive" "$CWSDPMI_URL"
+          echo "$CWSDPMI_SHA256  $archive" | sha256sum -c -
+          sha256sum "$archive" | tee cwsdpmi.sha256
+          unzip -p "$archive" bin/CWSDPMI.EXE > "$runtime"
+          test -s "$runtime"
+          echo "CWSDPMI_EXE=$runtime" >> "$GITHUB_ENV"
+
+      - name: Checkout pinned PDCurses
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init --quiet "$RUNNER_TEMP/PDCurses"
+          git -C "$RUNNER_TEMP/PDCurses" remote add origin https://github.com/wmcbrine/PDCurses.git
+          git -C "$RUNNER_TEMP/PDCurses" fetch --quiet --depth=1 origin "$PDCURSES_COMMIT"
+          git -C "$RUNNER_TEMP/PDCurses" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/PDCurses" rev-parse HEAD)" = "$PDCURSES_COMMIT"
+          echo "PDCURSES_DIR=$RUNNER_TEMP/PDCurses" >> "$GITHUB_ENV"
+
+      - name: Build DJGPP executable
+        shell: bash
+        run: |
+          set -o pipefail
+          chmod +x scripts/build_djgpp_ci.sh scripts/run_dosbox_smoke.sh
+          if ! scripts/build_djgpp_ci.sh >dos-build.log 2>&1; then
+            tail -n 180 dos-build.log
+            exit 1
+          fi
+          tail -n 40 dos-build.log
+
+      - name: Upload failed DOS build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: retrodesk-dos-build-log
+          path: |
+            dos-build.log
+            djgpp-toolchain.sha256
+            cwsdpmi.sha256
+          if-no-files-found: error
+
+      - name: Smoke test in DOSBox-X
+        shell: bash
+        run: scripts/run_dosbox_smoke.sh build/dos
+
+      - name: Upload failed DOSBox smoke state
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: retrodesk-dosbox-smoke-state
+          path: |
+            build/dos
+            djgpp-toolchain.sha256
+            cwsdpmi.sha256
+          if-no-files-found: error
+
+      - name: Upload DOS distribution
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: retrodesk-dos-djgpp
+          path: |
+            build/dos/retrodesk.exe
+            build/dos/CWSDPMI.EXE
+            build/dos/README.TXT
+            build/dos/SHA256SUMS
+            djgpp-toolchain.sha256
+            cwsdpmi.sha256
+          if-no-files-found: error

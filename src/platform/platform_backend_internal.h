@@ -61,9 +61,9 @@ void platform_destroy_curses_backend(PlatformBackend *platform);
 
 #if !defined(_WIN32) && !defined(__DJGPP__)
 bool platform_init_tty_raw_backend(PlatformBackend *platform);
-bool platform_poll_event_tty_raw(PlatformBackend *platform,
-                                 RetroEvent *out_event,
-                                 int timeout_ms);
+RetroPollResult platform_poll_event_tty_raw(PlatformBackend *platform,
+                                            RetroEvent *out_event,
+                                            int timeout_ms);
 void platform_destroy_tty_raw_backend(PlatformBackend *platform);
 #endif
 

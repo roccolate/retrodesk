@@ -28,6 +28,8 @@ struct PlatformBackend {
     bool xterm_mouse_tracking_forced;
     bool uses_curses;
 #if !defined(_WIN32) && !defined(__DJGPP__)
+    bool curses_has_saved_mode;
+    struct termios curses_saved_mode;
     bool tty_raw_enabled;
     bool tty_has_saved_mode;
     struct termios tty_saved_mode;
@@ -48,12 +50,15 @@ void platform_disable_xterm_mouse_tracking(void);
 
 bool platform_init_curses_backend(PlatformBackend *platform,
                                   const PlatformConfig *config);
-bool platform_poll_event_curses(PlatformBackend *platform, RetroEvent *out_event,
+bool platform_poll_event_curses(PlatformBackend *platform,
+                                RetroEvent *out_event,
                                 int timeout_ms);
+void platform_destroy_curses_backend(PlatformBackend *platform);
 
 #if !defined(_WIN32) && !defined(__DJGPP__)
 bool platform_init_tty_raw_backend(PlatformBackend *platform);
-bool platform_poll_event_tty_raw(PlatformBackend *platform, RetroEvent *out_event,
+bool platform_poll_event_tty_raw(PlatformBackend *platform,
+                                 RetroEvent *out_event,
                                  int timeout_ms);
 void platform_destroy_tty_raw_backend(PlatformBackend *platform);
 #endif

@@ -2,6 +2,7 @@
 
 #if !defined(_WIN32) && !defined(__DJGPP__)
 
+#include <errno.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -109,16 +110,6 @@ static bool platform_decode_tty_key(PlatformBackend *platform,
     return tty_decoder_decode(&platform->tty_decoder, &keys, out_event);
 }
 
-static void platform_emit_synthetic_quit(RetroEvent *out_event) {
-    if (!out_event) return;
-    out_event->type = RETRO_EVENT_KEY;
-    out_event->data.key.key_code = 'q';
-    out_event->data.key.is_printable = true;
-    out_event->data.key.ascii = 'q';
-    out_event->data.key.text_codepoint = 'q';
-    out_event->data.key.modifiers = RETRO_MOD_NONE;
-}
-
 bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     if (!platform) return false;
     if (!platform_enable_tty_raw(platform)) return false;
@@ -156,15 +147,19 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     return true;
 }
 
-bool platform_poll_event_tty_raw(PlatformBackend *platform,
-                                 RetroEvent *out_event,
-                                 int timeout_ms) {
-    if (!platform || !out_event) return false;
-    if (platform->tty_signal_pending) return false;
+RetroPollResult platform_poll_event_tty_raw(PlatformBackend *platform,
+                                            RetroEvent *out_event,
+                                            int timeout_ms) {
+    if (!platform || !out_event) return RETRO_POLL_ERROR;
+    if (platform->tty_signal_pending) return RETRO_POLL_CLOSED;
     if (timeout_ms < 0) timeout_ms = 0;
 
-    if (platform_decode_tty_key(platform, out_event)) return true;
-    if (platform_emit_tty_resize_if_needed(platform, out_event)) return true;
+    if (platform_decode_tty_key(platform, out_event)) {
+        return RETRO_POLL_EVENT;
+    }
+    if (platform_emit_tty_resize_if_needed(platform, out_event)) {
+        return RETRO_POLL_EVENT;
+    }
 
     struct pollfd descriptor = {
         .fd = STDIN_FILENO,
@@ -172,28 +167,41 @@ bool platform_poll_event_tty_raw(PlatformBackend *platform,
         .revents = 0,
     };
     int result = poll(&descriptor, 1, timeout_ms);
-    if (result < 0) return false;
+    if (result < 0) {
+        if (errno == EINTR && platform->tty_signal_pending) {
+            return RETRO_POLL_CLOSED;
+        }
+        return RETRO_POLL_ERROR;
+    }
     if (result == 0) {
-        return platform_emit_tty_resize_if_needed(platform, out_event);
+        return platform_emit_tty_resize_if_needed(platform, out_event)
+                   ? RETRO_POLL_EVENT
+                   : RETRO_POLL_TIMEOUT;
     }
 
-    if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        platform_emit_synthetic_quit(out_event);
-        return true;
-    }
+    if (descriptor.revents & POLLNVAL) return RETRO_POLL_ERROR;
+    if (descriptor.revents & POLLERR) return RETRO_POLL_ERROR;
+    if (descriptor.revents & POLLHUP) return RETRO_POLL_CLOSED;
 
     if (descriptor.revents & POLLIN) {
         unsigned char bytes[32];
         ssize_t count = read(STDIN_FILENO, bytes, sizeof(bytes));
-        if (count <= 0) {
-            platform_emit_synthetic_quit(out_event);
-            return true;
+        if (count == 0) return RETRO_POLL_CLOSED;
+        if (count < 0) {
+            if (errno == EINTR && platform->tty_signal_pending) {
+                return RETRO_POLL_CLOSED;
+            }
+            return RETRO_POLL_ERROR;
         }
         tty_decoder_append(&platform->tty_decoder, bytes, (size_t)count);
     }
 
-    if (platform_decode_tty_key(platform, out_event)) return true;
-    return platform_emit_tty_resize_if_needed(platform, out_event);
+    if (platform_decode_tty_key(platform, out_event)) {
+        return RETRO_POLL_EVENT;
+    }
+    return platform_emit_tty_resize_if_needed(platform, out_event)
+               ? RETRO_POLL_EVENT
+               : RETRO_POLL_TIMEOUT;
 }
 
 void platform_destroy_tty_raw_backend(PlatformBackend *platform) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make the temporary Notepad selection materializer target Delete precisely."""
+"""Repair temporary Notepad selection materializer markers and escapes."""
 
 from pathlib import Path
 
@@ -49,5 +49,19 @@ new = """    (
 count = text.count(old)
 if count != 1:
     raise SystemExit(f"Delete materializer tuple: expected one marker, found {count}")
+text = text.replace(old, new, 1)
 
-path.write_text(text.replace(old, new, 1), encoding="utf-8")
+for normal, raw, label in (
+    ("shortcut_replacement = '''", "shortcut_replacement = r'''",
+     "shortcut replacement raw literal"),
+    ("old_escape = '''", "old_escape = r'''",
+     "Escape marker raw literal"),
+    ("new_escape = '''", "new_escape = r'''",
+     "Escape replacement raw literal"),
+):
+    count = text.count(normal)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one marker, found {count}")
+    text = text.replace(normal, raw, 1)
+
+path.write_text(text, encoding="utf-8")

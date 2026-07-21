@@ -19,6 +19,17 @@ jobs:
       - name: Checkout RetroDesk
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      - name: Instrument replacement failure
+        shell: powershell
+        run: |
+          $path = "src/storage/retro_fs_win32.c"
+          $text = Get-Content $path -Raw
+          $pattern = '(if \(!moved\) \{\r?\n        DWORD error = GetLastError\(\);)'
+          $replacement = '$1' + "`r`n        fprintf(stderr, `"ReplaceFile/MoveFileEx failed: %lu (existed=%d)\\n`",`r`n                (unsigned long)error, existed ? 1 : 0);"
+          $next = [regex]::Replace($text, $pattern, $replacement, 1)
+          if ($next -eq $text) { throw "instrumentation pattern not found" }
+          Set-Content $path $next -NoNewline
+
       - name: Install pinned vcpkg
         shell: powershell
         run: |

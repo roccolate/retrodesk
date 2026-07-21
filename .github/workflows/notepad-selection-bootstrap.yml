@@ -19,16 +19,17 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: agent/notepad-selection-clipboard
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: true
+          show-progress: false
+
+      - name: Apply selection and clipboard integration
+        run: python3 scripts/apply_notepad_selection_clipboard.py
 
       - name: Install dependencies
         run: |
           sudo apt-get update -qq >/dev/null
           sudo apt-get install -y -qq cmake gcc libncurses-dev python3 >/dev/null
-
-      - name: Apply selection and clipboard integration
-        run: python3 scripts/apply_notepad_selection_clipboard.py
 
       - name: Run source guards
         run: |

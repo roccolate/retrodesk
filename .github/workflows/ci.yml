@@ -112,7 +112,7 @@ jobs:
           .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
           .\vcpkg\vcpkg.exe install pdcurses:x64-windows
 
-      - name: Configure, build, and test
+      - name: Configure
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -123,7 +123,17 @@ jobs:
             -DRETROCORE_SPEC_DIR="$PWD\retrocore-spec" `
             -DRETROCORE_SPEC_REQUIRED=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
           cmake --build build --config ${{ matrix.config }} --parallel
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
           ctest --test-dir build --output-on-failure -C ${{ matrix.config }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

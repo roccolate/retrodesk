@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "core/clipboard.h"
 #include "core/event.h"
 #include "platform/platform.h"
 #include "render/render.h"
@@ -34,6 +35,7 @@ typedef enum RetroCloseResult {
 
 typedef struct RetroAppContext {
     Desktop *desktop;
+    RetroClipboard *clipboard; /* borrowed from Desktop */
     WindowId window_id;
     const DesktopCapabilities *capabilities;
     const RetroTheme *theme;

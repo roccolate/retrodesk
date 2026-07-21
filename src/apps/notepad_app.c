@@ -15,6 +15,9 @@ typedef struct NotepadState {
     RetroFsVersion version;
     bool has_path;
     bool save_as;
+    bool close_prompt;
+    bool close_after_save;
+    bool force_close;
     TextInput *path_input;
     bool dirty;
     char error[160];
@@ -28,8 +31,10 @@ static void np_set_error(NotepadState *state, RetroFsError error) {
 
 static bool np_save(NotepadState *state) {
     if (!state || !state->buffer || !state->has_path) {
-        if (state) snprintf(state->error, sizeof(state->error),
-                            "Save As is required for Untitled documents");
+        if (state) {
+            snprintf(state->error, sizeof(state->error),
+                     "Save As is required for Untitled documents");
+        }
         return false;
     }
     size_t length = 0;
@@ -80,7 +85,8 @@ static bool np_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
         char *text = NULL;
         size_t length = 0;
         error = retro_fs_read_text(&state->path, &text, &length, &state->version);
-        if (error != RETRO_FS_OK || !text_buffer_set_text(state->buffer, text ? text : "")) {
+        if (error != RETRO_FS_OK ||
+            !text_buffer_set_text(state->buffer, text ? text : "")) {
             free(text);
             retro_fs_path_destroy(&state->path);
             text_buffer_destroy(state->buffer);
@@ -95,49 +101,153 @@ static bool np_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
     return true;
 }
 
-static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
-    if (!instance || !instance->state || !event || event->type != RETRO_EVENT_KEY) return;
-    NotepadState *state = instance->state;
-    int key = event->data.key.key_code;
-    if (state->save_as) {
-        if (key == RETRO_KEY_ESC) { state->save_as = false; return; }
-        if (key == RETRO_KEY_CR) {
-            RetroFsPath candidate = {0};
-            if (retro_fs_path_init(&candidate, text_input_text(state->path_input)) != RETRO_FS_OK) return;
-            RetroFsVersion existing = {0};
-            if (retro_fs_stat(&candidate, &existing) == RETRO_FS_OK) {
-                retro_fs_path_destroy(&candidate);
-                snprintf(state->error, sizeof(state->error), "Save As: destination exists");
-                return;
-            }
-            retro_fs_path_destroy(&state->path);
-            state->path = candidate;
-            state->has_path = true;
-            state->version = (RetroFsVersion){0};
-            state->save_as = false;
-            (void)np_save(state);
+static void np_finish_close(RetroAppInstance *instance, NotepadState *state) {
+    if (!instance || !state) return;
+    state->close_prompt = false;
+    state->close_after_save = false;
+    state->force_close = true;
+    app_request_close(instance);
+}
+
+static void np_handle_close_prompt(RetroAppInstance *instance,
+                                   NotepadState *state,
+                                   const RetroKeyEvent *key) {
+    if (!instance || !state || !key) return;
+    int code = key->key_code;
+    unsigned char ch = key->ascii;
+
+    if (code == RETRO_KEY_ESC) {
+        state->close_prompt = false;
+        state->close_after_save = false;
+        state->error[0] = '\0';
+        return;
+    }
+
+    if (ch == 'd' || ch == 'D') {
+        state->dirty = false;
+        np_finish_close(instance, state);
+        return;
+    }
+
+    if (ch != 's' && ch != 'S') return;
+
+    if (!state->has_path) {
+        state->close_prompt = false;
+        state->save_as = true;
+        state->close_after_save = true;
+        state->error[0] = '\0';
+        return;
+    }
+
+    if (np_save(state)) {
+        np_finish_close(instance, state);
+    }
+}
+
+static void np_handle_save_as(RetroAppInstance *instance,
+                              NotepadState *state,
+                              const RetroKeyEvent *key) {
+    if (!instance || !state || !key) return;
+    int code = key->key_code;
+
+    if (code == RETRO_KEY_ESC) {
+        state->save_as = false;
+        state->close_after_save = false;
+        state->error[0] = '\0';
+        return;
+    }
+
+    if (code == RETRO_KEY_CR || code == RETRO_KEY_LF) {
+        RetroFsPath candidate = {0};
+        if (retro_fs_path_init(&candidate,
+                               text_input_text(state->path_input)) !=
+            RETRO_FS_OK) {
             return;
         }
-        (void)text_input_handle_key(state->path_input, &event->data.key);
+        RetroFsVersion existing = {0};
+        if (retro_fs_stat(&candidate, &existing) == RETRO_FS_OK) {
+            retro_fs_path_destroy(&candidate);
+            snprintf(state->error, sizeof(state->error),
+                     "Save As: destination exists");
+            return;
+        }
+
+        retro_fs_path_destroy(&state->path);
+        state->path = candidate;
+        state->has_path = true;
+        state->version = (RetroFsVersion){0};
+        state->save_as = false;
+
+        bool should_close = state->close_after_save;
+        if (np_save(state)) {
+            if (should_close) np_finish_close(instance, state);
+        } else {
+            state->close_after_save = false;
+        }
         return;
     }
-    if (key == RETRO_KEY_CTRL_S) {
-        if (state->has_path) (void)np_save(state);
-        else state->save_as = true;
+
+    (void)text_input_handle_key(state->path_input, key);
+}
+
+static void np_event(RetroAppInstance *instance, const RetroEvent *event) {
+    if (!instance || !instance->state || !event ||
+        event->type != RETRO_EVENT_KEY) {
         return;
     }
-    if (key == RETRO_KEY_ESC) {
-        app_request_close(instance);
+    NotepadState *state = instance->state;
+    const RetroKeyEvent *key = &event->data.key;
+
+    if (state->close_prompt) {
+        np_handle_close_prompt(instance, state, key);
         return;
     }
-    if (key == RETRO_KEY_F3) {
+
+    if (state->save_as) {
+        np_handle_save_as(instance, state, key);
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_S) {
+        state->close_after_save = false;
+        if (state->has_path) {
+            (void)np_save(state);
+        } else {
+            state->save_as = true;
+        }
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_F3) {
+        state->close_after_save = false;
         state->save_as = true;
         return;
     }
-    if (text_buffer_handle_key(state->buffer, &event->data.key)) {
+
+    if (key->key_code == RETRO_KEY_ESC) {
+        state->error[0] = '\0';
+        return;
+    }
+
+    if (text_buffer_handle_key(state->buffer, key)) {
         state->dirty = true;
+        state->force_close = false;
         state->error[0] = '\0';
     }
+}
+
+static void np_render_close_prompt(const NotepadState *state,
+                                   DrawList *draw_list,
+                                   const RenderStyle *text,
+                                   const RenderStyle *accent,
+                                   const RenderStyle *selected) {
+    if (!state || !draw_list || !text || !accent || !selected) return;
+    draw_list_hline(draw_list, 6, 8, 48, ' ', selected);
+    draw_list_text(draw_list, 6, 10, "Unsaved changes", selected);
+    draw_list_text(draw_list, 8, 10,
+                   "Save changes before closing?", accent);
+    draw_list_text(draw_list, 10, 10,
+                   "[S] Save   [D] Discard   [Esc] Cancel", text);
 }
 
 static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
@@ -148,15 +258,32 @@ static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
     const RenderStyle *accent = &theme->shell_accent;
     const RenderStyle *cursor = &theme->launcher_selected;
     char title[192];
-    const char *name = state->has_path ? retro_fs_path_cstr(&state->path) : "Untitled";
-    snprintf(title, sizeof(title), "Notepad — %s%s", name, state->dirty ? " *" : "");
+    const char *name = state->has_path
+                           ? retro_fs_path_cstr(&state->path)
+                           : "Untitled";
+    snprintf(title, sizeof(title), "Notepad — %s%s",
+             name, state->dirty ? " *" : "");
     draw_list_text(draw_list, 1, 2, title, accent);
-    draw_list_text(draw_list, 2, 2, "Ctrl+S save | F3 Save As | Esc close", text);
-    if (state->save_as) {
-        draw_list_text(draw_list, 3, 2, "Path (Enter save, Esc cancel):", accent);
-        text_input_render(state->path_input, draw_list, 4, 2, 64, text, cursor);
-    } else text_buffer_render(state->buffer, draw_list, 4, 2, 11, 64, text, cursor);
-    if (state->error[0]) draw_list_text(draw_list, 17, 2, state->error, accent);
+    draw_list_text(draw_list, 2, 2,
+                   "Ctrl+S save | F3 Save As | Ctrl+W close", text);
+
+    if (state->close_prompt) {
+        text_buffer_render(state->buffer, draw_list, 4, 2, 11, 64,
+                           text, cursor);
+        np_render_close_prompt(state, draw_list, text, accent, cursor);
+    } else if (state->save_as) {
+        draw_list_text(draw_list, 3, 2,
+                       "Path (Enter save, Esc cancel):", accent);
+        text_input_render(state->path_input, draw_list, 4, 2, 64,
+                          text, cursor);
+    } else {
+        text_buffer_render(state->buffer, draw_list, 4, 2, 11, 64,
+                           text, cursor);
+    }
+
+    if (state->error[0]) {
+        draw_list_text(draw_list, 17, 2, state->error, accent);
+    }
 }
 
 static void np_destroy(RetroAppInstance *instance) {
@@ -173,10 +300,35 @@ static void np_destroy(RetroAppInstance *instance) {
 static bool np_can_close(RetroAppInstance *instance) {
     if (!instance || !instance->state) return true;
     NotepadState *state = instance->state;
-    if (!state->dirty) return true;
-    snprintf(state->error, sizeof(state->error),
-             "Unsaved changes: Ctrl+S before closing");
+    if (!state->dirty || state->force_close) return true;
+    state->close_prompt = true;
+    state->close_after_save = false;
+    state->error[0] = '\0';
     return false;
+}
+
+bool notepad_dirty_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->dirty;
+}
+
+bool notepad_close_prompt_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->close_prompt;
+}
+
+bool notepad_save_as_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->save_as;
+}
+
+bool notepad_close_after_save_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->close_after_save;
 }
 
 const RetroAppDescriptor *notepad_app_descriptor(void) {

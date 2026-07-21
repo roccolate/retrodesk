@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Preserve C escape sequences in the temporary Notepad find materializer."""
+"""Repair escapes and fixtures in the temporary Notepad find materializer."""
 
 from pathlib import Path
 
 path = Path("scripts/apply_notepad_find.py")
 text = path.read_text(encoding="utf-8")
+
 needle = "state->error[0] = '\\0';"
 position = text.find(needle)
 while position >= 0:
@@ -15,5 +16,27 @@ while position >= 0:
         text = text[:opener] + '    r"""' + text[opener + 7:]
         position += 1
     position = text.find(needle, position + len(needle))
+
+fixture_old = 'TEST_REQUIRE(text_buffer_set_text(tb, "Árbol\\nniño árbol\\nARBOL"));'
+fixture_new = 'TEST_REQUIRE(text_buffer_set_text(tb, "Árbol\\nniño árbol\\nÁRBOL"));'
+if text.count(fixture_old) != 1:
+    raise SystemExit("uppercase accented TextBuffer fixture marker missing")
+text = text.replace(fixture_old, fixture_new, 1)
+
+runtime_old = """    app_handle_event(&instance, &enter);
+    type_notepad_char(&instance, 'A');
+    type_notepad_char(&instance, 'R');
+"""
+runtime_new = """    app_handle_event(&instance, &enter);
+    type_notepad_codepoint(&instance, 0x00C1u);
+    type_notepad_char(&instance, 'R');
+"""
+if text.count(runtime_old) != 1:
+    raise SystemExit("uppercase accented runtime fixture marker missing")
+text = text.replace(runtime_old, runtime_new, 1)
+
+if text.count('"ARBOL"') != 1:
+    raise SystemExit("uppercase accented clipboard expectation marker missing")
+text = text.replace('"ARBOL"', '"ÁRBOL"', 1)
 
 path.write_text(text, encoding="utf-8")

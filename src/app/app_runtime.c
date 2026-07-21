@@ -86,6 +86,14 @@ void app_handle_event(RetroAppInstance *app, const RetroEvent *event) {
     app->descriptor->on_event(app, event);
 }
 
+RetroAppServiceResult app_service(RetroAppInstance *app, size_t work_budget) {
+    if (!app || !app->descriptor || !app->descriptor->on_service ||
+        work_budget == 0) {
+        return RETRO_APP_SERVICE_IDLE;
+    }
+    return app->descriptor->on_service(app, work_budget);
+}
+
 void app_render(RetroAppInstance *app, DrawList *draw_list) {
     if (!app || !draw_list || !app->descriptor || !app->descriptor->on_render) return;
     app->descriptor->on_render(app, draw_list);

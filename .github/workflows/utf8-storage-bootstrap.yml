@@ -24,8 +24,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake gcc libncurses-dev python3
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq cmake gcc libncurses-dev python3 >/dev/null
 
       - name: Apply storage port
         run: python3 scripts/apply_utf8_storage_port.py
@@ -42,10 +42,20 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DENABLE_TESTS=ON \
             -DENABLE_STRICT_WARNINGS=ON \
-            -DENABLE_WERROR=ON
+            -DENABLE_WERROR=ON >/tmp/configure.log 2>&1 || {
+              cat /tmp/configure.log
+              exit 1
+            }
 
       - name: Build
-        run: cmake --build build --parallel
+        run: |
+          cmake --build build --parallel >/tmp/build.log 2>&1 || {
+            echo "---- compiler/linker errors ----"
+            grep -nE "error:|undefined reference|fatal error|FAILED:|collect2:" /tmp/build.log || true
+            echo "---- build tail ----"
+            tail -n 100 /tmp/build.log
+            exit 1
+          }
 
       - name: Test
         run: ctest --test-dir build --output-on-failure

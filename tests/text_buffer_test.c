@@ -22,6 +22,21 @@ static RetroKeyEvent key_code(int code) {
     return k;
 }
 
+static RetroKeyEvent key_codepoint(uint32_t codepoint) {
+    RetroKeyEvent key = {0};
+    key.key_code = (int)codepoint;
+    key.is_printable = true;
+    key.text_codepoint = codepoint;
+    return key;
+}
+
+static RetroKeyEvent key_modified(int code,
+                                  unsigned int modifiers) {
+    RetroKeyEvent key = key_code(code);
+    key.modifiers = modifiers;
+    return key;
+}
+
 static void test_create_destroy(void) {
     TextBuffer *tb = text_buffer_create();
     TEST_REQUIRE(tb != NULL);
@@ -320,6 +335,393 @@ static void test_line_capacity_growth(void) {
     printf("  PASS: line_capacity_growth\n");
 }
 
+static void test_utf8_insert_and_roundtrip(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(tb != NULL);
+
+    RetroKeyEvent enye = key_codepoint(0x00F1u);
+    RetroKeyEvent o_acute = key_codepoint(0x00F3u);
+    RetroKeyEvent u_diaeresis = key_codepoint(0x00FCu);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &enye));
+    TEST_REQUIRE(text_buffer_handle_key(tb, &o_acute));
+    TEST_REQUIRE(text_buffer_handle_key(tb, &u_diaeresis));
+
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), "ñóü") == 0);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 6);
+
+    size_t length = 0;
+    char *snapshot = text_buffer_to_text(tb, &length);
+    TEST_REQUIRE(snapshot != NULL);
+    TEST_REQUIRE(length == 6);
+    TEST_REQUIRE(strcmp(snapshot, "ñóü") == 0);
+    free(snapshot);
+
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_insert_and_roundtrip\n");
+}
+
+static void test_utf8_navigation_uses_codepoint_boundaries(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(text_buffer_set_text(tb, "año"));
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 4);
+
+    RetroKeyEvent left = key_code(RETRO_KEY_LEFT);
+    RetroKeyEvent right = key_code(RETRO_KEY_RIGHT);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &left));
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 3);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &left));
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 1);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &right));
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 3);
+
+    text_buffer_set_cursor(tb, 0, 2);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 1);
+
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_navigation_uses_codepoint_boundaries\n");
+}
+
+static void test_utf8_backspace_and_delete_remove_whole_codepoints(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(text_buffer_set_text(tb, "niño"));
+
+    RetroKeyEvent backspace = key_code(RETRO_KEY_BS);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &backspace));
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), "niñ") == 0);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 4);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &backspace));
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), "ni") == 0);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 2);
+
+    TEST_REQUIRE(text_buffer_set_text(tb, "pingüino"));
+    text_buffer_set_cursor(tb, 0, 4);
+    RetroKeyEvent delete_forward = key_code(RETRO_KEY_DC);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &delete_forward));
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), "pingino") == 0);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 4);
+
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_backspace_and_delete_remove_whole_codepoints\n");
+}
+
+static void test_utf8_vertical_navigation_preserves_display_column(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(text_buffer_set_text(tb, "éx\nabcdef"));
+    text_buffer_set_cursor(tb, 0, 3);
+
+    RetroKeyEvent down = key_code(RETRO_KEY_DOWN);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &down));
+    TEST_REQUIRE(text_buffer_cursor_row(tb) == 1);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 2);
+
+    RetroKeyEvent up = key_code(RETRO_KEY_UP);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &up));
+    TEST_REQUIRE(text_buffer_cursor_row(tb) == 0);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 3);
+
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_vertical_navigation_preserves_display_column\n");
+}
+
+static void test_utf8_invalid_text_is_rejected_without_data_loss(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(text_buffer_set_text(tb, "safe"));
+    const char invalid[] = {(char)0xC3, '\0'};
+    TEST_REQUIRE(!text_buffer_set_text(tb, invalid));
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), "safe") == 0);
+
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_invalid_text_is_rejected_without_data_loss\n");
+}
+
+static void test_utf8_render_uses_cell_columns(void) {
+    TextBuffer *tb = text_buffer_create();
+    DrawList *list = draw_list_create();
+    TEST_REQUIRE(tb != NULL);
+    TEST_REQUIRE(list != NULL);
+    TEST_REQUIRE(text_buffer_set_text(tb, "niño"));
+    text_buffer_set_cursor(tb, 0, 2);
+
+    RenderStyle style = {
+        RENDER_COLOR_WHITE, RENDER_COLOR_BLACK, false, false
+    };
+    RenderStyle cursor_style = {
+        RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, true, false
+    };
+    text_buffer_render(tb, list, 0, 0, 1, 6,
+                       &style, &cursor_style);
+
+    TEST_REQUIRE(draw_list_count(list) == 2);
+    DrawCommandView command = {0};
+    TEST_REQUIRE(draw_list_get(list, 0, &command));
+    TEST_REQUIRE(strcmp(command.text, "niño  ") == 0);
+    TEST_REQUIRE(draw_list_get(list, 1, &command));
+    TEST_REQUIRE(command.x == 2);
+    TEST_REQUIRE(strcmp(command.text, "ñ") == 0);
+
+    draw_list_destroy(list);
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_render_uses_cell_columns\n");
+}
+
+static void test_utf8_shift_selection_and_replacement(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(text_buffer_set_text(tb, "niño"));
+    text_buffer_set_cursor(tb, 0, 2);
+
+    RetroKeyEvent shift_right = key_modified(
+        RETRO_KEY_RIGHT, RETRO_MOD_SHIFT);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &shift_right));
+    TEST_REQUIRE(text_buffer_has_selection(tb));
+
+    size_t length = 0;
+    char *selected = text_buffer_selected_text(tb, &length);
+    TEST_REQUIRE(selected != NULL);
+    TEST_REQUIRE(length == 2);
+    TEST_REQUIRE(strcmp(selected, "ñ") == 0);
+    free(selected);
+
+    RetroKeyEvent replacement = key_char('x');
+    TEST_REQUIRE(text_buffer_handle_key(tb, &replacement));
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), "nixo") == 0);
+    TEST_REQUIRE(!text_buffer_has_selection(tb));
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 3);
+
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_shift_selection_and_replacement\n");
+}
+
+static void test_multiline_selection_delete(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(text_buffer_set_text(tb, "uno\nniño"));
+    text_buffer_set_cursor(tb, 0, 1);
+
+    RetroKeyEvent shift_down = key_modified(
+        RETRO_KEY_DOWN, RETRO_MOD_SHIFT);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &shift_down));
+    TEST_REQUIRE(text_buffer_has_selection(tb));
+
+    size_t length = 0;
+    char *selected = text_buffer_selected_text(tb, &length);
+    TEST_REQUIRE(selected != NULL);
+    TEST_REQUIRE(strcmp(selected, "no\nn") == 0);
+    TEST_REQUIRE(length == 4);
+    free(selected);
+
+    TEST_REQUIRE(text_buffer_delete_selection(tb));
+    TEST_REQUIRE(text_buffer_line_count(tb) == 1);
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), "uiño") == 0);
+    TEST_REQUIRE(text_buffer_cursor_row(tb) == 0);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 1);
+    TEST_REQUIRE(!text_buffer_has_selection(tb));
+
+    text_buffer_destroy(tb);
+    printf("  PASS: multiline_selection_delete\n");
+}
+
+static void test_select_all_and_atomic_insert(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(text_buffer_set_text(tb, "abc\ndef"));
+    text_buffer_select_all(tb);
+    TEST_REQUIRE(text_buffer_has_selection(tb));
+
+    size_t length = 0;
+    char *selected = text_buffer_selected_text(tb, &length);
+    TEST_REQUIRE(selected != NULL);
+    TEST_REQUIRE(length == 7);
+    TEST_REQUIRE(strcmp(selected, "abc\ndef") == 0);
+    free(selected);
+
+    const char *replacement = "diseños";
+    TEST_REQUIRE(text_buffer_insert_text(tb, replacement,
+                                         strlen(replacement)));
+    TEST_REQUIRE(text_buffer_line_count(tb) == 1);
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), replacement) == 0);
+    TEST_REQUIRE(!text_buffer_has_selection(tb));
+
+    text_buffer_destroy(tb);
+    printf("  PASS: select_all_and_atomic_insert\n");
+}
+
+static void test_collapsed_shift_selection_stays_collapsed(void) {
+    TextBuffer *tb = text_buffer_create();
+    RetroKeyEvent shift_left = key_modified(
+        RETRO_KEY_LEFT, RETRO_MOD_SHIFT);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &shift_left));
+    TEST_REQUIRE(!text_buffer_has_selection(tb));
+
+    RetroKeyEvent letter = key_char('a');
+    TEST_REQUIRE(text_buffer_handle_key(tb, &letter));
+    TEST_REQUIRE(strcmp(text_buffer_line(tb, 0), "a") == 0);
+    TEST_REQUIRE(!text_buffer_has_selection(tb));
+
+    text_buffer_destroy(tb);
+    printf("  PASS: collapsed_shift_selection_stays_collapsed\n");
+}
+
+static void test_selection_render_overlay(void) {
+    TextBuffer *tb = text_buffer_create();
+    DrawList *list = draw_list_create();
+    TEST_REQUIRE(tb != NULL);
+    TEST_REQUIRE(list != NULL);
+    TEST_REQUIRE(text_buffer_set_text(tb, "niño"));
+    text_buffer_set_cursor(tb, 0, 2);
+
+    RetroKeyEvent shift_right = key_modified(
+        RETRO_KEY_RIGHT, RETRO_MOD_SHIFT);
+    TEST_REQUIRE(text_buffer_handle_key(tb, &shift_right));
+
+    RenderStyle style = {
+        RENDER_COLOR_WHITE, RENDER_COLOR_BLACK, false, false
+    };
+    RenderStyle cursor = {
+        RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, true, false
+    };
+    RenderStyle selection = {
+        .fg = RENDER_COLOR_BLACK,
+        .bg = RENDER_COLOR_CYAN,
+        .reverse = true,
+        .bold = false,
+    };
+    text_buffer_render_with_selection(
+        tb, list, 0, 0, 1, 6, &style, &cursor, &selection);
+
+    TEST_REQUIRE(draw_list_count(list) == 3);
+    DrawCommandView command = {0};
+    TEST_REQUIRE(draw_list_get(list, 1, &command));
+    TEST_REQUIRE(command.x == 2);
+    TEST_REQUIRE(strcmp(command.text, "ñ") == 0);
+    TEST_REQUIRE(command.style.reverse);
+    TEST_REQUIRE(draw_list_get(list, 2, &command));
+    TEST_REQUIRE(command.x == 3);
+    TEST_REQUIRE(strcmp(command.text, "o") == 0);
+
+    draw_list_destroy(list);
+    text_buffer_destroy(tb);
+    printf("  PASS: selection_render_overlay\n");
+}
+
+static void test_utf8_wrapped_render_and_navigation(void) {
+    TextBuffer *tb = text_buffer_create();
+    DrawList *list = draw_list_create();
+    TEST_REQUIRE(tb != NULL);
+    TEST_REQUIRE(list != NULL);
+    TEST_REQUIRE(text_buffer_set_text(tb, "abñcdEF"));
+    text_buffer_set_cursor(tb, 0, 8);
+
+    TEST_REQUIRE(text_buffer_visual_row_count(tb, 4) == 2);
+    TEST_REQUIRE(text_buffer_cursor_visual_row(tb, 4) == 1);
+
+    RetroKeyEvent shift_up = key_modified(RETRO_KEY_UP, RETRO_MOD_SHIFT);
+    TEST_REQUIRE(text_buffer_handle_key_wrapped(tb, &shift_up, 4));
+    TEST_REQUIRE(text_buffer_cursor_row(tb) == 0);
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 4);
+    TEST_REQUIRE(text_buffer_cursor_visual_row(tb, 4) == 0);
+    TEST_REQUIRE(text_buffer_has_selection(tb));
+
+    size_t selected_length = 0;
+    char *selected = text_buffer_selected_text(tb, &selected_length);
+    TEST_REQUIRE(selected != NULL);
+    TEST_REQUIRE(selected_length == 4);
+    TEST_REQUIRE(strcmp(selected, "cdEF") == 0);
+    free(selected);
+
+    RenderStyle style = {
+        RENDER_COLOR_WHITE, RENDER_COLOR_BLACK, false, false
+    };
+    RenderStyle cursor = {
+        RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, true, false
+    };
+    RenderStyle selection = {
+        .fg = RENDER_COLOR_BLACK,
+        .bg = RENDER_COLOR_CYAN,
+        .reverse = true,
+        .bold = false,
+    };
+    text_buffer_render_wrapped_with_selection(
+        tb, list, 0, 0, 2, 4, &style, &cursor, &selection);
+    TEST_REQUIRE(draw_list_count(list) == 5);
+
+    DrawCommandView command = {0};
+    TEST_REQUIRE(draw_list_get(list, 0, &command));
+    TEST_REQUIRE(strcmp(command.text, "abñc") == 0);
+    TEST_REQUIRE(draw_list_get(list, 1, &command));
+    TEST_REQUIRE(command.x == 3);
+    TEST_REQUIRE(strcmp(command.text, "c") == 0);
+    TEST_REQUIRE(draw_list_get(list, 2, &command));
+    TEST_REQUIRE(strcmp(command.text, "dEF ") == 0);
+    TEST_REQUIRE(draw_list_get(list, 3, &command));
+    TEST_REQUIRE(command.x == 0);
+    TEST_REQUIRE(strcmp(command.text, "dEF") == 0);
+    TEST_REQUIRE(draw_list_get(list, 4, &command));
+    TEST_REQUIRE(command.y == 0);
+    TEST_REQUIRE(command.x == 3);
+    TEST_REQUIRE(strcmp(command.text, "c") == 0);
+
+    RetroKeyEvent down = key_code(RETRO_KEY_DOWN);
+    TEST_REQUIRE(text_buffer_handle_key_wrapped(tb, &down, 4));
+    TEST_REQUIRE(text_buffer_cursor_col(tb) == 8);
+    TEST_REQUIRE(text_buffer_cursor_visual_row(tb, 4) == 1);
+    TEST_REQUIRE(!text_buffer_has_selection(tb));
+
+    draw_list_destroy(list);
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_wrapped_render_and_navigation\n");
+}
+
+static void test_utf8_find_next_and_wrap(void) {
+    TextBuffer *tb = text_buffer_create();
+    TEST_REQUIRE(tb != NULL);
+    TEST_REQUIRE(text_buffer_set_text(tb, "Árbol\nniño árbol\nÁRBOL"));
+
+    const char *query = "árbol";
+    TextBufferMatch match = {0};
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), true,
+                                       0, 0, true, &match));
+    TEST_REQUIRE(match.row == 0);
+    TEST_REQUIRE(match.start_col == 0);
+    TEST_REQUIRE(match.end_col == 6);
+
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), true,
+                                       match.row, match.end_col, true, &match));
+    TEST_REQUIRE(match.row == 1);
+    TEST_REQUIRE(match.start_col == 6);
+    TEST_REQUIRE(match.end_col == 12);
+
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), true,
+                                       match.row, match.end_col, true, &match));
+    TEST_REQUIRE(match.row == 2);
+    TEST_REQUIRE(match.start_col == 0);
+    TEST_REQUIRE(match.end_col == 6);
+
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), true,
+                                       match.row, match.end_col, true, &match));
+    TEST_REQUIRE(match.row == 0);
+    TEST_REQUIRE(text_buffer_select_match(tb, &match));
+    size_t selected_length = 0;
+    char *selected = text_buffer_selected_text(tb, &selected_length);
+    TEST_REQUIRE(selected != NULL);
+    TEST_REQUIRE(selected_length == 6);
+    TEST_REQUIRE(strcmp(selected, "Árbol") == 0);
+    free(selected);
+
+    TEST_REQUIRE(text_buffer_find_next(tb, query, strlen(query), false,
+                                       0, 0, true, &match));
+    TEST_REQUIRE(match.row == 1);
+    TEST_REQUIRE(match.start_col == 6);
+
+    const char invalid[] = {(char)0xC3};
+    TEST_REQUIRE(!text_buffer_find_next(tb, "", 0, true,
+                                        0, 0, true, &match));
+    TEST_REQUIRE(!text_buffer_find_next(tb, invalid, sizeof(invalid), true,
+                                        0, 0, true, &match));
+    TEST_REQUIRE(!text_buffer_find_next(tb, "missing", 7, true,
+                                        0, 0, true, &match));
+
+    text_buffer_destroy(tb);
+    printf("  PASS: utf8_find_next_and_wrap\n");
+}
+
 static void test_null_safety(void) {
     /* All functions should handle NULL gracefully. */
     TEST_REQUIRE(text_buffer_line_count(NULL) == 0);
@@ -334,7 +736,14 @@ static void test_null_safety(void) {
     TEST_REQUIRE(!text_buffer_delete_backward(NULL));
     TEST_REQUIRE(!text_buffer_delete_forward(NULL));
     TEST_REQUIRE(!text_buffer_handle_key(NULL, NULL));
+    TEST_REQUIRE(!text_buffer_handle_key_wrapped(NULL, NULL, 4));
+    TEST_REQUIRE(text_buffer_visual_row_count(NULL, 4) == 0);
+    TEST_REQUIRE(text_buffer_cursor_visual_row(NULL, 4) == 0);
     TEST_REQUIRE(!text_buffer_set_text(NULL, "test"));
+    TextBufferMatch match = {0};
+    TEST_REQUIRE(!text_buffer_find_next(NULL, "x", 1, true,
+                                        0, 0, true, &match));
+    TEST_REQUIRE(!text_buffer_select_match(NULL, &match));
     text_buffer_clear(NULL);
     text_buffer_set_cursor(NULL, 0, 0);
     text_buffer_destroy(NULL);
@@ -382,6 +791,19 @@ int main(void) {
     test_line_accessors_bounds();
     test_multiple_newlines();
     test_line_capacity_growth();
+    test_utf8_insert_and_roundtrip();
+    test_utf8_navigation_uses_codepoint_boundaries();
+    test_utf8_backspace_and_delete_remove_whole_codepoints();
+    test_utf8_vertical_navigation_preserves_display_column();
+    test_utf8_invalid_text_is_rejected_without_data_loss();
+    test_utf8_render_uses_cell_columns();
+    test_utf8_shift_selection_and_replacement();
+    test_multiline_selection_delete();
+    test_select_all_and_atomic_insert();
+    test_collapsed_shift_selection_stays_collapsed();
+    test_selection_render_overlay();
+    test_utf8_wrapped_render_and_navigation();
+    test_utf8_find_next_and_wrap();
     test_null_safety();
     test_render_basic();
     printf("All text_buffer tests passed.\n");

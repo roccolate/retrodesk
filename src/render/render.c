@@ -10,6 +10,7 @@
 #include <unistd.h>
 #endif
 
+#include "core/utf8.h"
 #include "render/ansi_renderer.h"
 #include "platform/platform_internal.h"
 
@@ -372,13 +373,20 @@ void render_draw_text(RenderContext *ctx, int y, int x, const char *text,
         return;
     }
     if (y < 0 || y >= ctx->h || x < 0 || x >= ctx->w) return;
-    int max_chars = ctx->w - x;
-    if (max_chars <= 0) return;
-    /* Avoid writing into the final column, which can wrap/scroll in curses. */
-    if (x + max_chars >= ctx->w) max_chars--;
+    int max_columns = ctx->w - x - 1;
+    if (max_columns <= 0) return;
+
+    size_t text_len = strlen(text);
+    size_t byte_len =
+        retro_utf8_prefix_bytes(text, text_len, (size_t)max_columns);
+    char clipped[DRAW_TEXT_CAP];
+    if (byte_len >= sizeof(clipped)) byte_len = sizeof(clipped) - 1;
+    memcpy(clipped, text, byte_len);
+    clipped[byte_len] = '\0';
+
     apply_style(ctx, style);
     wmove(ctx->win, y, x);
-    waddnstr(ctx->win, text, max_chars);
+    waddstr(ctx->win, clipped);
 }
 
 void render_draw_hline(RenderContext *ctx, int y, int x, int len, char ch,

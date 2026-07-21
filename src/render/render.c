@@ -1,6 +1,7 @@
 #include "render/render.h"
 
 #include <curses.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +18,7 @@
 struct Renderer {
     WINDOW *screen;
     bool has_colors;
+    bool uses_color_pair_cache;
     RenderBackendKind backend_kind;
     AnsiRenderer *ansi;
 };
@@ -58,15 +60,15 @@ typedef struct ColorPairEntry {
     short pair;
 } ColorPairEntry;
 
-/* curses color pairs are global to the screen; one cache is enough across
-   renderer instances. Defaults fall back to pair 0 (terminal default). */
+/* curses color pairs are global to the screen. Keep one shared cache and only
+   reset it after the last color-capable curses Renderer has been destroyed. */
 enum { COLOR_PAIR_CACHE_CAP = 64 };
 static ColorPairEntry g_color_pair_cache[COLOR_PAIR_CACHE_CAP];
 static int g_color_pair_count = 0;
+static size_t g_curses_renderer_count = 0;
 
 static short style_to_pair(Renderer *renderer, const RenderStyle *style) {
-    (void)renderer;
-    if (!style) return 0;
+    if (!renderer || !renderer->has_colors || !style) return 0;
     if (style->fg == RENDER_COLOR_DEFAULT && style->bg == RENDER_COLOR_DEFAULT) {
         return 0;
     }
@@ -112,19 +114,42 @@ static RenderStyle style_or_default(const RenderStyle *style) {
 
 static void draw_copy_text(char dst[DRAW_TEXT_CAP], const char *src) {
     if (!dst) return;
-    if (!src) {
-        dst[0] = '\0';
-        return;
+    dst[0] = '\0';
+    if (!src) return;
+
+    size_t src_len = strlen(src);
+    size_t offset = 0;
+    size_t safe_len = 0;
+    while (offset < src_len) {
+        uint32_t codepoint = 0;
+        size_t byte_len = 0;
+        if (!retro_utf8_decode(src, src_len, offset,
+                               &codepoint, &byte_len)) {
+            break;
+        }
+        (void)codepoint;
+        if (byte_len > (DRAW_TEXT_CAP - 1) - safe_len) break;
+        safe_len += byte_len;
+        offset += byte_len;
     }
-    snprintf(dst, DRAW_TEXT_CAP, "%s", src);
+
+    if (safe_len > 0) memcpy(dst, src, safe_len);
+    dst[safe_len] = '\0';
 }
 
 static bool draw_list_reserve(DrawList *list, size_t want) {
     if (!list) return false;
     if (want <= list->capacity) return true;
+    if (want > SIZE_MAX / sizeof(*list->commands)) return false;
 
-    size_t next = list->capacity ? list->capacity * 2 : 16;
-    while (next < want) next *= 2;
+    size_t next = list->capacity ? list->capacity : 16;
+    while (next < want) {
+        if (next > SIZE_MAX / 2) {
+            next = want;
+            break;
+        }
+        next *= 2;
+    }
 
     DrawCommand *commands = realloc(list->commands, next * sizeof(*commands));
     if (!commands) return false;
@@ -134,7 +159,7 @@ static bool draw_list_reserve(DrawList *list, size_t want) {
 }
 
 static DrawCommand *draw_list_push(DrawList *list, DrawCommandType type) {
-    if (!list) return NULL;
+    if (!list || list->count == SIZE_MAX) return NULL;
     if (!draw_list_reserve(list, list->count + 1)) return NULL;
     DrawCommand *cmd = &list->commands[list->count++];
     memset(cmd, 0, sizeof(*cmd));
@@ -184,6 +209,7 @@ Renderer *renderer_create_with_backend(const PlatformBackend *backend,
     renderer->backend_kind = normalize_backend_kind(backend_kind);
     renderer->screen = NULL;
     renderer->has_colors = false;
+    renderer->uses_color_pair_cache = false;
     renderer->ansi = NULL;
 
     if (renderer->backend_kind == RENDER_BACKEND_CURSES) {
@@ -207,6 +233,8 @@ Renderer *renderer_create_with_backend(const PlatformBackend *backend,
         /* Allow -1 (RENDER_COLOR_DEFAULT) as fg/bg in init_pair, mapping
            to the terminal's native foreground/background color. */
         use_default_colors();
+        renderer->uses_color_pair_cache = true;
+        g_curses_renderer_count++;
     }
     return renderer;
 }
@@ -219,8 +247,13 @@ void renderer_destroy(Renderer *renderer) {
     if (!renderer) return;
     ansi_renderer_destroy(renderer->ansi);
     renderer->ansi = NULL;
-    /* Reset the global color pair cache so a new renderer starts fresh. */
-    g_color_pair_count = 0;
+    if (renderer->uses_color_pair_cache && g_curses_renderer_count > 0) {
+        g_curses_renderer_count--;
+        if (g_curses_renderer_count == 0) {
+            g_color_pair_count = 0;
+            memset(g_color_pair_cache, 0, sizeof(g_color_pair_cache));
+        }
+    }
     free(renderer);
 }
 
@@ -381,6 +414,10 @@ void render_draw_text(RenderContext *ctx, int y, int x, const char *text,
         retro_utf8_prefix_bytes(text, text_len, (size_t)max_columns);
     char clipped[DRAW_TEXT_CAP];
     if (byte_len >= sizeof(clipped)) byte_len = sizeof(clipped) - 1;
+    while (byte_len > 0 &&
+           (((unsigned char)text[byte_len] & 0xc0u) == 0x80u)) {
+        byte_len--;
+    }
     memcpy(clipped, text, byte_len);
     clipped[byte_len] = '\0';
 

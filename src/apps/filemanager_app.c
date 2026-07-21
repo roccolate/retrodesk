@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #include "core/desktop.h"
 #include "core/key_chord.h"
@@ -28,8 +27,8 @@ typedef enum FileManagerPromptMode {
 
 typedef struct FileManagerItem {
     char *name;
-    mode_t mode;
-    off_t size;
+    RetroFsKind kind;
+    uint64_t size;
 } FileManagerItem;
 
 typedef struct FileManagerState {
@@ -97,7 +96,7 @@ static bool fm_collect(const RetroFsEntry *entry, void *userdata) {
         state->collect_error = RETRO_FS_OOM;
         return false;
     }
-    state->items[state->count].mode = entry->mode;
+    state->items[state->count].kind = entry->kind;
     state->items[state->count].size = entry->size;
     state->count++;
     return true;
@@ -210,12 +209,12 @@ static bool fm_open_selected(RetroAppInstance *instance) {
         fm_set_error(state, error);
         return false;
     }
-    if (S_ISDIR(version.mode)) {
+    if (version.kind == RETRO_FS_KIND_DIRECTORY) {
         retro_fs_path_destroy(&state->cwd);
         state->cwd = selected;
         return fm_reload(state, false);
     }
-    if (S_ISREG(version.mode)) {
+    if (version.kind == RETRO_FS_KIND_REGULAR) {
         RetroAppInstance *opened = app_launch_with_path(
             instance->ctx.desktop, "notepad", retro_fs_path_cstr(&selected));
         retro_fs_path_destroy(&selected);
@@ -452,10 +451,10 @@ static void fm_event(RetroAppInstance *instance, const RetroEvent *event) {
     }
 }
 
-static void fm_format_size(off_t size, char *out, size_t out_size) {
+static void fm_format_size(uint64_t size, char *out, size_t out_size) {
     if (!out || out_size == 0) return;
     static const char *const units[] = {"B", "K", "M", "G", "T"};
-    double value = size < 0 ? 0.0 : (double)size;
+    double value = (double)size;
     size_t unit = 0;
     while (value >= 1024.0 && unit + 1 < sizeof(units) / sizeof(units[0])) {
         value /= 1024.0;
@@ -508,12 +507,18 @@ static void fm_render(RetroAppInstance *instance, DrawList *draw_list) {
 
         char line[192];
         const FileManagerItem *item = &state->items[index];
-        if (S_ISDIR(item->mode)) {
+        if (item->kind == RETRO_FS_KIND_DIRECTORY) {
             snprintf(line, sizeof(line), "[D] %.60s/", item->name);
         } else {
             char size[16];
+            const char *marker = item->kind == RETRO_FS_KIND_REGULAR
+                                     ? "F"
+                                     : (item->kind == RETRO_FS_KIND_SYMLINK
+                                            ? "L"
+                                            : "?");
             fm_format_size(item->size, size, sizeof(size));
-            snprintf(line, sizeof(line), "[F] %-52.52s %8s", item->name, size);
+            snprintf(line, sizeof(line), "[%s] %-52.52s %8s",
+                     marker, item->name, size);
         }
         draw_list_text(draw_list, 4 + (int)row, 2, line,
                        index == state->selected ? selected : text);

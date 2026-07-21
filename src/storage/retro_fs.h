@@ -3,10 +3,9 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <sys/types.h>
-#include <time.h>
+#include <stdint.h>
 
-typedef enum {
+typedef enum RetroFsError {
     RETRO_FS_OK = 0,
     RETRO_FS_NOT_FOUND,
     RETRO_FS_PERMISSION,
@@ -19,22 +18,34 @@ typedef enum {
     RETRO_FS_INVALID_ARGUMENT
 } RetroFsError;
 
-typedef struct {
+typedef enum RetroFsKind {
+    RETRO_FS_KIND_UNKNOWN = 0,
+    RETRO_FS_KIND_REGULAR,
+    RETRO_FS_KIND_DIRECTORY,
+    RETRO_FS_KIND_SYMLINK,
+    RETRO_FS_KIND_OTHER,
+} RetroFsKind;
+
+typedef struct RetroFsPath {
     char *value;
 } RetroFsPath;
 
-typedef struct {
-    dev_t device;
-    ino_t inode;
-    off_t size;
-    time_t mtime;
-    mode_t mode;
+/* Adapter-neutral optimistic-concurrency token. Applications may retain and
+   return this value, but must not infer platform semantics from the identity
+   fields. Zero initialization produces an invalid/no-version token. */
+typedef struct RetroFsVersion {
+    bool valid;
+    RetroFsKind kind;
+    uint64_t volume_id;
+    uint64_t file_id;
+    uint64_t size;
+    int64_t modified_ns;
 } RetroFsVersion;
 
-typedef struct {
+typedef struct RetroFsEntry {
     char *name;
-    mode_t mode;
-    off_t size;
+    RetroFsKind kind;
+    uint64_t size;
     RetroFsVersion version;
 } RetroFsEntry;
 
@@ -45,7 +56,7 @@ void retro_fs_path_destroy(RetroFsPath *path);
 const char *retro_fs_path_cstr(const RetroFsPath *path);
 RetroFsError retro_fs_path_parent(const RetroFsPath *path, RetroFsPath *parent);
 RetroFsError retro_fs_path_join(const RetroFsPath *base, const char *name,
-                                 RetroFsPath *joined);
+                                  RetroFsPath *joined);
 
 RetroFsError retro_fs_stat(const RetroFsPath *path, RetroFsVersion *version);
 /* Lists at most max_entries entries. A directory larger than the limit is
@@ -57,7 +68,8 @@ RetroFsError retro_fs_list(const RetroFsPath *path, size_t max_entries,
 RetroFsError retro_fs_read_text(const RetroFsPath *path, char **data,
                                  size_t *length, RetroFsVersion *version);
 RetroFsError retro_fs_write_atomic(const RetroFsPath *path, const char *data,
-                                    size_t length, const RetroFsVersion *expected,
+                                    size_t length,
+                                    const RetroFsVersion *expected,
                                     RetroFsVersion *written);
 
 /* Creation and rename operations never intentionally replace an existing

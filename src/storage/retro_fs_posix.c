@@ -24,17 +24,40 @@ static RetroFsError map_errno(int e) {
     return RETRO_FS_IO;
 }
 
+static RetroFsKind kind_from_mode(mode_t mode) {
+    if (S_ISREG(mode)) return RETRO_FS_KIND_REGULAR;
+    if (S_ISDIR(mode)) return RETRO_FS_KIND_DIRECTORY;
+    if (S_ISLNK(mode)) return RETRO_FS_KIND_SYMLINK;
+    return RETRO_FS_KIND_OTHER;
+}
+
+static int64_t modified_time_ns(const struct stat *s) {
+#if defined(__APPLE__)
+    return (int64_t)s->st_mtimespec.tv_sec * INT64_C(1000000000) +
+           (int64_t)s->st_mtimespec.tv_nsec;
+#else
+    return (int64_t)s->st_mtim.tv_sec * INT64_C(1000000000) +
+           (int64_t)s->st_mtim.tv_nsec;
+#endif
+}
+
 static void fill_version(const struct stat *s, RetroFsVersion *v) {
-    v->device = s->st_dev;
-    v->inode = s->st_ino;
-    v->size = s->st_size;
-    v->mtime = s->st_mtime;
-    v->mode = s->st_mode;
+    if (!s || !v) return;
+    v->valid = true;
+    v->kind = kind_from_mode(s->st_mode);
+    v->volume_id = (uint64_t)s->st_dev;
+    v->file_id = (uint64_t)s->st_ino;
+    v->size = s->st_size > 0 ? (uint64_t)s->st_size : 0;
+    v->modified_ns = modified_time_ns(s);
 }
 
 static bool same_version(const RetroFsVersion *a, const RetroFsVersion *b) {
-    return a && b && a->device == b->device && a->inode == b->inode &&
-           a->size == b->size && a->mtime == b->mtime;
+    return a && b && a->valid && b->valid &&
+           a->kind == b->kind &&
+           a->volume_id == b->volume_id &&
+           a->file_id == b->file_id &&
+           a->size == b->size &&
+           a->modified_ns == b->modified_ns;
 }
 
 RetroFsError retro_fs_path_init(RetroFsPath *p, const char *v) {
@@ -100,12 +123,12 @@ RetroFsError retro_fs_stat(const RetroFsPath *p, RetroFsVersion *v) {
 static int entry_compare(const void *lhs, const void *rhs) {
     const RetroFsEntry *a = lhs;
     const RetroFsEntry *b = rhs;
-    bool ad = S_ISDIR(a->mode);
-    bool bd = S_ISDIR(b->mode);
-    bool ar = S_ISREG(a->mode);
-    bool br = S_ISREG(b->mode);
-    int ak = ad ? 0 : (ar ? 1 : 2);
-    int bk = bd ? 0 : (br ? 1 : 2);
+    int ak = a->kind == RETRO_FS_KIND_DIRECTORY
+                 ? 0
+                 : (a->kind == RETRO_FS_KIND_REGULAR ? 1 : 2);
+    int bk = b->kind == RETRO_FS_KIND_DIRECTORY
+                 ? 0
+                 : (b->kind == RETRO_FS_KIND_REGULAR ? 1 : 2);
     if (ak != bk) return ak - bk;
     return strcmp(a->name, b->name);
 }
@@ -149,9 +172,9 @@ RetroFsError retro_fs_list(const RetroFsPath *p, size_t max_entries,
             result = RETRO_FS_OOM;
             break;
         }
-        entry.mode = s.st_mode;
-        entry.size = s.st_size;
         fill_version(&s, &entry.version);
+        entry.kind = entry.version.kind;
+        entry.size = entry.version.size;
         RetroFsEntry *next = realloc(entries, (count + 1) * sizeof(*next));
         if (!next) {
             free(entry.name);
@@ -270,11 +293,12 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *p, const char *data, size_
     if (exists && (!S_ISREG(old.st_mode) || S_ISLNK(old.st_mode))) {
         return RETRO_FS_UNSUPPORTED;
     }
-    if (exp &&
-        (!exists ||
-         !same_version(exp, &(RetroFsVersion){old.st_dev, old.st_ino, old.st_size,
-                                               old.st_mtime, old.st_mode}))) {
-        return RETRO_FS_CONFLICT;
+    if (exp) {
+        RetroFsVersion current = {0};
+        if (exists) fill_version(&old, &current);
+        if (!exists || !same_version(exp, &current)) {
+            return RETRO_FS_CONFLICT;
+        }
     }
     RetroFsPath par = {0};
     RetroFsError er = retro_fs_path_parent(p, &par);

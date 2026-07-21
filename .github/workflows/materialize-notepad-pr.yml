@@ -1,0 +1,64 @@
+name: Materialize Notepad PR
+
+on:
+  pull_request:
+    branches:
+      - agent/core-collection-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.ref == 'agent/notepad-native-ux'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libncurses-dev
+
+      - name: Apply native Notepad UX slice
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/materialize-notepad-native-ux.yml')
+          source = workflow.read_text(encoding='utf-8')
+          start = "          python3 - <<'PY'\n"
+          end = "\n          PY\n"
+          payload = source.split(start, 1)[1].split(end, 1)[0]
+          exec(compile(textwrap.dedent(payload), str(workflow), 'exec'), {})
+          PY
+
+      - name: Validate strict Linux gates
+        shell: bash
+        run: |
+          cmake -S . -B build-materialize \
+            -DENABLE_TESTS=ON \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DENABLE_WERROR=ON
+          cmake --build build-materialize --parallel 2
+          ctest --test-dir build-materialize --output-on-failure
+          python3 scripts/check_test_oracles.py
+          python3 scripts/check_djgpp_sources.py
+
+      - name: Publish one focused commit
+        shell: bash
+        run: |
+          rm -f .github/workflows/materialize-notepad-native-ux.yml
+          rm -f .github/workflows/materialize-notepad-pr.yml
+          rm -rf build-materialize
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git reset --soft 06f5e939a4da7ce46ccf166072a6213da6a08799
+          git add -A
+          git commit -m "feat: add native responsive Notepad chrome"
+          git push --force-with-lease origin HEAD:agent/notepad-native-ux

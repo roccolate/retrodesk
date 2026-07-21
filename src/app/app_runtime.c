@@ -103,6 +103,15 @@ void app_destroy(RetroAppInstance *app) {
     free(app);
 }
 
+void app_prepare_emergency_shutdown(RetroAppInstance *app) {
+    if (!app) return;
+    app->emergency_shutdown = true;
+}
+
+bool app_is_emergency_shutdown(const RetroAppInstance *app) {
+    return app && app->emergency_shutdown;
+}
+
 RetroCloseResult app_request_close(RetroAppInstance *app) {
     if (!app) return RETRO_CLOSE_CANCELLED;
 

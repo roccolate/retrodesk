@@ -22,6 +22,7 @@ Tests use always-active oracles from `tests/test_harness.h`.
 
 - desktop create/run/shutdown and partial-init rollback;
 - capability-based app rejection and create-failure cleanup;
+- budgeted app services and active-service poll-timeout clamping;
 - focus, z-order, drag, move, resize, modal routing, and close lifecycle;
 - interactive taskbar rendering, hit testing, launch, focus, and instance cycling;
 - one renderer flush per frame;
@@ -134,7 +135,8 @@ interactive PTY smoke tests.
 - Interface changes update related documentation.
 - Input, focus, resize, storage, UTF-8, or close-flow fixes add regressions.
 - Parser changes test complete, fragmented, and invalid input.
-- App-runtime changes test launch rejection, rollback, close, and cleanup.
+- App-runtime changes test launch rejection, rollback, service budgets,
+  timeout policy, close, and cleanup.
 - File-app changes test both lower-level behavior and app event flows.
 - Interactive terminal behavior is not release-verified solely by headless tests.
 

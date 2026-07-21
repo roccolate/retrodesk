@@ -35,6 +35,9 @@ typedef struct LauncherState {
     WindowId window_id;
 } LauncherState;
 
+static const int k_active_service_poll_ms = 16;
+static const size_t k_app_service_budget = 8192;
+
 struct Desktop {
     PlatformBackend *platform;
     Renderer *renderer;
@@ -91,6 +94,36 @@ static bool desktop_app_is_running(const Desktop *desktop, const char *app_id) {
         }
     }
     return false;
+}
+
+static bool desktop_has_active_services(const Desktop *desktop) {
+    if (!desktop) return false;
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        const RetroAppInstance *app = desktop->apps[i].app;
+        if (app && app->descriptor && app->descriptor->on_service) return true;
+    }
+    return false;
+}
+
+static void desktop_service_apps(Desktop *desktop) {
+    if (!desktop) return;
+    for (size_t i = 0; i < desktop->app_count; ++i) {
+        RetroAppInstance *app = desktop->apps[i].app;
+        RetroAppServiceResult result = app_service(app, k_app_service_budget);
+        if ((result & RETRO_APP_SERVICE_REDRAW) != 0) {
+            desktop->needs_redraw = true;
+        }
+    }
+}
+
+static int desktop_poll_timeout_ms(const Desktop *desktop) {
+    if (!desktop) return 0;
+    int timeout_ms = desktop->config.input_timeout_ms;
+    if (desktop_has_active_services(desktop) &&
+        timeout_ms > k_active_service_poll_ms) {
+        timeout_ms = k_active_service_poll_ms;
+    }
+    return timeout_ms;
 }
 
 static bool desktop_add_app(Desktop *desktop, RetroAppInstance *app, WindowId window_id) {
@@ -964,9 +997,15 @@ int desktop_run(Desktop *desktop) {
 
     desktop->running = true;
     while (desktop->running) {
+        /* Background services are part of the one Desktop loop. Each app receives
+           one bounded callback before the blocking platform poll. */
+        desktop_service_apps(desktop);
+        desktop_cleanup_apps(desktop);
+        desktop_continue_shutdown(desktop);
+
         RetroEvent event = {0};
         RetroPollResult poll_result = platform_poll_event(
-            desktop->platform, &event, desktop->config.input_timeout_ms);
+            desktop->platform, &event, desktop_poll_timeout_ms(desktop));
 
         if (poll_result == RETRO_POLL_EVENT) {
             (void)desktop_dispatch_event(desktop, &event);

@@ -18,14 +18,16 @@
 
 ## Event Flow
 
-1. `platform_poll_event()` returns a normalized `RetroEvent`.
-2. `core` handles unambiguous global commands such as function keys and control
+1. Optional app services receive one non-blocking, budgeted callback from the
+   single Desktop loop.
+2. `platform_poll_event()` returns a normalized `RetroEvent`.
+3. `core` handles unambiguous global commands such as function keys and control
    chords.
-3. Taskbar mouse hit testing can consume a click before window routing.
-4. `wm_handle_event()` routes remaining events to the focused or targeted
+4. Taskbar mouse hit testing can consume a click before window routing.
+5. `wm_handle_event()` routes remaining events to the focused or targeted
    window.
-5. App callbacks update their state and may request close or redraw.
-6. Desktop cleanup reconciles app requests with window existence and app
+6. App callbacks update their state and may request close or redraw.
+7. Desktop cleanup reconciles app requests with window existence and app
    `can_close` policy.
 
 Printable keys and ordinary `Tab` events belong to the focused application.
@@ -55,6 +57,16 @@ counts, and clock.
 8. Close requests pass through `can_close` before the window is removed.
 
 This allows Notepad to defer `Ctrl+W` while it displays Save/Discard/Cancel.
+
+## App Service Policy
+
+Apps that own asynchronous resources may expose `on_service`. Desktop invokes
+that callback from the ordinary main loop with an 8 KiB work budget. A service
+must never block, poll input, render directly, or flush a backend. Returning
+`RETRO_APP_SERVICE_REDRAW` only marks the frame dirty. While at least one service
+is active, the platform-event wait is capped at 16 ms; apps without services keep
+the configured timeout. This is the foundation for PTY, network, or subprocess
+adapters without introducing worker-owned UI state or a nested event loop.
 
 ## Taskbar Model
 

@@ -34,6 +34,14 @@ typedef enum RetroCloseResult {
     RETRO_CLOSE_CANCELLED,
 } RetroCloseResult;
 
+/* Optional background services run from the single Desktop loop. Callbacks must
+   not block and must honor the supplied work budget. REDRAW reports that visible
+   app state changed; unknown future flags are ignored by older hosts. */
+typedef enum RetroAppServiceResult {
+    RETRO_APP_SERVICE_IDLE = 0,
+    RETRO_APP_SERVICE_REDRAW = 1u << 0,
+} RetroAppServiceResult;
+
 typedef struct RetroAppContext {
     Desktop *desktop;
     RetroClipboard *clipboard; /* borrowed from Desktop */
@@ -57,6 +65,8 @@ typedef struct RetroAppDescriptor {
     bool allow_multiple;
     bool (*create)(RetroAppInstance *instance, const RetroAppContext *ctx);
     void (*on_event)(RetroAppInstance *instance, const RetroEvent *event);
+    RetroAppServiceResult (*on_service)(RetroAppInstance *instance,
+                                        size_t work_budget);
     void (*on_render)(RetroAppInstance *instance, DrawList *draw_list);
     /* Return false to keep a dirty/document-protecting app open. */
     bool (*can_close)(RetroAppInstance *instance);
@@ -84,6 +94,7 @@ const RetroAppDescriptor *app_registry_descriptor_at(const AppRegistry *registry
                                                       size_t index);
 
 void app_handle_event(RetroAppInstance *app, const RetroEvent *event);
+RetroAppServiceResult app_service(RetroAppInstance *app, size_t work_budget);
 void app_render(RetroAppInstance *app, DrawList *draw_list);
 void app_destroy(RetroAppInstance *app);
 RetroCloseResult app_request_close(RetroAppInstance *app);

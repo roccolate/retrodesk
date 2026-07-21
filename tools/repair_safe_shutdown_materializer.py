@@ -25,7 +25,8 @@ replacement = r'''def update_notepad(text: str) -> str:
 
 
 def update_desktop_h'''
-updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+updated, count = re.subn(pattern, lambda match: replacement,
+                         text, count=1, flags=re.S)
 if count != 1:
     raise SystemExit(f"repair expected one update_notepad function, found {count}")
 path.write_text(updated, encoding="utf-8")

@@ -23,7 +23,9 @@ typedef struct AppRegistry AppRegistry;
 
 /* Close negotiation is separate from destruction. ALLOWED means the app has
    authorized a close request; Desktop may still defer window destruction until
-   every app has authorized a transactional global shutdown. */
+   every app has authorized a transactional global shutdown. DEFERRED means the
+   app owns a pending user decision. CANCELLED aborts that request and causes a
+   Desktop transaction to reset every earlier authorization. */
 typedef enum RetroCloseResult {
     RETRO_CLOSE_ALLOWED = 0,
     RETRO_CLOSE_DEFERRED,

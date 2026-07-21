@@ -1,6 +1,5 @@
 #include "render/render.h"
 
-#include <curses.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

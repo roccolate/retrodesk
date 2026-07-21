@@ -48,7 +48,9 @@ void text_buffer_select_all(TextBuffer *buf);
 char *text_buffer_selected_text(const TextBuffer *buf, size_t *length);
 /* Select a validated match range and place the cursor at its end. */
 bool text_buffer_select_match(TextBuffer *buf, const TextBufferMatch *match);
-/* Find the next single-line UTF-8 query from the supplied byte boundary. */
+/* Find the next single-line UTF-8 query from the supplied byte boundary.
+   Case-insensitive matching folds letter case but does not remove accents or
+   otherwise normalize codepoints; match columns remain UTF-8 byte offsets. */
 bool text_buffer_find_next(const TextBuffer *buf,
                            const char *query, size_t query_length,
                            bool case_insensitive,

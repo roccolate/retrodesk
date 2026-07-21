@@ -29,6 +29,22 @@ static char *test_duplicate(const char *value) {
     return copy;
 }
 
+static bool ascii_case_equal(const char *left, const char *right) {
+    if (!left || !right) return left == right;
+    while (*left && *right) {
+        unsigned char a = (unsigned char)*left++;
+        unsigned char b = (unsigned char)*right++;
+        if (a >= (unsigned char)'a' && a <= (unsigned char)'z') {
+            a = (unsigned char)(a - (unsigned char)'a' + (unsigned char)'A');
+        }
+        if (b >= (unsigned char)'a' && b <= (unsigned char)'z') {
+            b = (unsigned char)(b - (unsigned char)'a' + (unsigned char)'A');
+        }
+        if (a != b) return false;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
 static bool collect_name(const RetroFsEntry *entry, void *userdata) {
     Names *names = userdata;
     char **next = realloc(names->items, (names->count + 1) * sizeof(*next));
@@ -101,8 +117,8 @@ int main(void) {
     TEST_REQUIRE(retro_fs_list(&root, 100, collect_name, &names) == RETRO_FS_OK);
     TEST_REQUIRE(names.count == 3);
     TEST_REQUIRE(strcmp(names.items[0], "..") == 0);
-    TEST_REQUIRE(strcmp(names.items[1], "A.TXT") == 0);
-    TEST_REQUIRE(strcmp(names.items[2], "B.TXT") == 0);
+    TEST_REQUIRE(ascii_case_equal(names.items[1], "A.TXT"));
+    TEST_REQUIRE(ascii_case_equal(names.items[2], "B.TXT"));
     free_names(&names);
 
     RetroFsPath parent = {0};

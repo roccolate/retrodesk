@@ -39,10 +39,6 @@ typedef struct RetroAppContext {
     WindowId window_id;
     const DesktopCapabilities *capabilities;
     const RetroTheme *theme;
-    /* Set immediately before destruction when the input host disappeared or
-       the platform failed. Apps may use this to persist emergency recovery
-       data; ordinary close/discard paths leave it false. */
-    bool emergency_shutdown;
     /* Optional resource selected by a launcher (currently a filesystem path).
        The runtime owns the string for the lifetime of the instance. */
     const char *resource_path;

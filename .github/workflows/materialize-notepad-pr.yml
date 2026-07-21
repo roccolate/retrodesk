@@ -32,14 +32,17 @@ jobs:
           set +e
           python3 - <<'PY' > /tmp/notepad-materializer.log 2>&1
           from pathlib import Path
-          import textwrap
 
           workflow = Path('.github/workflows/materialize-notepad-native-ux.yml')
           source = workflow.read_text(encoding='utf-8')
           start = "          python3 - <<'PY'\n"
           end = "\n          PY\n"
-          payload = source.split(start, 1)[1].split(end, 1)[0]
-          exec(compile(textwrap.dedent(payload), str(workflow), 'exec'), {})
+          embedded = source.split(start, 1)[1].split(end, 1)[0]
+          payload = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in embedded.splitlines()
+          )
+          exec(compile(payload, str(workflow), 'exec'), {})
           PY
           status=$?
           cat /tmp/notepad-materializer.log

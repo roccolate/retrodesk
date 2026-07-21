@@ -91,6 +91,7 @@ endif()
 function(retrodesk_apply_quality target)
     target_compile_features(${target} PRIVATE c_std_11)
     target_compile_definitions(${target} PRIVATE
+        $<$<C_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>
         $<$<NOT:$<C_COMPILER_ID:MSVC>>:_POSIX_C_SOURCE=200809L>
     )
     if (ENABLE_STRICT_WARNINGS)
@@ -602,5 +603,10 @@ if (ENABLE_TESTS AND BUILD_TESTING)
     endif()
     foreach(_test_target IN LISTS RETRODESK_TEST_TARGETS)
         retrodesk_apply_quality(${_test_target})
+        if (MSVC)
+            # Boundary tests intentionally materialize truncated byte values.
+            # Keep /W4 /WX for all other diagnostics without weakening product code.
+            target_compile_options(${_test_target} PRIVATE /wd4310)
+        endif()
     endforeach()
 endif()

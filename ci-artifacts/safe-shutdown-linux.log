@@ -1,0 +1,322 @@
+-- The C compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found Python3: /usr/bin/python3.12 (found version "3.12.3") found components: Interpreter
+-- Looking for wsyncup in /usr/lib/x86_64-linux-gnu/libcurses.so
+-- Looking for wsyncup in /usr/lib/x86_64-linux-gnu/libcurses.so - found
+-- Looking for cbreak in /usr/lib/x86_64-linux-gnu/libncursesw.so
+-- Looking for cbreak in /usr/lib/x86_64-linux-gnu/libncursesw.so - found
+-- Looking for nodelay in /usr/lib/x86_64-linux-gnu/libncursesw.so
+-- Looking for nodelay in /usr/lib/x86_64-linux-gnu/libncursesw.so - found
+-- Found Curses: /usr/lib/x86_64-linux-gnu/libncursesw.so
+-- Configuring done (0.6s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/runner/work/retrodesk/retrodesk/build/fixture-debug
+[  0%] Building C object CMakeFiles/retrodesk.dir/src/core/cli.c.o
+[  1%] Building C object CMakeFiles/cli_parse_test.dir/tests/cli_parse_test.c.o
+[  1%] Building C object CMakeFiles/key_chord_test.dir/src/core/key_chord.c.o
+[  2%] Building C object CMakeFiles/retrodesk.dir/src/main.c.o
+[  3%] Building C object CMakeFiles/key_chord_test.dir/tests/key_chord_test.c.o
+[  5%] Building C object CMakeFiles/app_registry_test.dir/tests/app_registry_test.c.o
+[  4%] Building C object CMakeFiles/clipboard_test.dir/tests/clipboard_test.c.o
+[  5%] Building C object CMakeFiles/utf8_test.dir/tests/utf8_test.c.o
+[  6%] Building C object CMakeFiles/utf8_test.dir/src/core/utf8.c.o
+[  5%] Building C object CMakeFiles/retrodesk.dir/src/core/clipboard.c.o
+[  6%] Building C object CMakeFiles/key_chord_test.dir/src/core/utf8.c.o
+[  6%] Building C object CMakeFiles/clipboard_test.dir/src/core/clipboard.c.o
+[  6%] Building C object CMakeFiles/cli_parse_test.dir/src/core/cli.c.o
+[  7%] Building C object CMakeFiles/clipboard_test.dir/src/core/utf8.c.o
+[  8%] Building C object CMakeFiles/app_registry_test.dir/src/app/app_runtime.c.o
+[  9%] Building C object CMakeFiles/cli_parse_test.dir/src/ui/theme.c.o
+[ 10%] Building C object CMakeFiles/retrodesk.dir/src/platform/platform.c.o
+[ 10%] Building C object CMakeFiles/retrodesk.dir/src/platform/platform_curses.c.o
+[ 10%] Building C object CMakeFiles/retrodesk.dir/src/core/desktop.c.o
+[ 11%] Building C object CMakeFiles/retrodesk.dir/src/core/key_chord.c.o
+[ 11%] Building C object CMakeFiles/retrodesk.dir/src/core/utf8.c.o
+[ 13%] Building C object CMakeFiles/wm_event_replay_test.dir/tests/wm_event_replay_test.c.o
+[ 14%] Building C object CMakeFiles/retrodesk.dir/src/render/ansi_renderer.c.o
+[ 14%] Building C object CMakeFiles/retrodesk.dir/src/platform/tty_decoder.c.o
+[ 15%] Building C object CMakeFiles/retrodesk.dir/src/app/app_runtime.c.o
+[ 12%] Building C object CMakeFiles/retrodesk.dir/src/platform/platform_tty_raw.c.o
+[ 15%] Building C object CMakeFiles/retrodesk.dir/src/ui/statusbar.c.o
+[ 15%] Building C object CMakeFiles/retrodesk.dir/src/wm/window_manager.c.o
+[ 15%] Building C object CMakeFiles/platform_features_test.dir/tests/platform_features_test.c.o
+[ 15%] Building C object CMakeFiles/draw_list_contract_test.dir/tests/draw_list_contract_test.c.o
+[ 16%] Building C object CMakeFiles/wm_event_replay_test.dir/src/wm/window_manager.c.o
+[ 13%] Building C object CMakeFiles/retrodesk.dir/src/render/render.c.o
+[ 16%] Building C object CMakeFiles/retrodesk.dir/src/ui/scroll_list.c.o
+[ 16%] Building C object CMakeFiles/theme_catalog_test.dir/src/ui/theme.c.o
+[ 16%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/tests/ansi_renderer_diff_test.c.o
+[ 17%] Building C object CMakeFiles/button_test.dir/tests/button_test.c.o
+[ 18%] Building C object CMakeFiles/retrodesk.dir/src/ui/text_input.c.o
+[ 19%] Building C object CMakeFiles/theme_catalog_test.dir/tests/theme_catalog_test.c.o
+[ 19%] Building C object CMakeFiles/statusbar_drawlist_test.dir/tests/statusbar_drawlist_test.c.o
+[ 15%] Building C object CMakeFiles/wm_event_replay_test.dir/tests/wm_render_stub.c.o
+[ 20%] Building C object CMakeFiles/retrodesk.dir/src/ui/text_buffer.c.o
+[ 15%] Building C object CMakeFiles/wm_event_replay_test.dir/src/ui/theme.c.o
+[ 20%] Building C object CMakeFiles/draw_list_contract_test.dir/src/core/key_chord.c.o
+[ 21%] Building C object CMakeFiles/retrodesk.dir/src/ui/button.c.o
+[ 22%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/platform/platform.c.o
+[ 23%] Building C object CMakeFiles/draw_list_contract_test.dir/src/core/utf8.c.o
+[ 23%] Building C object CMakeFiles/retrodesk.dir/src/ui/dialog.c.o
+[ 23%] Building C object CMakeFiles/retrodesk.dir/src/ui/theme.c.o
+[ 24%] Building C object CMakeFiles/draw_list_contract_test.dir/src/platform/platform_tty_raw.c.o
+[ 24%] Building C object CMakeFiles/retrodesk.dir/src/apps/filemanager_app.c.o
+[ 24%] Building C object CMakeFiles/text_buffer_test.dir/tests/text_buffer_test.c.o
+[ 24%] Building C object CMakeFiles/progress_bar_test.dir/tests/progress_bar_test.c.o
+[ 25%] Building C object CMakeFiles/retrodesk.dir/src/apps/apps.c.o
+[ 25%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/platform/platform_curses.c.o
+[ 26%] Building C object CMakeFiles/retrodesk.dir/src/ui/tab.c.o
+[ 26%] Building C object CMakeFiles/dialog_test.dir/tests/dialog_test.c.o
+[ 27%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/platform/platform_tty_raw.c.o
+[ 27%] Building C object CMakeFiles/scroll_list_test.dir/tests/scroll_list_test.c.o
+[ 27%] Building C object CMakeFiles/tty_decoder_test.dir/src/platform/tty_decoder.c.o
+[ 28%] Building C object CMakeFiles/draw_list_contract_test.dir/src/platform/tty_decoder.c.o
+[ 19%] Building C object CMakeFiles/tty_decoder_test.dir/tests/tty_decoder_test.c.o
+[ 24%] Building C object CMakeFiles/retrodesk.dir/src/ui/menu_bar.c.o
+[ 29%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/src/render/render.c.o
+[ 30%] Building C object CMakeFiles/desktop_runtime_test.dir/src/ui/text_input.c.o
+[ 31%] Building C object CMakeFiles/dialog_test.dir/src/platform/platform_tty_raw.c.o
+[ 32%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/ui/statusbar.c.o
+[ 32%] Building C object CMakeFiles/desktop_runtime_test.dir/src/apps/notepad_app.c.o
+[ 33%] Building C object CMakeFiles/dialog_test.dir/src/platform/tty_decoder.c.o
+[ 33%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/ui/theme.c.o
+[ 34%] Building C object CMakeFiles/dialog_test.dir/src/render/render.c.o
+[ 34%] Building C object CMakeFiles/desktop_runtime_test.dir/src/ui/theme.c.o
+[ 35%] Building C object CMakeFiles/text_buffer_test.dir/src/render/ansi_renderer.c.o
+[ 36%] Building C object CMakeFiles/text_buffer_test.dir/src/ui/text_buffer.c.o
+[ 36%] Building C object CMakeFiles/dialog_test.dir/src/render/ansi_renderer.c.o
+[ 37%] Building C object CMakeFiles/button_test.dir/src/core/key_chord.c.o
+[ 33%] Building C object CMakeFiles/desktop_runtime_test.dir/src/ui/statusbar.c.o
+[ 38%] Building C object CMakeFiles/text_input_test.dir/tests/text_input_test.c.o
+[ 39%] Building C object CMakeFiles/desktop_runtime_test.dir/tests/wm_render_stub.c.o
+[ 40%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/ui/statusbar.c.o
+[ 41%] Building C object CMakeFiles/text_input_test.dir/src/core/key_chord.c.o
+[ 42%] Building C object CMakeFiles/text_buffer_test.dir/src/core/key_chord.c.o
+[ 43%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/core/key_chord.c.o
+[ 44%] Building C object CMakeFiles/progress_bar_test.dir/src/ui/progress_bar.c.o
+[ 45%] Building C object CMakeFiles/retrodesk.dir/src/apps/notepad_app.c.o
+[ 46%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/tests/wm_render_stub.c.o
+[ 47%] Building C object CMakeFiles/desktop_runtime_test.dir/src/app/app_runtime.c.o
+[ 48%] Linking C executable platform_features_test
+[ 49%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/src/core/utf8.c.o
+[ 50%] Building C object CMakeFiles/tab_test.dir/src/core/utf8.c.o
+[ 51%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/render/ansi_renderer.c.o
+[ 53%] Building C object CMakeFiles/text_input_test.dir/src/platform/platform_curses.c.o
+[ 54%] Building C object CMakeFiles/menu_bar_test.dir/src/ui/menu_bar.c.o
+[ 52%] Linking C executable theme_catalog_test
+[ 55%] Building C object CMakeFiles/tab_test.dir/src/platform/platform_tty_raw.c.o
+[ 56%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/src/platform/platform_curses.c.o
+[ 56%] Linking C executable utf8_test
+[ 56%] Linking C executable cli_parse_test
+[ 56%] Linking C executable clipboard_test
+[ 57%] Building C object CMakeFiles/button_test.dir/src/platform/platform.c.o
+[ 57%] Linking C executable app_registry_test
+[ 58%] Building C object CMakeFiles/retrodesk.dir/src/storage/retro_fs_posix.c.o
+[ 59%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/core/clipboard.c.o
+[ 60%] Linking C executable key_chord_test
+[ 61%] Building C object CMakeFiles/text_buffer_test.dir/src/platform/platform_curses.c.o
+[ 62%] Building C object CMakeFiles/dialog_test.dir/src/ui/dialog.c.o
+[ 63%] Building C object CMakeFiles/menu_bar_test.dir/src/core/utf8.c.o
+[ 64%] Building C object CMakeFiles/button_test.dir/src/platform/platform_tty_raw.c.o
+[ 65%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/src/platform/tty_decoder.c.o
+[ 66%] Building C object CMakeFiles/progress_bar_test.dir/src/core/utf8.c.o
+[ 66%] Built target platform_features_test
+[ 67%] Building C object CMakeFiles/text_input_test.dir/src/platform/tty_decoder.c.o
+[ 68%] Building C object CMakeFiles/desktop_runtime_test.dir/src/apps/filemanager_app.c.o
+[ 70%] Building C object CMakeFiles/tab_test.dir/src/render/render.c.o
+[ 29%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/src/core/key_chord.c.o
+[ 29%] Building C object CMakeFiles/text_buffer_test.dir/src/ui/text_input.c.o
+[ 29%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/src/platform/platform_tty_raw.c.o
+[ 29%] Building C object CMakeFiles/button_test.dir/src/platform/platform_curses.c.o
+[ 29%] Building C object CMakeFiles/text_buffer_test.dir/src/platform/platform_tty_raw.c.o
+[ 29%] Building C object CMakeFiles/tab_test.dir/src/platform/platform_curses.c.o
+[ 29%] Building C object CMakeFiles/desktop_runtime_test.dir/src/apps/apps.c.o
+[ 29%] Building C object CMakeFiles/progress_bar_test.dir/src/platform/platform.c.o
+[ 29%] Building C object CMakeFiles/desktop_runtime_test.dir/src/core/utf8.c.o
+[ 29%] Building C object CMakeFiles/retrodesk.dir/src/apps/terminal_app.c.o
+[ 29%] Building C object CMakeFiles/tab_test.dir/src/core/key_chord.c.o
+[ 29%] Building C object CMakeFiles/text_buffer_test.dir/src/core/utf8.c.o
+[ 29%] Building C object CMakeFiles/text_input_test.dir/src/ui/text_input.c.o
+[ 29%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/src/platform/platform.c.o
+[ 29%] Building C object CMakeFiles/text_input_test.dir/src/platform/platform_tty_raw.c.o
+[ 29%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/tests/retrocore_event_fixture_test.c.o
+[ 29%] Building C object CMakeFiles/desktop_runtime_test.dir/src/core/desktop.c.o
+[ 29%] Building C object CMakeFiles/draw_list_contract_test.dir/src/platform/platform_curses.c.o
+[ 29%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/platform/tty_decoder.c.o
+[ 29%] Building C object CMakeFiles/retrodesk.dir/src/ui/progress_bar.c.o
+[ 29%] Building C object CMakeFiles/menu_bar_test.dir/src/core/key_chord.c.o
+[ 29%] Building C object CMakeFiles/text_input_test.dir/src/platform/platform.c.o
+[ 29%] Building C object CMakeFiles/storage_test.dir/tests/storage_test.c.o
+[ 29%] Building C object CMakeFiles/tab_test.dir/src/platform/platform.c.o
+[ 29%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/core/utf8.c.o
+[ 29%] Building C object CMakeFiles/tab_test.dir/src/platform/tty_decoder.c.o
+[ 29%] Building C object CMakeFiles/draw_list_contract_test.dir/src/platform/platform.c.o
+[ 29%] Building C object CMakeFiles/text_input_test.dir/src/core/utf8.c.o
+[ 29%] Building C object CMakeFiles/button_test.dir/src/platform/tty_decoder.c.o
+[ 29%] Building C object CMakeFiles/button_test.dir/src/ui/button.c.o
+[ 29%] Building C object CMakeFiles/menu_bar_test.dir/tests/menu_bar_test.c.o
+[ 29%] Building C object CMakeFiles/draw_list_contract_test.dir/src/render/render.c.o
+[ 29%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/core/desktop.c.o
+[ 29%] Building C object CMakeFiles/button_test.dir/src/render/render.c.o
+[ 29%] Building C object CMakeFiles/button_test.dir/src/core/utf8.c.o
+[ 29%] Building C object CMakeFiles/tab_test.dir/tests/tab_test.c.o
+[ 29%] Building C object CMakeFiles/statusbar_drawlist_test.dir/src/render/render.c.o
+[ 29%] Building C object CMakeFiles/desktop_runtime_test.dir/tests/desktop_runtime_test.c.o
+[ 71%] Building C object CMakeFiles/scroll_list_test.dir/src/render/render.c.o
+[ 71%] Built target cli_parse_test
+[ 72%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/apps/apps.c.o
+[ 73%] Building C object CMakeFiles/button_test.dir/src/render/ansi_renderer.c.o
+[ 71%] Built target clipboard_test
+[ 74%] Building C object CMakeFiles/menu_bar_test.dir/src/platform/platform_curses.c.o
+[ 74%] Built target app_registry_test
+[ 75%] Building C object CMakeFiles/desktop_runtime_test.dir/src/core/clipboard.c.o
+[ 76%] Building C object CMakeFiles/text_buffer_test.dir/src/platform/tty_decoder.c.o
+[ 76%] Built target key_chord_test
+[ 77%] Building C object CMakeFiles/text_input_test.dir/src/render/ansi_renderer.c.o
+[ 78%] Building C object CMakeFiles/scroll_list_test.dir/src/platform/platform_curses.c.o
+[ 79%] Building C object CMakeFiles/draw_list_contract_test.dir/src/render/ansi_renderer.c.o
+[ 80%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/apps/notepad_app.c.o
+[ 81%] Building C object CMakeFiles/scroll_list_test.dir/src/platform/tty_decoder.c.o
+[ 82%] Building C object CMakeFiles/desktop_runtime_test.dir/src/apps/terminal_app.c.o
+[ 83%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/storage/retro_fs_posix.c.o
+[ 84%] Building C object CMakeFiles/scroll_list_test.dir/src/render/ansi_renderer.c.o
+[ 85%] Building C object CMakeFiles/scroll_list_test.dir/src/core/utf8.c.o
+[ 86%] Building C object CMakeFiles/dialog_test.dir/src/core/key_chord.c.o
+[ 87%] Building C object CMakeFiles/scroll_list_test.dir/src/ui/scroll_list.c.o
+[ 88%] Linking C executable wm_event_replay_test
+[ 89%] Building C object CMakeFiles/menu_bar_test.dir/src/platform/tty_decoder.c.o
+[ 90%] Building C object CMakeFiles/storage_test.dir/src/storage/retro_fs_posix.c.o
+[ 91%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/ui/text_input.c.o
+[ 92%] Building C object CMakeFiles/dialog_test.dir/src/platform/platform.c.o
+[ 93%] Building C object CMakeFiles/progress_bar_test.dir/src/platform/platform_tty_raw.c.o
+[ 71%] Building C object CMakeFiles/menu_bar_test.dir/src/platform/platform_tty_raw.c.o
+[ 94%] Building C object CMakeFiles/progress_bar_test.dir/src/render/render.c.o
+[ 71%] Building C object CMakeFiles/scroll_list_test.dir/src/platform/platform_tty_raw.c.o
+[ 71%] Building C object CMakeFiles/progress_bar_test.dir/src/core/key_chord.c.o
+[ 71%] Building C object CMakeFiles/menu_bar_test.dir/src/render/ansi_renderer.c.o
+[ 71%] Building C object CMakeFiles/scroll_list_test.dir/src/core/key_chord.c.o
+[ 71%] Building C object CMakeFiles/menu_bar_test.dir/src/render/render.c.o
+[ 71%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/app/app_runtime.c.o
+[ 71%] Building C object CMakeFiles/storage_test.dir/src/core/utf8.c.o
+[ 71%] Building C object CMakeFiles/dialog_test.dir/src/ui/button.c.o
+[ 71%] Building C object CMakeFiles/menu_bar_test.dir/src/platform/platform.c.o
+[ 71%] Building C object CMakeFiles/text_buffer_test.dir/src/render/render.c.o
+[ 71%] Building C object CMakeFiles/dialog_test.dir/src/ui/text_input.c.o
+[ 71%] Building C object CMakeFiles/progress_bar_test.dir/src/platform/platform_curses.c.o
+[ 71%] Linking C executable tty_decoder_test
+[ 71%] Building C object CMakeFiles/text_buffer_test.dir/src/platform/platform.c.o
+[ 71%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/apps/filemanager_app.c.o
+[ 71%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/core/utf8.c.o
+[ 71%] Built target theme_catalog_test
+[ 71%] Building C object CMakeFiles/tab_test.dir/src/ui/tab.c.o
+[ 71%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/apps/terminal_app.c.o
+[ 71%] Building C object CMakeFiles/desktop_runtime_test.dir/src/storage/retro_fs_posix.c.o
+[ 71%] Building C object CMakeFiles/scroll_list_test.dir/src/platform/platform.c.o
+[ 71%] Building C object CMakeFiles/dialog_test.dir/src/platform/platform_curses.c.o
+[ 71%] Building C object CMakeFiles/text_input_test.dir/src/render/render.c.o
+[ 71%] Building C object CMakeFiles/desktop_runtime_test.dir/src/ui/text_buffer.c.o
+[ 71%] Building C object CMakeFiles/desktop_runtime_test.dir/src/wm/window_manager.c.o
+[ 71%] Building C object CMakeFiles/dialog_test.dir/src/core/utf8.c.o
+[ 71%] Building C object CMakeFiles/tab_test.dir/src/render/ansi_renderer.c.o
+[ 71%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/ui/text_buffer.c.o
+[ 71%] Building C object CMakeFiles/progress_bar_test.dir/src/platform/tty_decoder.c.o
+[ 71%] Building C object CMakeFiles/progress_bar_test.dir/src/render/ansi_renderer.c.o
+[ 94%] Building C object CMakeFiles/ansi_renderer_diff_test.dir/src/render/ansi_renderer.c.o
+[ 71%] Building C object CMakeFiles/retrocore_event_fixture_test.dir/src/wm/window_manager.c.o
+[ 94%] Built target utf8_test
+[ 94%] Built target wm_event_replay_test
+[ 94%] Built target tty_decoder_test
+[ 94%] Linking C executable statusbar_drawlist_test
+[ 95%] Linking C executable dialog_test
+[ 94%] Linking C executable button_test
+[ 95%] Linking C executable draw_list_contract_test
+[ 95%] Linking C executable scroll_list_test
+[ 96%] Linking C executable storage_test
+[ 97%] Linking C executable tab_test
+[ 97%] Linking C executable ansi_renderer_diff_test
+[ 99%] Linking C executable menu_bar_test
+[ 98%] Linking C executable progress_bar_test
+[ 99%] Built target tab_test
+[ 99%] Built target draw_list_contract_test
+[ 99%] Built target dialog_test
+[ 99%] Built target storage_test
+[ 99%] Built target button_test
+[ 99%] Built target menu_bar_test
+[ 99%] Built target statusbar_drawlist_test
+[ 99%] Linking C executable text_input_test
+[ 99%] Built target progress_bar_test
+[ 99%] Built target scroll_list_test
+[ 99%] Linking C executable text_buffer_test
+[ 99%] Built target text_input_test
+[ 99%] Linking C executable retrodesk
+[ 99%] Built target ansi_renderer_diff_test
+[ 99%] Built target text_buffer_test
+[ 99%] Built target retrodesk
+[100%] Linking C executable desktop_runtime_test
+[100%] Linking C executable retrocore_event_fixture_test
+[100%] Built target desktop_runtime_test
+[100%] Built target retrocore_event_fixture_test
+Internal ctest changing into directory: /home/runner/work/retrodesk/retrodesk/build/fixture-debug
+Test project /home/runner/work/retrodesk/retrodesk/build/fixture-debug
+      Start  1: test_oracle_guard
+ 1/24 Test  #1: test_oracle_guard ................   Passed    0.04 sec
+      Start  2: cli_parse_test
+ 2/24 Test  #2: cli_parse_test ...................   Passed    0.00 sec
+      Start  3: key_chord_test
+ 3/24 Test  #3: key_chord_test ...................   Passed    0.00 sec
+      Start  4: utf8_test
+ 4/24 Test  #4: utf8_test ........................   Passed    0.00 sec
+      Start  5: clipboard_test
+ 5/24 Test  #5: clipboard_test ...................   Passed    0.00 sec
+      Start  6: app_registry_test
+ 6/24 Test  #6: app_registry_test ................   Passed    0.00 sec
+      Start  7: platform_features_test
+ 7/24 Test  #7: platform_features_test ...........   Passed    0.00 sec
+      Start  8: wm_event_replay_test
+ 8/24 Test  #8: wm_event_replay_test .............   Passed    0.00 sec
+      Start  9: theme_catalog_test
+ 9/24 Test  #9: theme_catalog_test ...............   Passed    0.00 sec
+      Start 10: draw_list_contract_test
+10/24 Test #10: draw_list_contract_test ..........   Passed    0.00 sec
+      Start 11: statusbar_drawlist_test
+11/24 Test #11: statusbar_drawlist_test ..........   Passed    0.00 sec
+      Start 12: ansi_renderer_diff_test
+12/24 Test #12: ansi_renderer_diff_test ..........   Passed    0.00 sec
+      Start 13: tty_decoder_test
+13/24 Test #13: tty_decoder_test .................   Passed    0.00 sec
+      Start 14: text_input_test
+14/24 Test #14: text_input_test ..................   Passed    0.00 sec
+      Start 15: scroll_list_test
+15/24 Test #15: scroll_list_test .................   Passed    0.00 sec
+      Start 16: text_buffer_test
+16/24 Test #16: text_buffer_test .................   Passed    0.00 sec
+      Start 17: button_test
+17/24 Test #17: button_test ......................   Passed    0.00 sec
+      Start 18: dialog_test
+18/24 Test #18: dialog_test ......................   Passed    0.00 sec
+      Start 19: menu_bar_test
+19/24 Test #19: menu_bar_test ....................   Passed    0.00 sec
+      Start 20: progress_bar_test
+20/24 Test #20: progress_bar_test ................   Passed    0.00 sec
+      Start 21: tab_test
+21/24 Test #21: tab_test .........................   Passed    0.00 sec
+      Start 22: desktop_runtime_test
+22/24 Test #22: desktop_runtime_test .............   Passed    0.01 sec
+      Start 23: storage_test
+23/24 Test #23: storage_test .....................   Passed    0.00 sec
+      Start 24: retrocore_event_fixture_test
+24/24 Test #24: retrocore_event_fixture_test .....***Failed    0.00 sec
+TEST_REQUIRE failed at /home/runner/work/retrodesk/retrodesk/tests/retrocore_event_fixture_test.c:455: desktop_app_window_id(desktop, retrocore_app_to_retrodesk("files")) == files_window
+
+
+96% tests passed, 1 tests failed out of 24
+
+Total Test time (real) =   0.07 sec
+
+The following tests FAILED:
+	 24 - retrocore_event_fixture_test (Failed)
+Errors while running CTest

@@ -9,14 +9,14 @@ run_logged() {
         mkdir -p ci-artifacts
         cp "$log" "ci-artifacts/notepad-find-${label}.log"
         local summary
-        summary=$(grep -m1 -E 'TEST_REQUIRE|Test +#[0-9]+:.*\*\*\*Failed|FAILED|Failure|Errors while running CTest|error:' "$log" || tail -n 1 "$log")
+        summary=$(grep -m1 -E 'TEST_REQUIRE|Test +#[0-9]+:.*\*\*\*Failed|FAILED|Failure|Errors while running CTest|error:|expected one marker' "$log" || tail -n 1 "$log")
         echo "::error title=${label}::${summary}"
         tail -n 80 "$log"
         exit 1
     fi
 }
 
-python3 scripts/apply_notepad_find.py
+run_logged apply python3 scripts/apply_notepad_find.py
 sudo apt-get update -qq >/dev/null
 sudo apt-get install -y -qq cmake gcc libncurses-dev python3 >/dev/null
 

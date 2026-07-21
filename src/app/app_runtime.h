@@ -21,6 +21,9 @@ typedef struct PlatformFeatures DesktopCapabilities;
 typedef struct RetroAppInstance RetroAppInstance;
 typedef struct AppRegistry AppRegistry;
 
+/* Close negotiation is separate from destruction. ALLOWED means the app has
+   authorized a close request; Desktop may still defer window destruction until
+   every app has authorized a transactional global shutdown. */
 typedef enum RetroCloseResult {
     RETRO_CLOSE_ALLOWED = 0,
     RETRO_CLOSE_DEFERRED,
@@ -70,10 +73,10 @@ void app_registry_destroy(AppRegistry *registry);
 void app_registry_reset(AppRegistry *registry);
 bool app_registry_register(AppRegistry *registry, const RetroAppDescriptor *desc);
 const RetroAppDescriptor *app_registry_find(const AppRegistry *registry,
-                                            const char *app_id);
+                                             const char *app_id);
 size_t app_registry_count(const AppRegistry *registry);
 const RetroAppDescriptor *app_registry_descriptor_at(const AppRegistry *registry,
-                                                     size_t index);
+                                                      size_t index);
 
 void app_handle_event(RetroAppInstance *app, const RetroEvent *event);
 void app_render(RetroAppInstance *app, DrawList *draw_list);

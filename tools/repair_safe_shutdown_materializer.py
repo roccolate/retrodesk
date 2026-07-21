@@ -22,7 +22,24 @@ notepad_replacement = r'''def update_notepad(text: str) -> str:
         "        state->close_after_save = false;\n        state->error[0] = '\\0';\n        app_resolve_close(instance, RETRO_CLOSE_CANCELLED);\n        return;\n",
         "notepad cancelled resolution",
     )
-    return text[:prompt_start] + prompt + text[prompt_end:]
+    text = text[:prompt_start] + prompt + text[prompt_end:]
+
+    save_start = text.index("static void np_handle_save_as(")
+    save_end = text.index("static void np_event(", save_start)
+    save_as = text[save_start:save_end]
+    save_as = replace_once(
+        save_as,
+        "    if (code == RETRO_KEY_ESC) {\n        state->save_as = false;\n        state->close_after_save = false;\n        state->error[0] = '\\0';\n        return;\n    }\n",
+        "    if (code == RETRO_KEY_ESC) {\n        bool was_closing = state->close_after_save;\n        state->save_as = false;\n        state->close_after_save = false;\n        state->error[0] = '\\0';\n        if (was_closing) {\n            app_resolve_close(instance, RETRO_CLOSE_CANCELLED);\n        }\n        return;\n    }\n",
+        "save as cancellation resolution",
+    )
+    save_as = replace_once(
+        save_as,
+        "        } else {\n            state->close_after_save = false;\n        }\n",
+        "        } else {\n            state->close_after_save = false;\n            if (should_close) {\n                app_resolve_close(instance, RETRO_CLOSE_CANCELLED);\n            }\n        }\n",
+        "save as failure resolution",
+    )
+    return text[:save_start] + save_as + text[save_end:]
 
 
 def update_desktop_h'''
@@ -82,5 +99,17 @@ text, count = re.subn(hook_pattern, lambda match: hook_replacement,
                       text, count=1, flags=re.S)
 if count != 1:
     raise SystemExit(f"repair expected one shutdown hook block, found {count}")
+
+runtime_marker = r'''def update_runtime_test(text: str) -> str:
+    tests = r'''
+runtime_replacement = r'''def update_runtime_test(text: str) -> str:
+    text = text.replace(
+        "TEST_REQUIRE(!instance.descriptor->can_close(&instance));",
+        "TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);",
+    )
+    tests = r'''
+if text.count(runtime_marker) != 1:
+    raise SystemExit(f"repair expected one runtime test marker, found {text.count(runtime_marker)}")
+text = text.replace(runtime_marker, runtime_replacement, 1)
 
 path.write_text(text, encoding="utf-8")

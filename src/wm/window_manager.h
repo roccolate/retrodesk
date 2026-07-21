@@ -10,6 +10,8 @@
 /* Window collection + z-order + focus + drag + modal policy.
    Produces draw lists for windows/apps; never touches backend draw APIs. */
 
+/* Positive, monotonically increasing IDs. Live IDs are never reused.
+   INT_MAX is issued once; later creation returns WINDOW_ID_INVALID. */
 typedef int WindowId;
 typedef unsigned int WindowFlags;
 
@@ -71,6 +73,10 @@ bool wm_get_drag_preview(const WindowManager *wm, WindowId *id, int *y, int *x);
 bool wm_drag_is_enabled(const WindowManager *wm);
 bool wm_drag_is_degraded(const WindowManager *wm);
 int wm_drag_no_motion_sessions(const WindowManager *wm);
+#ifdef RETRODESK_ENABLE_TEST_HOOKS
+void wm_fail_next_growth_for_test(WindowManager *wm);
+bool wm_set_next_id_for_test(WindowManager *wm, WindowId next_id);
+#endif
 
 bool wm_handle_event(WindowManager *wm, const RetroEvent *event);
 void wm_render(WindowManager *wm, Renderer *renderer, const RetroTheme *theme);

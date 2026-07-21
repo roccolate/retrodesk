@@ -143,3 +143,12 @@ interactive PTY smoke tests.
 Release sign-off follows
 [RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md) and must attach evidence to
 the exact candidate commit.
+
+## Capacity and Identifier Boundaries
+
+`wm_event_replay_test` exercises checked capacity arithmetic, an injected Window
+Manager growth failure, successful retry, and deterministic `WindowId`
+exhaustion at `INT_MAX`. `desktop_runtime_test` injects failure at the 8-to-16
+running-app table transition and verifies that app/window counts and existing
+entries remain unchanged before a successful retry.
+

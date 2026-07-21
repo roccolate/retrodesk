@@ -112,7 +112,10 @@ and dirty-document confirmation all follow this rule.
 ## Ownership Policy
 
 - `core` owns process-level runtime and service instances.
-- `wm` owns windows and window draw lists.
+- `wm` owns windows and window draw lists. Window IDs are positive and
+  monotonic; `INT_MAX` is the final valid ID and live IDs are never reused.
+- Desktop and WM dynamic tables use checked element-capacity growth before any
+  byte-size multiplication or `realloc`.
 - App runtime owns app instance allocation and lifecycle dispatch.
 - Each app owns and destroys its private state.
 - Clipboard data is owned by the shared core service.

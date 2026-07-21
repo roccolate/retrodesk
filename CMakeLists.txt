@@ -57,6 +57,7 @@ set(RETRODESK_DJGPP_SOURCES
     src/core/desktop.c
     src/core/key_chord.c
     src/core/utf8.c
+    src/storage/retro_fs_djgpp.c
     src/platform/platform.c
     src/platform/platform_curses.c
     src/platform/tty_decoder.c
@@ -80,12 +81,14 @@ set(RETRODESK_DJGPP_SOURCES
     src/apps/terminal_app.c
 )
 
-# Select the native storage adapter for each supported host. DOS keeps the
-# header-only unsupported adapter until its dedicated implementation lands.
+# Select the native storage adapter for each supported host. DJGPP uses its
+# dedicated DOS adapter; Linux and Windows retain their native implementations.
 set(RETRODESK_STORAGE_SOURCE)
 if (WIN32)
     set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_win32.c)
-elseif (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
+elseif (CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_djgpp.c)
+elseif (UNIX)
     set(RETRODESK_STORAGE_SOURCE src/storage/retro_fs_posix.c)
 endif()
 if (RETRODESK_STORAGE_SOURCE)

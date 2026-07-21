@@ -1,5 +1,6 @@
 #include "app/app_runtime.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -12,8 +13,17 @@ struct AppRegistry {
 static bool app_registry_reserve(AppRegistry *registry, size_t want) {
     if (!registry) return false;
     if (want <= registry->capacity) return true;
-    size_t new_cap = registry->capacity ? registry->capacity * 2 : 8;
-    while (new_cap < want) new_cap *= 2;
+    if (want > SIZE_MAX / sizeof(*registry->entries)) return false;
+
+    size_t new_cap = registry->capacity ? registry->capacity : 8;
+    while (new_cap < want) {
+        if (new_cap > SIZE_MAX / 2) {
+            new_cap = want;
+            break;
+        }
+        new_cap *= 2;
+    }
+
     const RetroAppDescriptor **next =
         realloc(registry->entries, new_cap * sizeof(*next));
     if (!next) return false;
@@ -42,6 +52,7 @@ void app_registry_reset(AppRegistry *registry) {
 
 bool app_registry_register(AppRegistry *registry, const RetroAppDescriptor *desc) {
     if (!registry || !desc || !desc->app_id || !desc->app_id[0]) return false;
+    if (registry->count == SIZE_MAX) return false;
     if (app_registry_find(registry, desc->app_id)) return false;
     if (!app_registry_reserve(registry, registry->count + 1)) return false;
     registry->entries[registry->count++] = desc;
@@ -49,7 +60,7 @@ bool app_registry_register(AppRegistry *registry, const RetroAppDescriptor *desc
 }
 
 const RetroAppDescriptor *app_registry_find(const AppRegistry *registry,
-                                            const char *app_id) {
+                                             const char *app_id) {
     if (!registry || !app_id) return NULL;
     for (size_t i = 0; i < registry->count; ++i) {
         if (strcmp(registry->entries[i]->app_id, app_id) == 0) {
@@ -65,7 +76,7 @@ size_t app_registry_count(const AppRegistry *registry) {
 }
 
 const RetroAppDescriptor *app_registry_descriptor_at(const AppRegistry *registry,
-                                                     size_t index) {
+                                                      size_t index) {
     if (!registry || index >= registry->count) return NULL;
     return registry->entries[index];
 }

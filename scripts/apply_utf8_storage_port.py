@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Enable validated UTF-8 text roundtrips in the POSIX storage adapter."""
 
+from __future__ import annotations
+
+import re
 from pathlib import Path
 
 
@@ -10,6 +13,17 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         raise SystemExit(f"{label}: expected one marker, found {count}")
     return text.replace(old, new, 1)
 
+
+def sub_once(text: str, pattern: str, replacement: str, label: str) -> str:
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one match, found {count}")
+    return updated
+
+
+# ---------------------------------------------------------------------------
+# POSIX adapter
+# ---------------------------------------------------------------------------
 
 storage_path = Path("src/storage/retro_fs_posix.c")
 storage = storage_path.read_text(encoding="utf-8")
@@ -59,119 +73,95 @@ validation_helper = r'''static bool valid_text_content(const char *data, size_t 
 }
 
 '''
+
 if "static bool valid_text_content" not in storage:
+    marker = "RetroFsError retro_fs_read_text(const RetroFsPath *p, char **out, size_t *len,"
     storage = replace_once(
         storage,
-        "RetroFsError retro_fs_read_text(const RetroFsPath *p, char **out, size_t *len,\n",
-        validation_helper +
-        "RetroFsError retro_fs_read_text(const RetroFsPath *p, char **out, size_t *len,\n",
+        marker,
+        validation_helper + marker,
         "storage text validator",
     )
 
-old_read_validation = '''    bool saw_lf = false;
-    bool saw_crlf = false;
-    for (size_t i = 0; i < got; ++i) {
-        unsigned char c = (unsigned char)buf[i];
-        if (c == 0 || c == 27 ||
-            (c < 32 && c != '\t' && c != '\n' && c != '\r') || c >= 127) {
-            free(buf);
-            return RETRO_FS_INVALID_TEXT;
-        }
-        if (c == '\r') {
-            if (i + 1 >= got || buf[i + 1] != '\n') {
-                free(buf);
-                return RETRO_FS_INVALID_TEXT;
-            }
-            saw_crlf = true;
-        } else if (c == '\n') {
-            if (i == 0 || buf[i - 1] != '\r') saw_lf = true;
-        }
-    }
-    if (saw_lf && saw_crlf) {
-        free(buf);
-        return RETRO_FS_INVALID_TEXT;
-    }
-'''
-new_read_validation = '''    if (!valid_text_content(buf, got)) {
-        free(buf);
-        return RETRO_FS_INVALID_TEXT;
-    }
-'''
-if old_read_validation in storage:
-    storage = replace_once(
+if "if (!valid_text_content(buf, got))" not in storage:
+    storage = sub_once(
         storage,
-        old_read_validation,
-        new_read_validation,
+        r"    bool saw_lf = false;\n"
+        r".*?"
+        r"    if \(saw_lf && saw_crlf\) \{\n"
+        r"        free\(buf\);\n"
+        r"        return RETRO_FS_INVALID_TEXT;\n"
+        r"    \}\n",
+        "    if (!valid_text_content(buf, got)) {\n"
+        "        free(buf);\n"
+        "        return RETRO_FS_INVALID_TEXT;\n"
+        "    }\n",
         "storage read validation",
     )
 
-write_guard = '''    if (!p || !p->value || (!data && n)) return RETRO_FS_INVALID_ARGUMENT;
-    if (n > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;
-'''
-write_guard_utf8 = '''    if (!p || !p->value || (!data && n)) return RETRO_FS_INVALID_ARGUMENT;
-    if (n > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;
-    if (!valid_text_content(data, n)) return RETRO_FS_INVALID_TEXT;
-'''
 if "if (!valid_text_content(data, n))" not in storage:
     storage = replace_once(
         storage,
-        write_guard,
-        write_guard_utf8,
+        "    if (n > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;\n",
+        "    if (n > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;\n"
+        "    if (!valid_text_content(data, n)) return RETRO_FS_INVALID_TEXT;\n",
         "storage write validation",
     )
 
 storage_path.write_text(storage, encoding="utf-8")
 
 
+# ---------------------------------------------------------------------------
+# Build graph
+# ---------------------------------------------------------------------------
+
 cmake_path = Path("CMakeLists.txt")
 cmake = cmake_path.read_text(encoding="utf-8")
-storage_target = '''        add_executable(storage_test
-            tests/storage_test.c
-            src/storage/retro_fs_posix.c
-        )
-'''
-storage_target_utf8 = '''        add_executable(storage_test
-            tests/storage_test.c
-            src/storage/retro_fs_posix.c
-            src/core/utf8.c
-        )
-'''
-if storage_target in cmake:
-    cmake = replace_once(
+
+if re.search(
+    r"add_executable\(storage_test\s+"
+    r"tests/storage_test\.c\s+"
+    r"src/storage/retro_fs_posix\.c\s+"
+    r"src/core/utf8\.c\s+\)",
+    cmake,
+    flags=re.DOTALL,
+) is None:
+    cmake = sub_once(
         cmake,
-        storage_target,
-        storage_target_utf8,
+        r"(add_executable\(storage_test\s+"
+        r"tests/storage_test\.c\s+"
+        r"src/storage/retro_fs_posix\.c)(\s+\))",
+        r"\1\n            src/core/utf8.c\2",
         "storage test UTF-8 source",
     )
+
 cmake_path.write_text(cmake, encoding="utf-8")
 
+
+# ---------------------------------------------------------------------------
+# Storage regression tests
+# ---------------------------------------------------------------------------
 
 test_path = Path("tests/storage_test.c")
 test = test_path.read_text(encoding="utf-8")
 
-if "path_utf8" not in test:
+if "char path_utf8[512];" not in test:
     test = replace_once(
         test,
-        '''    char path_directory[512];
-    char path_missing[512];
-''',
-        '''    char path_directory[512];
-    char path_missing[512];
-    char path_utf8[512];
-    char path_invalid[512];
-''',
+        "    char path_missing[512];\n",
+        "    char path_missing[512];\n"
+        "    char path_utf8[512];\n"
+        "    char path_invalid[512];\n",
         "storage UTF-8 path declarations",
     )
+
+if '"%s/utf8.txt"' not in test:
     test = replace_once(
         test,
-        '''    TEST_REQUIRE(snprintf(path_directory, sizeof(path_directory), "%s/docs", dir) > 0);
-    TEST_REQUIRE(snprintf(path_missing, sizeof(path_missing), "%s/missing.txt", dir) > 0);
-''',
-        '''    TEST_REQUIRE(snprintf(path_directory, sizeof(path_directory), "%s/docs", dir) > 0);
-    TEST_REQUIRE(snprintf(path_missing, sizeof(path_missing), "%s/missing.txt", dir) > 0);
-    TEST_REQUIRE(snprintf(path_utf8, sizeof(path_utf8), "%s/utf8.txt", dir) > 0);
-    TEST_REQUIRE(snprintf(path_invalid, sizeof(path_invalid), "%s/invalid.txt", dir) > 0);
-''',
+        '    TEST_REQUIRE(snprintf(path_missing, sizeof(path_missing), "%s/missing.txt", dir) > 0);\n',
+        '    TEST_REQUIRE(snprintf(path_missing, sizeof(path_missing), "%s/missing.txt", dir) > 0);\n'
+        '    TEST_REQUIRE(snprintf(path_utf8, sizeof(path_utf8), "%s/utf8.txt", dir) > 0);\n'
+        '    TEST_REQUIRE(snprintf(path_invalid, sizeof(path_invalid), "%s/invalid.txt", dir) > 0);\n',
         "storage UTF-8 path setup",
     )
 
@@ -208,44 +198,34 @@ utf8_tests = r'''    RetroFsPath utf8 = {0};
                                        NULL, NULL) == RETRO_FS_INVALID_TEXT);
 
 '''
+
 if "const char *utf8_text" not in test:
-    test = replace_once(
+    test = sub_once(
         test,
-        '''    TEST_REQUIRE(retro_fs_read_text(&fresh, &text, &length, NULL) == RETRO_FS_OK);
-    TEST_REQUIRE(strcmp(text, "new\n") == 0);
-    free(text);
-
-''',
-        '''    TEST_REQUIRE(retro_fs_read_text(&fresh, &text, &length, NULL) == RETRO_FS_OK);
-    TEST_REQUIRE(strcmp(text, "new\n") == 0);
-    free(text);
-    text = NULL;
-
-''' + utf8_tests,
+        r"(    TEST_REQUIRE\(retro_fs_read_text\(&fresh, &text, &length, NULL\) == RETRO_FS_OK\);\n"
+        r"    TEST_REQUIRE\(strcmp\(text, \"new\\n\"\) == 0\);\n"
+        r"    free\(text\);\n)",
+        r"\1    text = NULL;\n\n" + utf8_tests,
         "storage UTF-8 roundtrip tests",
     )
 
 if "retro_fs_path_destroy(&invalid);" not in test:
     test = replace_once(
         test,
-        '''    retro_fs_path_destroy(&missing);
-''',
-        '''    retro_fs_path_destroy(&invalid);
-    retro_fs_path_destroy(&utf8);
-    retro_fs_path_destroy(&missing);
-''',
+        "    retro_fs_path_destroy(&missing);\n",
+        "    retro_fs_path_destroy(&invalid);\n"
+        "    retro_fs_path_destroy(&utf8);\n"
+        "    retro_fs_path_destroy(&missing);\n",
         "storage UTF-8 path cleanup",
     )
+
+if "    unlink(path_utf8);" not in test:
     test = replace_once(
         test,
-        '''    unlink(path_new);
-    unlink(path_renamed);
-''',
-        '''    unlink(path_new);
-    unlink(path_utf8);
-    unlink(path_invalid);
-    unlink(path_renamed);
-''',
+        "    unlink(path_new);\n",
+        "    unlink(path_new);\n"
+        "    unlink(path_utf8);\n"
+        "    unlink(path_invalid);\n",
         "storage UTF-8 file cleanup",
     )
 

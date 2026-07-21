@@ -19,6 +19,7 @@ SRCS = \
 	src\core\cli.c \
 	src\core\desktop.c \
 	src\core\key_chord.c \
+	src\core\utf8.c \
 	src\platform\platform.c \
 	src\platform\platform_curses.c \
 	src\platform\tty_decoder.c \

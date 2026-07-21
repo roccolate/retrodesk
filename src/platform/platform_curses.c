@@ -1,6 +1,8 @@
 #include "platform/platform_backend_internal.h"
 
+#include <stdint.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "core/key_chord.h"
 
@@ -8,6 +10,11 @@
    vary across ncurses and PDCurses) into portable RETRO_KEY_* chords.
    Raw bytes (ASCII and extended ASCII) pass through unchanged. */
 static int translate_key_chord(int raw) {
+#ifdef KEY_F
+    if (raw >= KEY_F(1) && raw <= KEY_F(12)) {
+        return RETRO_KEY_F1 + (raw - KEY_F(1));
+    }
+#endif
     switch (raw) {
 #ifdef KEY_UP
     case KEY_UP:    return RETRO_KEY_UP;
@@ -197,16 +204,39 @@ platform->features.right_click = false;
 }
 
 bool platform_poll_event_curses(PlatformBackend *platform, RetroEvent *out_event,
-                                int timeout_ms) {
+                                 int timeout_ms) {
     if (!platform || !out_event) return false;
     if (timeout_ms < 0) timeout_ms = 0;
-
     timeout(timeout_ms);
-    int ch = getch();
-    if (ch == ERR) return false;
+
+    bool backend_key = false;
+    int raw = 0;
+    uint32_t codepoint = 0;
+
+#if !defined(_WIN32) && !defined(__DJGPP__) && defined(NCURSES_WIDECHAR) && NCURSES_WIDECHAR
+    wint_t wide = 0;
+    int read_result = wget_wch(stdscr, &wide);
+    if (read_result == ERR) return false;
+    backend_key = (read_result == KEY_CODE_YES);
+    if (backend_key) {
+        raw = (int)wide;
+    } else {
+        codepoint = (uint32_t)wide;
+        raw = codepoint <= 0x7Fu ? (int)codepoint : 0;
+    }
+#else
+    raw = getch();
+    if (raw == ERR) return false;
+#ifdef KEY_MIN
+    backend_key = raw >= KEY_MIN;
+#else
+    backend_key = raw > 0xFF;
+#endif
+    if (!backend_key) codepoint = (uint32_t)(unsigned char)raw;
+#endif
 
 #ifdef KEY_RESIZE
-    if (ch == KEY_RESIZE) {
+    if (backend_key && raw == KEY_RESIZE) {
         out_event->type = RETRO_EVENT_RESIZE;
         out_event->data.resize.rows = LINES;
         out_event->data.resize.cols = COLS;
@@ -215,22 +245,30 @@ bool platform_poll_event_curses(PlatformBackend *platform, RetroEvent *out_event
 #endif
 
 #ifdef KEY_MOUSE
-    if (ch == KEY_MOUSE) {
+    if (backend_key && raw == KEY_MOUSE) {
         if (!platform->features.mouse_basic) return false;
-        MEVENT raw;
-        if (getmouse(&raw) != OK) return false;
+        MEVENT mouse;
+        if (getmouse(&mouse) != OK) return false;
         out_event->type = RETRO_EVENT_MOUSE;
-        return normalize_mouse(&raw, platform, &out_event->data.mouse);
+        return normalize_mouse(&mouse, platform, &out_event->data.mouse);
     }
 #endif
 
     out_event->type = RETRO_EVENT_KEY;
-    out_event->data.key.key_code = translate_key_chord(ch);
-    out_event->data.key.is_printable = retro_key_is_printable(ch);
-    out_event->data.key.ascii = out_event->data.key.is_printable ? (char)ch : '\0';
-    out_event->data.key.text_codepoint = out_event->data.key.is_printable
-                                             ? (uint32_t)(unsigned char)ch
-                                             : 0;
     out_event->data.key.modifiers = RETRO_MOD_NONE;
+    if (backend_key) {
+        out_event->data.key.key_code = translate_key_chord(raw);
+        out_event->data.key.is_printable = false;
+        out_event->data.key.ascii = '\0';
+        out_event->data.key.text_codepoint = 0;
+        return true;
+    }
+
+    bool printable = codepoint >= 0x20u && codepoint != 0x7Fu;
+    out_event->data.key.key_code = raw;
+    out_event->data.key.is_printable = printable;
+    out_event->data.key.ascii =
+        codepoint <= 0xFFu ? (unsigned char)codepoint : (unsigned char)0;
+    out_event->data.key.text_codepoint = printable ? codepoint : 0;
     return true;
 }

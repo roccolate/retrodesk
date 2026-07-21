@@ -3,6 +3,12 @@
 
 #include <stdbool.h>
 
+#if !defined(_WIN32) && !defined(__DJGPP__)
+#ifndef _XOPEN_SOURCE_EXTENDED
+#define _XOPEN_SOURCE_EXTENDED 1
+#endif
+#endif
+
 #include <curses.h>
 
 #include "core/event.h"

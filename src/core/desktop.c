@@ -274,7 +274,7 @@ static void shell_draw(RetroWindow *window, DrawList *draw_list, void *user_data
     draw_list_text(draw_list, 1, 2, "RetroDesk Foundation Runtime", accent);
     draw_list_text(
         draw_list, 2, 2,
-        "F1/F2 launcher | F6 focus | F7 move/resize | Ctrl+W close | Ctrl+Q quit",
+        "F1/F2 launcher | F6 focus | F9 move/resize | Ctrl+W close | Ctrl+Q quit",
         text);
 
     snprintf(line, sizeof(line), "Window: %dx%d @ %d,%d", w, h, x, y);
@@ -689,7 +689,7 @@ static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
         return true;
     }
 
-    if (key->key_code == RETRO_KEY_F7) {
+    if (key->key_code == RETRO_KEY_F9) {
         desktop->window_mode = true;
         desktop->window_resize_mode = false;
         desktop_request_redraw(desktop);

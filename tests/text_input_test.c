@@ -23,6 +23,13 @@ static RetroKeyEvent key_code(int code) {
     return k;
 }
 
+static RetroKeyEvent key_codepoint(uint32_t codepoint) {
+    RetroKeyEvent key = {0};
+    key.is_printable = true;
+    key.text_codepoint = codepoint;
+    return key;
+}
+
 static void test_create_destroy(void) {
     TextInput *ti = text_input_create(0);
     TEST_REQUIRE(ti != NULL);
@@ -216,6 +223,35 @@ static void test_delete_forward(void) {
     printf("  PASS: delete_forward\n");
 }
 
+static void test_utf8_editing(void) {
+    TextInput *ti = text_input_create(0);
+    TEST_REQUIRE(ti != NULL);
+
+    RetroKeyEvent n_tilde = key_codepoint(0x00F1u);
+    RetroKeyEvent a_acute = key_codepoint(0x00E1u);
+    TEST_REQUIRE(text_input_handle_key(ti, &n_tilde));
+    TEST_REQUIRE(text_input_handle_key(ti, &a_acute));
+    TEST_REQUIRE(strcmp(text_input_text(ti), "ñá") == 0);
+    TEST_REQUIRE(text_input_length(ti) == 4);
+    TEST_REQUIRE(text_input_cursor(ti) == 4);
+
+    RetroKeyEvent left = key_code(RETRO_KEY_LEFT);
+    TEST_REQUIRE(text_input_handle_key(ti, &left));
+    TEST_REQUIRE(text_input_cursor(ti) == 2);
+
+    RetroKeyEvent del = key_code(RETRO_KEY_DC);
+    TEST_REQUIRE(text_input_handle_key(ti, &del));
+    TEST_REQUIRE(strcmp(text_input_text(ti), "ñ") == 0);
+
+    RetroKeyEvent backspace = key_code(RETRO_KEY_DEL);
+    TEST_REQUIRE(text_input_handle_key(ti, &backspace));
+    TEST_REQUIRE(strcmp(text_input_text(ti), "") == 0);
+    TEST_REQUIRE(text_input_cursor(ti) == 0);
+
+    text_input_destroy(ti);
+    printf("  PASS: utf8_editing\n");
+}
+
 static void test_null_safety(void) {
     /* All functions should handle NULL gracefully. */
     TEST_REQUIRE(text_input_text(NULL) != NULL);
@@ -239,6 +275,7 @@ int main(void) {
     test_max_length();
     test_set_text_and_clear();
     test_delete_forward();
+    test_utf8_editing();
     test_null_safety();
     printf("All text_input tests passed.\n");
     return 0;

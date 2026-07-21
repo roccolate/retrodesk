@@ -1,0 +1,971 @@
+name: Materialize native Notepad UX
+
+on:
+  push:
+    branches:
+      - agent/notepad-native-ux
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libncurses-dev
+
+      - name: Apply focused native Notepad UX slice
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          BASE_SHA = "06f5e939a4da7ce46ccf166072a6213da6a08799"
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"missing expected block in {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          def replace_count(path, old, new, count):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              actual = text.count(old)
+              if actual < count:
+                  raise SystemExit(
+                      f"expected at least {count} blocks in {path}, found {actual}: {old[:80]!r}"
+                  )
+              p.write_text(text.replace(old, new, count), encoding="utf-8")
+
+          # App runtime: expose backend-neutral hosted-window dimensions.
+          replace_once(
+              "src/app/app_runtime.h",
+              """    Desktop *desktop;
+    RetroClipboard *clipboard; /* borrowed from Desktop */
+    WindowId window_id;
+    const DesktopCapabilities *capabilities;
+""",
+              """    Desktop *desktop;
+    RetroClipboard *clipboard; /* borrowed from Desktop */
+    WindowId window_id;
+    /* Full hosted-window geometry, maintained by Desktop. Apps use these
+       values for responsive layout without querying a renderer/backend. */
+    int window_height;
+    int window_width;
+    const DesktopCapabilities *capabilities;
+""",
+          )
+
+          replace_once(
+              "src/core/desktop.c",
+              """static void app_window_draw(RetroWindow *window, DrawList *draw_list, void *user_data) {
+    (void)window;
+    RetroAppInstance *app = (RetroAppInstance *)user_data;
+    app_render(app, draw_list);
+}
+""",
+              """static void app_window_draw(RetroWindow *window, DrawList *draw_list, void *user_data) {
+    RetroAppInstance *app = (RetroAppInstance *)user_data;
+    if (!app) return;
+    retro_window_get_geometry(window, NULL, NULL,
+                              &app->ctx.window_height,
+                              &app->ctx.window_width);
+    app_render(app, draw_list);
+}
+""",
+          )
+          replace_once(
+              "src/core/desktop.c",
+              """    instance->ctx.window_id = wid;
+
+    if (desc->create && !desc->create(instance, &instance->ctx)) {
+""",
+              """    instance->ctx.window_id = wid;
+    RetroWindow *host_window = wm_window(desktop->wm, wid);
+    retro_window_get_geometry(host_window, NULL, NULL,
+                              &instance->ctx.window_height,
+                              &instance->ctx.window_width);
+
+    if (desc->create && !desc->create(instance, &instance->ctx)) {
+""",
+          )
+
+          p = Path("src/apps/notepad_app.c")
+          text = p.read_text(encoding="utf-8")
+
+          old = """#include "core/clipboard.h"
+#include "core/key_chord.h"
+#include "storage/retro_fs.h"
+#include "ui/text_buffer.h"
+#include "ui/text_input.h"
+"""
+          new = """#include "core/clipboard.h"
+#include "core/desktop.h"
+#include "core/key_chord.h"
+#include "core/utf8.h"
+#include "storage/retro_fs.h"
+#include "ui/menu_bar.h"
+#include "ui/text_buffer.h"
+#include "ui/text_input.h"
+"""
+          if old not in text:
+              raise SystemExit("notepad include block changed")
+          text = text.replace(old, new, 1)
+
+          old = """    NP_HISTORY_MAX_STATES = 100,
+    NP_HISTORY_MAX_BYTES = 1024 * 1024,
+    NP_WRAP_COLUMNS = 64,
+    NP_RECOVERY_PATH_CAP = 768,
+"""
+          new = """    NP_HISTORY_MAX_STATES = 100,
+    NP_HISTORY_MAX_BYTES = 1024 * 1024,
+    NP_DEFAULT_WRAP_COLUMNS = 64,
+    NP_MIN_VIEW_COLUMNS = 1,
+    NP_RECOVERY_PATH_CAP = 768,
+"""
+          if old not in text:
+              raise SystemExit("notepad constants changed")
+          text = text.replace(old, new, 1)
+
+          marker = "typedef struct NotepadHistoryEntry {\n"
+          menu_enum = """typedef enum NotepadMenuAction {
+    NP_MENU_NONE = 0,
+    NP_MENU_NEW,
+    NP_MENU_OPEN,
+    NP_MENU_SAVE,
+    NP_MENU_SAVE_AS,
+    NP_MENU_CLOSE,
+    NP_MENU_UNDO,
+    NP_MENU_REDO,
+    NP_MENU_CUT,
+    NP_MENU_COPY,
+    NP_MENU_PASTE,
+    NP_MENU_SELECT_ALL,
+    NP_MENU_FIND,
+    NP_MENU_TOGGLE_WRAP,
+} NotepadMenuAction;
+
+"""
+          if marker not in text:
+              raise SystemExit("notepad history marker changed")
+          text = text.replace(marker, menu_enum + marker, 1)
+
+          old = """    bool has_path;
+    bool save_as;
+    bool search_mode;
+"""
+          new = """    bool has_path;
+    bool save_as;
+    bool open_path;
+    bool search_mode;
+"""
+          if old not in text:
+              raise SystemExit("notepad mode fields changed")
+          text = text.replace(old, new, 1)
+
+          old = """    bool force_close;
+    TextInput *path_input;
+    char *saved_text;
+"""
+          new = """    bool force_close;
+    TextInput *path_input;
+    MenuBar *menu_bar;
+    NotepadMenuAction pending_menu_action;
+    char *saved_text;
+"""
+          if old not in text:
+              raise SystemExit("notepad widget fields changed")
+          text = text.replace(old, new, 1)
+
+          marker = "} NotepadState;\n\n"
+          helpers = r'''static int np_window_width(const RetroAppInstance *instance) {
+    if (!instance || instance->ctx.window_width <= 0) return 76;
+    return instance->ctx.window_width;
+}
+
+static int np_window_height(const RetroAppInstance *instance) {
+    if (!instance || instance->ctx.window_height <= 0) return 20;
+    return instance->ctx.window_height;
+}
+
+static size_t np_view_columns(const RetroAppInstance *instance) {
+    if (!instance || instance->ctx.window_width <= 0) {
+        return NP_DEFAULT_WRAP_COLUMNS;
+    }
+    int columns = instance->ctx.window_width - 4;
+    if (columns < NP_MIN_VIEW_COLUMNS) columns = NP_MIN_VIEW_COLUMNS;
+    return (size_t)columns;
+}
+
+static int np_body_rows(const RetroAppInstance *instance, int body_y) {
+    int rows = np_window_height(instance) - 2 - body_y;
+    return rows > 0 ? rows : 0;
+}
+
+static size_t np_cursor_display_column(const NotepadState *state) {
+    if (!state || !state->buffer) return 0;
+    size_t row = text_buffer_cursor_row(state->buffer);
+    const char *line = text_buffer_line(state->buffer, row);
+    if (!line) return 0;
+    size_t length = strlen(line);
+    size_t byte_column = text_buffer_cursor_col(state->buffer);
+    if (byte_column > length) byte_column = length;
+    return retro_utf8_columns(line, length, 0, byte_column);
+}
+
+static void np_menu_callback(size_t menu_index, size_t item_index,
+                             void *user_data) {
+    NotepadState *state = (NotepadState *)user_data;
+    if (!state) return;
+    state->pending_menu_action = NP_MENU_NONE;
+    if (menu_index == 0) {
+        switch (item_index) {
+            case 0: state->pending_menu_action = NP_MENU_NEW; break;
+            case 1: state->pending_menu_action = NP_MENU_OPEN; break;
+            case 2: state->pending_menu_action = NP_MENU_SAVE; break;
+            case 3: state->pending_menu_action = NP_MENU_SAVE_AS; break;
+            case 5: state->pending_menu_action = NP_MENU_CLOSE; break;
+            default: break;
+        }
+    } else if (menu_index == 1) {
+        switch (item_index) {
+            case 0: state->pending_menu_action = NP_MENU_UNDO; break;
+            case 1: state->pending_menu_action = NP_MENU_REDO; break;
+            case 2: state->pending_menu_action = NP_MENU_CUT; break;
+            case 3: state->pending_menu_action = NP_MENU_COPY; break;
+            case 4: state->pending_menu_action = NP_MENU_PASTE; break;
+            case 5: state->pending_menu_action = NP_MENU_SELECT_ALL; break;
+            case 6: state->pending_menu_action = NP_MENU_FIND; break;
+            default: break;
+        }
+    } else if (menu_index == 2 && item_index == 0) {
+        state->pending_menu_action = NP_MENU_TOGGLE_WRAP;
+    }
+}
+
+static bool np_menu_create(NotepadState *state) {
+    if (!state) return false;
+    state->menu_bar = menu_bar_create();
+    if (!state->menu_bar) return false;
+
+    bool ok = menu_bar_add_menu(state->menu_bar, "File", 'F') &&
+              menu_bar_add_menu(state->menu_bar, "Edit", 'E') &&
+              menu_bar_add_menu(state->menu_bar, "View", 'V') &&
+              menu_bar_add_item(state->menu_bar, 0, "New        Ctrl+N", 'N',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 0, "Open...    Ctrl+O", 'O',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 0, "Save       Ctrl+S", 'S',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 0, "Save As... F3", 0,
+                                np_menu_callback, state) &&
+              menu_bar_add_separator(state->menu_bar, 0) &&
+              menu_bar_add_item(state->menu_bar, 0, "Close      Ctrl+W", 'C',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 1, "Undo       Ctrl+Z", 'U',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 1, "Redo       Ctrl+Y", 'R',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 1, "Cut        Ctrl+X", 0,
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 1, "Copy       Ctrl+C", 'C',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 1, "Paste      Ctrl+V", 'P',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 1, "Select All Ctrl+A", 'S',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 1, "Find...    Ctrl+F", 'F',
+                                np_menu_callback, state) &&
+              menu_bar_add_item(state->menu_bar, 2, "Word Wrap  F4", 'W',
+                                np_menu_callback, state);
+    if (!ok) {
+        menu_bar_destroy(state->menu_bar);
+        state->menu_bar = NULL;
+        return false;
+    }
+    return true;
+}
+
+static int np_menu_dropdown_x(const NotepadState *state) {
+    if (!state || !state->menu_bar || !menu_bar_is_open(state->menu_bar)) {
+        return 1;
+    }
+    size_t open_menu = menu_bar_open_menu(state->menu_bar);
+    int x = 3;
+    for (size_t index = 0; index < open_menu; ++index) {
+        x += (int)strlen(menu_bar_menu_label(state->menu_bar, index)) + 2;
+    }
+    return x;
+}
+
+'''
+          if marker not in text:
+              raise SystemExit("notepad state terminator changed")
+          text = text.replace(marker, marker + helpers, 1)
+
+          old = """static void np_handle_editor_key(NotepadState *state,
+                                  const RetroKeyEvent *key) {
+    if (!state || !key) return;
+"""
+          new = """static void np_handle_editor_key(RetroAppInstance *instance,
+                                  NotepadState *state,
+                                  const RetroKeyEvent *key) {
+    if (!instance || !state || !key) return;
+"""
+          if old not in text:
+              raise SystemExit("notepad editor handler signature changed")
+          text = text.replace(old, new, 1)
+          old = """                        ? text_buffer_handle_key_wrapped(
+                              state->buffer, key, NP_WRAP_COLUMNS)
+"""
+          new = """                        ? text_buffer_handle_key_wrapped(
+                              state->buffer, key, np_view_columns(instance))
+"""
+          if old not in text:
+              raise SystemExit("notepad wrap dispatch changed")
+          text = text.replace(old, new, 1)
+
+          old = """    if (!np_capture_saved_snapshot(state)) {
+        retro_fs_path_destroy(&state->path);
+        text_buffer_destroy(state->buffer);
+        text_input_destroy(state->path_input);
+        free(state);
+        return false;
+    }
+    instance->state = state;
+"""
+          new = """    if (!np_capture_saved_snapshot(state)) {
+        retro_fs_path_destroy(&state->path);
+        text_buffer_destroy(state->buffer);
+        text_input_destroy(state->path_input);
+        free(state);
+        return false;
+    }
+    if (!np_menu_create(state)) {
+        free(state->saved_text);
+        retro_fs_path_destroy(&state->path);
+        text_buffer_destroy(state->buffer);
+        text_input_destroy(state->path_input);
+        free(state);
+        return false;
+    }
+    instance->state = state;
+"""
+          if old not in text:
+              raise SystemExit("notepad create tail changed")
+          text = text.replace(old, new, 1)
+
+          marker = "static void np_event(RetroAppInstance *instance, const RetroEvent *event) {\n"
+          actions = r'''static void np_begin_save_as(NotepadState *state, bool close_after_save) {
+    if (!state) return;
+    state->open_path = false;
+    state->search_mode = false;
+    state->search_has_match = false;
+    state->save_as = true;
+    state->close_after_save = close_after_save;
+    text_input_clear(state->path_input);
+    state->error[0] = '\0';
+}
+
+static void np_begin_open_path(NotepadState *state) {
+    if (!state) return;
+    state->save_as = false;
+    state->close_after_save = false;
+    state->search_mode = false;
+    state->search_has_match = false;
+    state->open_path = true;
+    text_input_clear(state->path_input);
+    state->error[0] = '\0';
+}
+
+static void np_begin_search(NotepadState *state) {
+    if (!state) return;
+    state->save_as = false;
+    state->open_path = false;
+    state->search_mode = true;
+    state->search_has_match = false;
+    text_input_clear(state->path_input);
+    text_buffer_clear_selection(state->buffer);
+    state->error[0] = '\0';
+}
+
+static void np_handle_open_path(RetroAppInstance *instance,
+                                NotepadState *state,
+                                const RetroKeyEvent *key) {
+    if (!instance || !state || !key) return;
+    if (key->key_code == RETRO_KEY_ESC) {
+        state->open_path = false;
+        state->error[0] = '\0';
+        return;
+    }
+    if (key->key_code == RETRO_KEY_CR || key->key_code == RETRO_KEY_LF) {
+        const char *path = text_input_text(state->path_input);
+        if (!path || !path[0]) {
+            snprintf(state->error, sizeof(state->error),
+                     "Open: enter a UTF-8 text path");
+            return;
+        }
+        if (!instance->ctx.desktop ||
+            !app_launch_with_path(instance->ctx.desktop, "notepad", path)) {
+            snprintf(state->error, sizeof(state->error),
+                     "Open: unable to open text path");
+            return;
+        }
+        state->open_path = false;
+        text_input_clear(state->path_input);
+        state->error[0] = '\0';
+        return;
+    }
+    (void)text_input_handle_key(state->path_input, key);
+}
+
+static void np_execute_menu_action(RetroAppInstance *instance,
+                                   NotepadState *state) {
+    if (!instance || !state) return;
+    NotepadMenuAction action = state->pending_menu_action;
+    state->pending_menu_action = NP_MENU_NONE;
+    switch (action) {
+        case NP_MENU_NEW:
+            if (!instance->ctx.desktop ||
+                !app_launch(instance->ctx.desktop, "notepad")) {
+                snprintf(state->error, sizeof(state->error),
+                         "New: desktop unavailable");
+            }
+            break;
+        case NP_MENU_OPEN:
+            np_begin_open_path(state);
+            break;
+        case NP_MENU_SAVE:
+            state->close_after_save = false;
+            if (state->has_path) {
+                (void)np_save(state);
+            } else {
+                np_begin_save_as(state, false);
+            }
+            break;
+        case NP_MENU_SAVE_AS:
+            np_begin_save_as(state, false);
+            break;
+        case NP_MENU_CLOSE:
+            (void)app_request_close(instance);
+            break;
+        case NP_MENU_UNDO:
+            np_undo(state);
+            break;
+        case NP_MENU_REDO:
+            np_redo(state);
+            break;
+        case NP_MENU_CUT:
+            np_cut_selection(state);
+            break;
+        case NP_MENU_COPY:
+            (void)np_copy_selection(state);
+            break;
+        case NP_MENU_PASTE:
+            np_paste_clipboard(state);
+            break;
+        case NP_MENU_SELECT_ALL:
+            text_buffer_select_all(state->buffer);
+            state->error[0] = '\0';
+            break;
+        case NP_MENU_FIND:
+            np_begin_search(state);
+            break;
+        case NP_MENU_TOGGLE_WRAP:
+            state->wrap_mode = !state->wrap_mode;
+            state->error[0] = '\0';
+            break;
+        case NP_MENU_NONE:
+        default:
+            break;
+    }
+}
+
+static bool np_route_menu_key(RetroAppInstance *instance,
+                              NotepadState *state,
+                              const RetroKeyEvent *key) {
+    if (!instance || !state || !state->menu_bar || !key) return false;
+    bool open = menu_bar_is_open(state->menu_bar);
+    bool alt_menu = (key->modifiers & RETRO_MOD_ALT) != 0 &&
+                    key->is_printable && key->ascii != 0;
+    if (!open && key->key_code != RETRO_KEY_F11 && !alt_menu) return false;
+
+    RetroKeyEvent routed = *key;
+    if (routed.key_code == RETRO_KEY_F11) routed.key_code = RETRO_KEY_F10;
+    if (alt_menu) routed.modifiers = RETRO_MOD_NONE;
+    bool consumed = menu_bar_handle_key(state->menu_bar, &routed);
+    if (state->pending_menu_action != NP_MENU_NONE) {
+        np_execute_menu_action(instance, state);
+    }
+    return consumed;
+}
+
+'''
+          if marker not in text:
+              raise SystemExit("notepad event marker changed")
+          text = text.replace(marker, actions + marker, 1)
+
+          old = """    if (state->save_as) {
+        np_handle_save_as(instance, state, key);
+        return;
+    }
+
+    if (state->search_mode) {
+"""
+          new = """    if (state->save_as) {
+        np_handle_save_as(instance, state, key);
+        return;
+    }
+
+    if (state->open_path) {
+        np_handle_open_path(instance, state, key);
+        return;
+    }
+
+    if (state->search_mode) {
+"""
+          if old not in text:
+              raise SystemExit("notepad modal dispatch changed")
+          text = text.replace(old, new, 1)
+
+          old = """    if (key->key_code == RETRO_KEY_CTRL_F) {
+        state->search_mode = true;
+        state->search_has_match = false;
+        text_input_clear(state->path_input);
+        text_buffer_clear_selection(state->buffer);
+        state->error[0] = '\0';
+        return;
+    }
+"""
+          new = """    if (np_route_menu_key(instance, state, key)) return;
+
+    if (key->key_code == RETRO_KEY_CTRL_N) {
+        state->pending_menu_action = NP_MENU_NEW;
+        np_execute_menu_action(instance, state);
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_O) {
+        np_begin_open_path(state);
+        return;
+    }
+
+    if (key->key_code == RETRO_KEY_CTRL_F) {
+        np_begin_search(state);
+        return;
+    }
+"""
+          if old not in text:
+              raise SystemExit("notepad find dispatch changed")
+          text = text.replace(old, new, 1)
+
+          old = """        } else {
+            state->search_mode = false;
+            text_input_clear(state->path_input);
+            state->save_as = true;
+        }
+"""
+          new = """        } else {
+            np_begin_save_as(state, false);
+        }
+"""
+          if old not in text:
+              raise SystemExit("notepad save-as dispatch changed")
+          text = text.replace(old, new, 1)
+
+          old = """    if (key->key_code == RETRO_KEY_F3) {
+        state->close_after_save = false;
+        state->search_mode = false;
+        text_input_clear(state->path_input);
+        state->save_as = true;
+        return;
+    }
+"""
+          new = """    if (key->key_code == RETRO_KEY_F3) {
+        np_begin_save_as(state, false);
+        return;
+    }
+"""
+          if old not in text:
+              raise SystemExit("notepad F3 dispatch changed")
+          text = text.replace(old, new, 1)
+
+          old = "    np_handle_editor_key(state, key);\n"
+          new = "    np_handle_editor_key(instance, state, key);\n"
+          if old not in text:
+              raise SystemExit("notepad editor call changed")
+          text = text.replace(old, new, 1)
+
+          render_start = text.index("static void np_render_buffer(")
+          recovery_start = text.index("static const char *np_recovery_directory(void)")
+          responsive_render = r'''static void np_render_buffer(const RetroAppInstance *instance,
+                             const NotepadState *state,
+                             DrawList *draw_list,
+                             int y, int rows,
+                             const RenderStyle *text,
+                             const RenderStyle *cursor,
+                             const RenderStyle *selection) {
+    if (!instance || !state || !draw_list || rows <= 0 ||
+        !text || !cursor || !selection) {
+        return;
+    }
+    int columns = (int)np_view_columns(instance);
+    if (state->wrap_mode) {
+        text_buffer_render_wrapped_with_selection(
+            state->buffer, draw_list, y, 2, rows, columns,
+            text, cursor, selection);
+    } else {
+        text_buffer_render_with_selection(
+            state->buffer, draw_list, y, 2, rows, columns,
+            text, cursor, selection);
+    }
+}
+
+static void np_render_close_prompt(const NotepadState *state,
+                                   DrawList *draw_list,
+                                   int window_width, int window_height,
+                                   const RenderStyle *text,
+                                   const RenderStyle *accent,
+                                   const RenderStyle *selected) {
+    if (!state || !draw_list || !text || !accent || !selected) return;
+    int box_width = window_width - 6;
+    if (box_width > 48) box_width = 48;
+    if (box_width < 18) box_width = 18;
+    int x = (window_width - box_width) / 2;
+    if (x < 1) x = 1;
+    int y = window_height / 2 - 2;
+    if (y < 3) y = 3;
+    if (y + 4 >= window_height - 1) y = window_height - 6;
+    if (y < 2) y = 2;
+    draw_list_hline(draw_list, y, x, box_width, ' ', selected);
+    draw_list_text(draw_list, y, x + 2, "Unsaved changes", selected);
+    draw_list_text(draw_list, y + 2, x + 2,
+                   "Save changes before closing?", accent);
+    draw_list_text(draw_list, y + 4, x + 2,
+                   "[S] Save  [D] Discard  [Esc] Cancel", text);
+}
+
+static void np_render(RetroAppInstance *instance, DrawList *draw_list) {
+    if (!instance || !instance->state || !draw_list) return;
+    NotepadState *state = instance->state;
+    const RetroTheme *theme = instance->ctx.theme;
+    const RenderStyle *text = &theme->window_body;
+    const RenderStyle *accent = &theme->shell_accent;
+    const RenderStyle *cursor = &theme->launcher_selected;
+    RenderStyle selection = theme->launcher_selected;
+    selection.bold = false;
+
+    int window_width = np_window_width(instance);
+    int window_height = np_window_height(instance);
+    int inner_width = window_width - 2;
+    if (inner_width < 1) inner_width = 1;
+    int status_y = window_height - 2;
+    int body_y = 3;
+    int body_rows = np_body_rows(instance, body_y);
+    int input_width = (int)np_view_columns(instance);
+    if (input_width > 240) input_width = 240;
+
+    menu_bar_render(state->menu_bar, draw_list, 1, 1, inner_width,
+                    text, cursor, accent, text);
+
+    char title[192];
+    const char *name = state->has_path
+                           ? retro_fs_path_cstr(&state->path)
+                           : "Untitled";
+    snprintf(title, sizeof(title), "Notepad — %s%s",
+             name, state->dirty ? " *" : "");
+    if (status_y > 2) draw_list_text(draw_list, 2, 2, title, accent);
+
+    if (state->close_prompt) {
+        np_render_buffer(instance, state, draw_list, body_y, body_rows,
+                         text, cursor, &selection);
+        np_render_close_prompt(state, draw_list, window_width, window_height,
+                               text, accent, cursor);
+    } else if (state->save_as || state->open_path) {
+        const char *prompt = state->save_as
+                                 ? "Save As path (Enter save, Esc cancel):"
+                                 : "Open path in new Notepad (Enter open, Esc cancel):";
+        if (status_y > 3) draw_list_text(draw_list, 3, 2, prompt, accent);
+        if (status_y > 4) {
+            text_input_render(state->path_input, draw_list, 4, 2,
+                              input_width, text, cursor);
+        }
+    } else if (state->search_mode) {
+        if (status_y > 3) {
+            draw_list_text(draw_list, 3, 2,
+                           "Find (Enter next, Esc close):", accent);
+        }
+        if (status_y > 4) {
+            text_input_render(state->path_input, draw_list, 4, 2,
+                              input_width, text, cursor);
+        }
+        int search_body_y = 6;
+        np_render_buffer(instance, state, draw_list, search_body_y,
+                         np_body_rows(instance, search_body_y),
+                         text, cursor, &selection);
+    } else {
+        np_render_buffer(instance, state, draw_list, body_y, body_rows,
+                         text, cursor, &selection);
+    }
+
+    if (status_y > 1) {
+        draw_list_hline(draw_list, status_y, 1, inner_width, ' ',
+                        &theme->statusbar);
+        char status[256];
+        if (state->error[0]) {
+            snprintf(status, sizeof(status), " %s", state->error);
+        } else {
+            snprintf(status, sizeof(status),
+                     " Ln %zu, Col %zu | UTF-8 | %s%s",
+                     text_buffer_cursor_row(state->buffer) + 1,
+                     np_cursor_display_column(state) + 1,
+                     state->wrap_mode ? "WRAP" : "NO WRAP",
+                     state->dirty ? " | MODIFIED" : "");
+        }
+        draw_list_text(draw_list, status_y, 1, status, &theme->statusbar);
+    }
+
+    if (state->menu_bar && menu_bar_is_open(state->menu_bar)) {
+        size_t open_menu = menu_bar_open_menu(state->menu_bar);
+        int dropdown_x = np_menu_dropdown_x(state);
+        int dropdown_width = menu_bar_dropdown_width(state->menu_bar, open_menu);
+        if (dropdown_x + dropdown_width > window_width - 1) {
+            dropdown_x = window_width - 1 - dropdown_width;
+        }
+        if (dropdown_x < 1) dropdown_x = 1;
+        (void)menu_bar_render_dropdown(
+            state->menu_bar, draw_list, 2, dropdown_x,
+            text, cursor, accent, accent, &theme->window_frame_active);
+    }
+}
+
+'''
+          text = text[:render_start] + responsive_render + text[recovery_start:]
+
+          old = """    np_clear_history(state);
+    free(state->saved_text);
+    text_buffer_destroy(state->buffer);
+"""
+          new = """    np_clear_history(state);
+    menu_bar_destroy(state->menu_bar);
+    free(state->saved_text);
+    text_buffer_destroy(state->buffer);
+"""
+          if old not in text:
+              raise SystemExit("notepad destroy block changed")
+          text = text.replace(old, new, 1)
+
+          marker = "const RetroAppDescriptor *notepad_app_descriptor(void) {\n"
+          probes = r'''bool notepad_menu_open_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->menu_bar && menu_bar_is_open(state->menu_bar);
+}
+
+bool notepad_open_path_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->open_path;
+}
+
+size_t notepad_view_columns_for_test(const RetroAppInstance *instance) {
+    return np_view_columns(instance);
+}
+
+'''
+          if marker not in text:
+              raise SystemExit("notepad descriptor marker changed")
+          text = text.replace(marker, probes + marker, 1)
+          p.write_text(text, encoding="utf-8")
+
+          replace_once(
+              "src/apps/apps_internal.h",
+              """bool notepad_search_mode_for_test(const RetroAppInstance *instance);
+bool notepad_wrap_mode_for_test(const RetroAppInstance *instance);
+""",
+              """bool notepad_search_mode_for_test(const RetroAppInstance *instance);
+bool notepad_wrap_mode_for_test(const RetroAppInstance *instance);
+bool notepad_menu_open_for_test(const RetroAppInstance *instance);
+bool notepad_open_path_for_test(const RetroAppInstance *instance);
+size_t notepad_view_columns_for_test(const RetroAppInstance *instance);
+""",
+          )
+
+          replace_count(
+              "CMakeLists.txt",
+              """        src/ui/text_buffer.c
+        src/ui/text_input.c
+        src/wm/window_manager.c
+""",
+              """        src/ui/text_buffer.c
+        src/ui/text_input.c
+        src/ui/menu_bar.c
+        src/wm/window_manager.c
+""",
+              2,
+          )
+
+          p = Path("tests/desktop_runtime_test.c")
+          tests = p.read_text(encoding="utf-8")
+          marker = "static void test_notepad_shift_selection_replacement(void) {\n"
+          new_tests = r'''static void test_notepad_native_menu_preserves_printable_text(void) {
+    RetroAppInstance instance = create_untitled_notepad();
+    type_notepad_char(&instance, 'f');
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "f") == 0);
+
+    RetroEvent menu = key_event(RETRO_KEY_F11, '\0');
+    app_handle_event(&instance, &menu);
+    TEST_REQUIRE(notepad_menu_open_for_test(&instance));
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &escape);
+    TEST_REQUIRE(!notepad_menu_open_for_test(&instance));
+
+    type_notepad_char(&instance, 'v');
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "fv") == 0);
+    instance.descriptor->destroy(&instance);
+}
+
+static void test_notepad_menu_open_path_is_non_destructive(void) {
+    RetroAppInstance instance = create_untitled_notepad();
+    type_notepad_char(&instance, 'x');
+    TEST_REQUIRE(notepad_dirty_for_test(&instance));
+
+    RetroEvent menu = key_event(RETRO_KEY_F11, '\0');
+    RetroEvent down = key_event(RETRO_KEY_DOWN, '\0');
+    RetroEvent enter = key_event(RETRO_KEY_CR, '\0');
+    app_handle_event(&instance, &menu);
+    app_handle_event(&instance, &down);
+    app_handle_event(&instance, &enter);
+
+    TEST_REQUIRE(notepad_open_path_for_test(&instance));
+    TEST_REQUIRE(notepad_dirty_for_test(&instance));
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "x") == 0);
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &escape);
+    TEST_REQUIRE(!notepad_open_path_for_test(&instance));
+    TEST_REQUIRE(strcmp(notepad_line_for_test(&instance, 0), "x") == 0);
+    instance.descriptor->destroy(&instance);
+}
+
+static void test_notepad_responsive_wrap_uses_host_width(void) {
+    const RetroAppDescriptor *desc = notepad_app_descriptor();
+    TEST_REQUIRE(desc != NULL);
+    RetroAppContext ctx = {
+        .desktop = NULL,
+        .clipboard = NULL,
+        .theme = retro_theme_get(RETRO_THEME_XP),
+        .window_height = 12,
+        .window_width = 40,
+    };
+    RetroAppInstance instance = {.descriptor = desc, .ctx = ctx};
+    TEST_REQUIRE(desc->create(&instance, &ctx));
+    TEST_REQUIRE(notepad_view_columns_for_test(&instance) == 36);
+
+    RetroEvent toggle = key_event(RETRO_KEY_F4, '\0');
+    app_handle_event(&instance, &toggle);
+    for (int index = 0; index < 50; ++index) {
+        type_notepad_char(&instance, 'a');
+    }
+    RetroEvent up = key_event(RETRO_KEY_UP, '\0');
+    app_handle_event(&instance, &up);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 14);
+
+    instance.ctx.window_width = 24;
+    TEST_REQUIRE(notepad_view_columns_for_test(&instance) == 20);
+    desc->destroy(&instance);
+}
+
+'''
+          if marker not in tests:
+              raise SystemExit("desktop runtime test insertion marker changed")
+          tests = tests.replace(marker, new_tests + marker, 1)
+          old = """    test_notepad_word_wrap_navigation();
+    test_notepad_shift_selection_replacement();
+"""
+          new = """    test_notepad_word_wrap_navigation();
+    test_notepad_native_menu_preserves_printable_text();
+    test_notepad_menu_open_path_is_non_destructive();
+    test_notepad_responsive_wrap_uses_host_width();
+    test_notepad_shift_selection_replacement();
+"""
+          if old not in tests:
+              raise SystemExit("desktop runtime main block changed")
+          tests = tests.replace(old, new, 1)
+          p.write_text(tests, encoding="utf-8")
+
+          replace_once(
+              "docs/BUILTIN_APPS.md",
+              """- open regular text files from File Manager;
+- UTF-8-safe cursor movement, insertion, Backspace, and Delete;
+""",
+              """- open regular text files from File Manager;
+- native `File`, `Edit`, and `View` menus using the shared RetroDesk menu widget;
+- safe `New` and `Open` commands that launch another Notepad instance rather
+  than replacing unsaved work in the current document;
+- a viewport that follows the hosted window size, with a line/column, UTF-8,
+  wrap, and modified-state status row;
+- UTF-8-safe cursor movement, insertion, Backspace, and Delete;
+""",
+          )
+
+          replace_once(
+              "docs/KEYBOARD_SHORTCUTS.md",
+              """| Arrow keys | Move cursor |
+| `Shift` + arrows | Extend or shrink selection |
+""",
+              """| Arrow keys | Move cursor |
+| `Shift` + arrows | Extend or shrink selection |
+| `F11` | Open or close the native Notepad menu bar |
+| `Alt+F` / `Alt+E` / `Alt+V` | Open File, Edit, or View when the backend reports Alt reliably |
+| `Ctrl+N` | Open a new untitled Notepad window |
+| `Ctrl+O` | Prompt for a UTF-8 text path and open it in a new Notepad window |
+""",
+          )
+          replace_once(
+              "docs/KEYBOARD_SHORTCUTS.md",
+              """The close prompt accepts `S` to save, `D` to discard, and `Esc` to cancel.
+Find is case-insensitive for ASCII and Latin letter case, but accents remain
+""",
+              """`F10` remains the global RetroDesk Launcher shortcut; Notepad uses `F11`
+so application menus do not weaken the desktop routing contract. The close
+prompt accepts `S` to save, `D` to discard, and `Esc` to cancel.
+Find is case-insensitive for ASCII and Latin letter case, but accents remain
+""",
+          )
+
+          print("Applied native Notepad UX slice")
+          PY
+
+      - name: Validate focused and full Linux gates
+        shell: bash
+        run: |
+          cmake -S . -B build-materialize \
+            -DENABLE_TESTS=ON \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DENABLE_WERROR=ON
+          cmake --build build-materialize --parallel 2
+          ctest --test-dir build-materialize --output-on-failure
+          python3 scripts/check_test_oracles.py
+          python3 scripts/check_djgpp_sources.py
+
+      - name: Publish one focused commit
+        shell: bash
+        run: |
+          rm -f .github/workflows/materialize-notepad-native-ux.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git reset --soft 06f5e939a4da7ce46ccf166072a6213da6a08799
+          git add -A
+          git commit -m "feat: add native responsive Notepad chrome"
+          git push --force-with-lease origin HEAD:agent/notepad-native-ux

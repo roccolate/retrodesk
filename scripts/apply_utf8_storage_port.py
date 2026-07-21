@@ -200,14 +200,16 @@ utf8_tests = r'''    RetroFsPath utf8 = {0};
 '''
 
 if "const char *utf8_text" not in test:
-    test = sub_once(
-        test,
-        r"(    TEST_REQUIRE\(retro_fs_read_text\(&fresh, &text, &length, NULL\) == RETRO_FS_OK\);\n"
+    pattern = (
+        r"    TEST_REQUIRE\(retro_fs_read_text\(&fresh, &text, &length, NULL\) == RETRO_FS_OK\);\n"
         r"    TEST_REQUIRE\(strcmp\(text, \"new\\n\"\) == 0\);\n"
-        r"    free\(text\);\n)",
-        r"\1    text = NULL;\n\n" + utf8_tests,
-        "storage UTF-8 roundtrip tests",
+        r"    free\(text\);\n"
     )
+    match = re.search(pattern, test)
+    if not match:
+        raise SystemExit("storage UTF-8 roundtrip tests: expected one match, found 0")
+    insertion = match.group(0) + "    text = NULL;\n\n" + utf8_tests
+    test = test[:match.start()] + insertion + test[match.end():]
 
 if "retro_fs_path_destroy(&invalid);" not in test:
     test = replace_once(

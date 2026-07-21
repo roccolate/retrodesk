@@ -27,18 +27,19 @@ jobs:
           .\vcpkg\bootstrap-vcpkg.bat -disableMetrics | Out-Null
           .\vcpkg\vcpkg.exe install pdcurses:x64-windows | Out-Null
 
-      - name: Capture strict Win32 build
+      - name: Capture strict Win32 build and tests
         shell: powershell
         run: |
           $toolchain = "$PWD\vcpkg\scripts\buildsystems\vcpkg.cmake"
           $pdcursesRoot = "$PWD\vcpkg\installed\x64-windows"
           $commands = @(
             "cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=`"$toolchain`" -DVCPKG_TARGET_TRIPLET=x64-windows -DPDCURSES_ROOT=`"$pdcursesRoot`"",
-            "cmake --build build --config Debug --parallel"
+            "cmake --build build --config Debug --parallel",
+            "ctest --test-dir build --output-on-failure -C Debug"
           )
           cmd /d /s /c ($commands -join " && ") *> win32-storage-build.log
           $code = $LASTEXITCODE
-          Get-Content win32-storage-build.log -Tail 240
+          Get-Content win32-storage-build.log -Tail 320
           exit $code
 
       - name: Upload diagnostic log

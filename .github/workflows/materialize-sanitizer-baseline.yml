@@ -1,0 +1,84 @@
+name: Materialize sanitizer baseline
+
+on:
+  pull_request:
+    branches: [core/portable-storage-contract]
+    paths:
+      - tools/materialize_sanitizer_baseline.py
+      - .github/workflows/materialize-sanitizer-baseline.yml
+
+permissions:
+  contents: write
+
+env:
+  RETROCORE_SPEC_COMMIT: fa027a04fca45728c2c09833388c553bfa8a5a54
+
+jobs:
+  materialize:
+    if: github.head_ref == 'core/sanitizer-baseline'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Checkout pinned fixtures
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: roccolate/retrocore-spec
+          ref: ${{ env.RETROCORE_SPEC_COMMIT }}
+          path: retrocore-spec
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libncurses-dev python3 util-linux
+
+      - name: Apply sanitizer baseline
+        run: python3 tools/materialize_sanitizer_baseline.py
+
+      - name: Guard generated tree
+        run: |
+          git diff --check
+          python3 scripts/check_test_oracles.py
+          python3 scripts/check_djgpp_sources.py
+          grep -q "ENABLE_SANITIZERS" CMakeLists.txt
+          grep -q "test-sanitize" Makefile
+          grep -q "Build and test with sanitizers" .github/workflows/ci.yml
+          grep -q "Non-interactive startup smoke" .github/workflows/ci.yml
+
+      - name: Configure fixture-backed sanitizer build
+        run: |
+          cmake -S . -B build/materialize-sanitizers \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DRETROCORE_SPEC_DIR="$PWD/retrocore-spec" \
+            -DRETROCORE_SPEC_REQUIRED=ON \
+            -DENABLE_SANITIZERS=ON \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DENABLE_WERROR=ON
+
+      - name: Build and test with sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          cmake --build build/materialize-sanitizers --parallel
+          ctest --test-dir build/materialize-sanitizers --output-on-failure
+
+      - name: Validate startup smoke
+        run: |
+          make smoke-ci BUILD_DIR=build/materialize-sanitizers CONFIG=Debug \
+            SANITIZERS=ON STRICT=ON WERROR=ON
+
+      - name: Publish verified source tree
+        run: |
+          rm -rf retrocore-spec build/materialize-sanitizers
+          rm -f tools/materialize_sanitizer_baseline.py
+          rm -f .github/workflows/materialize-sanitizer-baseline.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "core: add sanitizer and startup-smoke gates"
+          git push origin HEAD:${{ github.head_ref }}

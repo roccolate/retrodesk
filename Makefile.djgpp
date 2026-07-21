@@ -33,6 +33,7 @@ SRCS = \
 	src/core/desktop.c \
 	src/core/key_chord.c \
 	src/core/utf8.c \
+	src/storage/retro_fs_djgpp.c \
 	src/platform/platform.c \
 	src/platform/platform_curses.c \
 	src/platform/tty_decoder.c \
@@ -57,12 +58,22 @@ SRCS = \
 
 OBJS = $(SRCS:.c=.o)
 TARGET ?= retrodesk.exe
+STORAGE_TEST_TARGET ?= fstest.exe
+STORAGE_TEST_OBJS = \
+	tests/storage_djgpp_test.o \
+	src/storage/retro_fs_djgpp.o \
+	src/core/utf8.o
 
-.PHONY: all clean check-sources
-all: check-sources $(TARGET)
+.PHONY: all clean check-sources storage-test
+all: check-sources $(TARGET) $(STORAGE_TEST_TARGET)
 
 $(TARGET): $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+$(STORAGE_TEST_TARGET): $(STORAGE_TEST_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^
+
+storage-test: $(STORAGE_TEST_TARGET)
 
 %.o: %.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
@@ -71,4 +82,4 @@ check-sources:
 	@python3 scripts/check_djgpp_sources.py --quiet
 
 clean:
-	$(RM) $(OBJS) $(TARGET)
+	$(RM) $(OBJS) tests/storage_djgpp_test.o $(TARGET) $(STORAGE_TEST_TARGET)

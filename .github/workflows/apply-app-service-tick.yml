@@ -1,0 +1,37 @@
+name: Apply App Service Tick
+
+on:
+  push:
+    branches:
+      - agent/app-service-tick
+    paths:
+      - scripts/apply_app_service_tick.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/app-service-tick
+          fetch-depth: 0
+
+      - name: Apply integration
+        run: python3 scripts/apply_app_service_tick.py
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/app_runtime.h src/app/app_runtime.c src/core/desktop.c \
+                  tests/desktop_runtime_test.c docs/ARCHITECTURE.md docs/TESTING.md
+          if git diff --cached --quiet; then
+            echo "No integration changes required."
+            exit 0
+          fi
+          git commit -m "core: add budgeted app service tick"
+          git push origin HEAD:agent/app-service-tick

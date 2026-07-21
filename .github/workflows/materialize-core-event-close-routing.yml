@@ -30,6 +30,7 @@ jobs:
         run: |
           python3 -c "from pathlib import Path; p=Path('tools/materialize_core_event_close_routing.py'); t=p.read_text(encoding='utf-8'); marker='        \"INSTALL.md\": update_install,\\n'; assert t.count(marker) == 1; p.write_text(t.replace(marker, '', 1), encoding='utf-8')"
           python3 tools/materialize_core_event_close_routing.py
+          python3 -c "from pathlib import Path; p=Path('src/core/desktop.c'); t=p.read_text(encoding='utf-8'); a='#ifdef RETRODESK_ENABLE_TEST_HOOKS\\nbool desktop_dispatch_event_for_test'; b='bool desktop_dispatch_event_for_test'; c='}\\n#endif\\n\\nint desktop_run'; d='}\\n\\nint desktop_run'; assert t.count(a)==1 and t.count(c)==1; p.write_text(t.replace(a,b,1).replace(c,d,1), encoding='utf-8')"
 
       - name: Guard generated tree
         run: |

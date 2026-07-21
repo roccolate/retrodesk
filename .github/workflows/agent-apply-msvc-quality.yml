@@ -1,0 +1,39 @@
+name: Agent Apply MSVC Quality Patch
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-apply-msvc-quality
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out portability branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fix-windows-dos-portability
+          fetch-depth: 0
+
+      - name: Apply and publish MSVC quality patch
+        run: |
+          if [ ! -f tools/agent_apply_msvc_quality_patch.py ]; then
+            echo "MSVC quality patch already applied"
+            exit 0
+          fi
+          python3 tools/agent_apply_msvc_quality_patch.py
+          rm tools/agent_apply_msvc_quality_patch.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "build: preserve strict MSVC quality gates"
+          git pull --rebase origin agent/fix-windows-dos-portability
+          git push origin HEAD:agent/fix-windows-dos-portability

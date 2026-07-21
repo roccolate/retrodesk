@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths:
       - scripts/apply_notepad_selection_clipboard.py
+      - scripts/fix_notepad_selection_apply.py
       - .github/workflows/notepad-selection-bootstrap.yml
 
 permissions:
@@ -22,6 +23,9 @@ jobs:
           fetch-depth: 1
           persist-credentials: true
           show-progress: false
+
+      - name: Repair temporary materializer marker
+        run: python3 scripts/fix_notepad_selection_apply.py
 
       - name: Apply selection and clipboard integration
         run: python3 scripts/apply_notepad_selection_clipboard.py
@@ -54,6 +58,7 @@ jobs:
       - name: Publish verified integration
         run: |
           rm -f scripts/apply_notepad_selection_clipboard.py
+          rm -f scripts/fix_notepad_selection_apply.py
           rm -f .github/workflows/notepad-selection-bootstrap.yml
           git config user.name "RetroDesk CI"
           git config user.email "actions@users.noreply.github.com"

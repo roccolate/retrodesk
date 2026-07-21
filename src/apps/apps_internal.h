@@ -15,8 +15,8 @@ bool filemanager_show_hidden_for_test(const RetroAppInstance *instance);
 bool filemanager_has_item_for_test(const RetroAppInstance *instance,
                                    const char *name);
 
-/* Notepad probes keep user-visible close and history contracts covered
-   without exposing the private NotepadState structure. */
+/* Notepad probes keep user-visible close and bounded-history contracts
+   covered without exposing the private NotepadState structure. */
 bool notepad_dirty_for_test(const RetroAppInstance *instance);
 bool notepad_close_prompt_for_test(const RetroAppInstance *instance);
 bool notepad_save_as_for_test(const RetroAppInstance *instance);

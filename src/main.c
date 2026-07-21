@@ -21,6 +21,12 @@ int main(int argc, char **argv) {
         return EXIT_SUCCESS;
     }
 
+    if (!platform_input_backend_supported(options.input_backend)) {
+        fprintf(stderr,
+                "selected input backend is not available in this platform build\n");
+        return EXIT_FAILURE;
+    }
+
     setlocale(LC_ALL, "");
 
     PlatformConfig platform_cfg = {

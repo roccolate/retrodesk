@@ -3,6 +3,8 @@ name: Agent Apply DJGPP Storage
 on:
   push:
     branches: [agent/native-djgpp-storage]
+  pull_request:
+    branches: [main, master]
 
 permissions:
   contents: write

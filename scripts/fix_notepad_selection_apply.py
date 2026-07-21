@@ -111,4 +111,20 @@ if count != 1:
     raise SystemExit(f"CMake runtime source block: expected one marker, found {count}")
 text = text.replace(old_cmake, new_cmake, 1)
 
+old_style = """    RenderStyle selection = {
+        RENDER_COLOR_BLACK, RENDER_COLOR_CYAN, false, true
+    };
+"""
+new_style = """    RenderStyle selection = {
+        .fg = RENDER_COLOR_BLACK,
+        .bg = RENDER_COLOR_CYAN,
+        .reverse = true,
+        .bold = false,
+    };
+"""
+count = text.count(old_style)
+if count != 1:
+    raise SystemExit(f"selection test style: expected one marker, found {count}")
+text = text.replace(old_style, new_style, 1)
+
 path.write_text(text, encoding="utf-8")

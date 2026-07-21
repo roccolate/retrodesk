@@ -1,0 +1,75 @@
+name: Materialize portable storage contract
+
+on:
+  pull_request:
+    branches: [core/owned-clipboard]
+    paths:
+      - tools/materialize_portable_storage_contract.py
+      - .github/workflows/materialize-portable-storage-contract.yml
+
+permissions:
+  contents: write
+
+env:
+  RETROCORE_SPEC_COMMIT: fa027a04fca45728c2c09833388c553bfa8a5a54
+
+jobs:
+  materialize:
+    if: github.head_ref == 'core/portable-storage-contract'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Checkout pinned fixtures
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: roccolate/retrocore-spec
+          ref: ${{ env.RETROCORE_SPEC_COMMIT }}
+          path: retrocore-spec
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libncurses-dev python3
+
+      - name: Apply portable storage slice
+        run: python3 tools/materialize_portable_storage_contract.py
+
+      - name: Guard generated tree
+        run: |
+          git diff --check
+          python3 scripts/check_test_oracles.py
+          python3 scripts/check_djgpp_sources.py
+          ! grep -n "sys/types.h\|mode_t\|off_t\|dev_t\|ino_t\|time_t" src/storage/retro_fs.h
+          ! grep -n "sys/stat.h\|mode_t\|off_t\|S_IS" src/apps/filemanager_app.c
+          ! grep -R "\.mode\|\.inode\|\.device\|\.mtime" -n src/apps src/core src/ui src/app || true
+
+      - name: Configure strict fixture-backed Debug build
+        run: |
+          cmake -S . -B build/portable-storage \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DRETROCORE_SPEC_DIR="$PWD/retrocore-spec" \
+            -DRETROCORE_SPEC_REQUIRED=ON \
+            -DENABLE_TESTS=ON \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DENABLE_WERROR=ON
+
+      - name: Build and test
+        run: |
+          cmake --build build/portable-storage --parallel
+          ctest --test-dir build/portable-storage --output-on-failure
+
+      - name: Publish verified source tree
+        run: |
+          rm -rf retrocore-spec build/portable-storage
+          rm -f tools/materialize_portable_storage_contract.py
+          rm -f .github/workflows/materialize-portable-storage-contract.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "core: make storage metadata adapter-neutral"
+          git push origin HEAD:${{ github.head_ref }}

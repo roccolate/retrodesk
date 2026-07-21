@@ -93,14 +93,39 @@ jobs:
 
       - name: Publish verified source tree
         run: |
+          set +e
           rm -rf retrocore-spec build/materialize-sanitizers
           rm -f tools/materialize_sanitizer_baseline.py
           rm -f tools/repair_sanitizer_materializer.py
           rm -f .github/workflows/materialize-sanitizer-baseline.yml
           rm -f ci-artifacts/sanitizer-apply.log
+          rm -f ci-artifacts/sanitizer-publish.log
           rmdir ci-artifacts 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "core: add sanitizer and startup-smoke gates"
-          git push origin HEAD:${{ github.head_ref }}
+          {
+            echo "=== STATUS BEFORE ADD ==="
+            git status --short
+            git add -A
+            echo "=== CACHED DIFF ==="
+            git diff --cached --stat
+            echo "=== COMMIT ==="
+            git commit -m "core: add sanitizer and startup-smoke gates"
+          } > /tmp/sanitizer-publish.log 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "=== PUSH ===" >> /tmp/sanitizer-publish.log
+            git push origin HEAD:${{ github.head_ref }} >> /tmp/sanitizer-publish.log 2>&1
+            status=$?
+          fi
+          if [ "$status" -ne 0 ]; then
+            git fetch origin ${{ github.head_ref }}
+            git reset --hard origin/${{ github.head_ref }}
+            mkdir -p ci-artifacts
+            cp /tmp/sanitizer-publish.log ci-artifacts/sanitizer-publish.log
+            git add ci-artifacts/sanitizer-publish.log
+            git commit -m "test: capture sanitizer publish failure"
+            git push origin HEAD:${{ github.head_ref }}
+            cat /tmp/sanitizer-publish.log
+            exit "$status"
+          fi

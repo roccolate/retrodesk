@@ -9,6 +9,8 @@ run_logged() {
     if ! "$@" >"$log" 2>&1; then
         local summary
         summary=$(grep -m1 -E 'Test +#[0-9]+:.*\*\*\*Failed|TEST_REQUIRE|FAILED|Failure|Errors while running CTest|error:' "$log" || tail -n 1 "$log")
+        mkdir -p ci-artifacts
+        cp "$log" "ci-artifacts/notepad-selection-${label}.log"
         echo "::error title=${label}::${summary}"
         tail -n 80 "$log"
         exit 1

@@ -155,7 +155,7 @@ src/
 ├── main.c                 # Entry point
 ├── core/
 │   ├── cli.c              # Command-line parsing
-│   ├── clipboard.c        # Shared validated UTF-8 clipboard
+│   ├── clipboard.c        # Desktop-owned validated UTF-8 clipboard
 │   ├── desktop.c          # Desktop runtime, Launcher, taskbar integration
 │   ├── key_chord.c        # Portable key constants/chords
 │   ├── utf8.c             # UTF-8 decoding, validation, and cell width

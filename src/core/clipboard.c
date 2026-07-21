@@ -5,11 +5,26 @@
 
 #include "core/utf8.h"
 
-static char *g_clipboard_text;
-static size_t g_clipboard_length;
+struct RetroClipboard {
+    char *text;
+    size_t length;
+};
 
-bool retro_clipboard_set_text(const char *text, size_t length) {
-    if ((!text && length != 0) ||
+RetroClipboard *retro_clipboard_create(void) {
+    return calloc(1, sizeof(RetroClipboard));
+}
+
+void retro_clipboard_destroy(RetroClipboard *clipboard) {
+    if (!clipboard) return;
+    free(clipboard->text);
+    clipboard->text = NULL;
+    clipboard->length = 0;
+    free(clipboard);
+}
+
+bool retro_clipboard_set_text(RetroClipboard *clipboard,
+                              const char *text, size_t length) {
+    if (!clipboard || (!text && length != 0) ||
         (length > 0 && memchr(text, '\0', length) != NULL) ||
         !retro_utf8_validate(text, length)) {
         return false;
@@ -20,23 +35,25 @@ bool retro_clipboard_set_text(const char *text, size_t length) {
     if (length > 0) memcpy(copy, text, length);
     copy[length] = '\0';
 
-    free(g_clipboard_text);
-    g_clipboard_text = copy;
-    g_clipboard_length = length;
+    free(clipboard->text);
+    clipboard->text = copy;
+    clipboard->length = length;
     return true;
 }
 
-const char *retro_clipboard_text(size_t *length) {
-    if (length) *length = g_clipboard_length;
-    return g_clipboard_text ? g_clipboard_text : "";
+const char *retro_clipboard_text(const RetroClipboard *clipboard,
+                                 size_t *length) {
+    if (length) *length = clipboard ? clipboard->length : 0;
+    return clipboard && clipboard->text ? clipboard->text : "";
 }
 
-bool retro_clipboard_has_text(void) {
-    return g_clipboard_text != NULL && g_clipboard_length > 0;
+bool retro_clipboard_has_text(const RetroClipboard *clipboard) {
+    return clipboard && clipboard->text && clipboard->length > 0;
 }
 
-void retro_clipboard_clear(void) {
-    free(g_clipboard_text);
-    g_clipboard_text = NULL;
-    g_clipboard_length = 0;
+void retro_clipboard_clear(RetroClipboard *clipboard) {
+    if (!clipboard) return;
+    free(clipboard->text);
+    clipboard->text = NULL;
+    clipboard->length = 0;
 }

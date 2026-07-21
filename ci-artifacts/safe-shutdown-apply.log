@@ -1,4 +1,1 @@
-  File "/home/runner/work/retrodesk/retrodesk/tools/materialize_safe_global_shutdown.py", line 97
-    "    state->force_close = true;
-    ^
-SyntaxError: unterminated string literal (detected at line 97)
+ERROR: desktop shutdown test hook: expected one marker, found 0

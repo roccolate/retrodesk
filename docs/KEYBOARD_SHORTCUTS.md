@@ -9,14 +9,16 @@ rather than being guessed.
 | Key | Action |
 | --- | --- |
 | `F1` | Open the Launcher |
-| `F2` | Open the Launcher; close it when it is already focused |
+| `F10` | Open the Launcher; close it when it is already focused |
 | `F6` | Focus the next window |
 | `F9` | Enter move/resize mode for the active window |
 | `Ctrl+W` | Request close of the active app window |
 | `Ctrl+Q` | Quit RetroDesk |
 
-Printable keys and ordinary `Tab` events are left to the focused application.
-A dirty app may reject `Ctrl+W` temporarily and present its own close workflow.
+Printable keys, ordinary `Tab`, and unclaimed function keys are left to the
+focused application. In particular, `F2` is application-local and reaches File
+Manager Rename instead of being consumed by Desktop. A dirty app may reject
+`Ctrl+W` temporarily and present its own close workflow.
 
 ## Move/resize mode
 
@@ -36,7 +38,7 @@ After pressing `F9`:
 | `S` / `J` | Move selection down |
 | `Enter` or `Space` | Execute the selected action |
 | `Esc` or `Q` | Close the Launcher |
-| `F2` | Close the Launcher |
+| `F10` | Close the Launcher |
 
 ## Taskbar
 

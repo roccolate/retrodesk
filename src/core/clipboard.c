@@ -9,7 +9,9 @@ static char *g_clipboard_text;
 static size_t g_clipboard_length;
 
 bool retro_clipboard_set_text(const char *text, size_t length) {
-    if ((!text && length != 0) || !retro_utf8_validate(text, length)) {
+    if ((!text && length != 0) ||
+        (length > 0 && memchr(text, '\0', length) != NULL) ||
+        !retro_utf8_validate(text, length)) {
         return false;
     }
 

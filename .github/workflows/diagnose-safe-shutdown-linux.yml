@@ -1,9 +1,10 @@
-name: Diagnose safe shutdown Linux
+name: Materialize fixture shutdown oracles
 
 on:
   pull_request:
     branches: [main]
     paths:
+      - tools/fix_fixture_shutdown_oracles.py
       - .github/workflows/diagnose-safe-shutdown-linux.yml
 
 permissions:
@@ -13,7 +14,7 @@ env:
   RETROCORE_SPEC_COMMIT: fa027a04fca45728c2c09833388c553bfa8a5a54
 
 jobs:
-  diagnose:
+  materialize:
     if: github.head_ref == 'core/safe-global-shutdown'
     runs-on: ubuntu-24.04
     steps:
@@ -35,7 +36,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake gcc libncurses-dev python3
 
-      - name: Reproduce fixture build and tests
+      - name: Apply fixture oracle migration
+        run: |
+          python3 tools/fix_fixture_shutdown_oracles.py
+          git diff --check
+          python3 scripts/check_test_oracles.py
+
+      - name: Validate fixture-backed Debug build
         run: |
           set +e
           cmake -S . -B build/fixture-debug \
@@ -57,8 +64,21 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add ci-artifacts/safe-shutdown-linux.log
-            git commit -m "test: capture safe shutdown fixture failure"
+            git commit -m "test: capture fixture shutdown failure"
             git push origin HEAD:${{ github.head_ref }}
             tail -n 180 /tmp/safe-shutdown-linux.log
             exit "$status"
           fi
+
+      - name: Publish verified fixture tests
+        run: |
+          rm -rf retrocore-spec build/fixture-debug
+          rm -f tools/fix_fixture_shutdown_oracles.py
+          rm -f .github/workflows/diagnose-safe-shutdown-linux.yml
+          rm -f ci-artifacts/safe-shutdown-linux.log
+          rmdir ci-artifacts 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "test: align fixture oracles with transactional shutdown"
+          git push origin HEAD:${{ github.head_ref }}

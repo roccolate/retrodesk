@@ -1,1 +1,1 @@
-ERROR: desktop shutdown test hook: expected one marker, found 0
+ERROR: shutdown initialization: expected one marker, found 3

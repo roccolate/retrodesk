@@ -60,6 +60,11 @@ typedef bool (*RetroFsListFn)(const RetroFsEntry *entry, void *userdata);
 
 #if defined(_WIN32) || defined(__DJGPP__)
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4505)
+#endif
+
 /* Windows and DOS do not have a native storage adapter yet. Keep the API
    link-complete and fail every mutating/read operation explicitly instead of
    silently linking the POSIX implementation or leaving unresolved symbols.
@@ -173,6 +178,10 @@ static inline const char *retro_fs_error_string(RetroFsError error) {
     };
     return error <= RETRO_FS_INVALID_ARGUMENT ? messages[error] : "unknown";
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #else
 

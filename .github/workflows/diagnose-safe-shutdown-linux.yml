@@ -1,0 +1,64 @@
+name: Diagnose safe shutdown Linux
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-safe-shutdown-linux.yml
+
+permissions:
+  contents: write
+
+env:
+  RETROCORE_SPEC_COMMIT: fa027a04fca45728c2c09833388c553bfa8a5a54
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'core/safe-global-shutdown'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Checkout pinned fixtures
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: roccolate/retrocore-spec
+          ref: ${{ env.RETROCORE_SPEC_COMMIT }}
+          path: retrocore-spec
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libncurses-dev python3
+
+      - name: Reproduce fixture build and tests
+        run: |
+          set +e
+          cmake -S . -B build/fixture-debug \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DRETROCORE_SPEC_DIR="$PWD/retrocore-spec" \
+            -DRETROCORE_SPEC_REQUIRED=ON > /tmp/safe-shutdown-linux.log 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            cmake --build build/fixture-debug --parallel >> /tmp/safe-shutdown-linux.log 2>&1
+            status=$?
+          fi
+          if [ "$status" -eq 0 ]; then
+            ctest --test-dir build/fixture-debug --output-on-failure >> /tmp/safe-shutdown-linux.log 2>&1
+            status=$?
+          fi
+          if [ "$status" -ne 0 ]; then
+            mkdir -p ci-artifacts
+            cp /tmp/safe-shutdown-linux.log ci-artifacts/safe-shutdown-linux.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add ci-artifacts/safe-shutdown-linux.log
+            git commit -m "test: capture safe shutdown fixture failure"
+            git push origin HEAD:${{ github.head_ref }}
+            tail -n 180 /tmp/safe-shutdown-linux.log
+            exit "$status"
+          fi

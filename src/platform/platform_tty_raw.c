@@ -4,24 +4,12 @@
 
 #include <errno.h>
 #include <poll.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
 #include "core/key_chord.h"
-
-/* The handler only records a signal. Terminal restoration happens from the
-   normal platform_destroy path, where stdio and termios are safe to use. */
-static PlatformBackend *g_tty_signal_platform = NULL;
-
-static void platform_tty_signal_handler(int signal_number) {
-    (void)signal_number;
-    if (g_tty_signal_platform) {
-        g_tty_signal_platform->tty_signal_pending = 1;
-    }
-}
 
 static bool platform_query_tty_size(int *rows, int *cols) {
     if (!rows || !cols) return false;
@@ -64,14 +52,15 @@ static bool platform_enable_tty_raw(PlatformBackend *platform) {
 static void platform_disable_tty_raw(PlatformBackend *platform) {
     if (!platform) return;
     if (platform->tty_raw_enabled && platform->tty_has_saved_mode) {
-        tcsetattr(STDIN_FILENO, TCSANOW, &platform->tty_saved_mode);
+        (void)tcsetattr(STDIN_FILENO, TCSANOW,
+                        &platform->tty_saved_mode);
     }
     platform->tty_raw_enabled = false;
 }
 
 /* The tty-raw backend never touches curses; it emits portable RETRO_KEY_*
    chords directly so consumers can dispatch without backend-specific
-   magic numbers. */
+   magic numbers. Signal ownership belongs to the common platform facade. */
 static TtyDecoderKeyMap platform_tty_key_map(void) {
     TtyDecoderKeyMap map = {
         .up = RETRO_KEY_UP,
@@ -139,11 +128,6 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     platform->last_mouse_x = -1;
     tty_decoder_init(&platform->tty_decoder);
     platform_update_mask(&platform->features);
-
-    g_tty_signal_platform = platform;
-    signal(SIGINT, platform_tty_signal_handler);
-    signal(SIGTERM, platform_tty_signal_handler);
-
     return true;
 }
 
@@ -205,11 +189,6 @@ RetroPollResult platform_poll_event_tty_raw(PlatformBackend *platform,
 }
 
 void platform_destroy_tty_raw_backend(PlatformBackend *platform) {
-    if (g_tty_signal_platform == platform) {
-        signal(SIGINT, SIG_DFL);
-        signal(SIGTERM, SIG_DFL);
-        g_tty_signal_platform = NULL;
-    }
     platform_disable_tty_raw(platform);
 }
 

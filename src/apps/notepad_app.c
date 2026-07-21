@@ -31,6 +31,7 @@ typedef struct NotepadHistoryStack {
 
 typedef struct NotepadState {
     TextBuffer *buffer;
+    RetroClipboard *clipboard; /* borrowed */
     RetroFsPath path;
     RetroFsVersion version;
     bool has_path;
@@ -312,7 +313,7 @@ static bool np_copy_selection(NotepadState *state) {
     size_t length = 0;
     char *selected = text_buffer_selected_text(state->buffer, &length);
     if (!selected) return false;
-    bool copied = retro_clipboard_set_text(selected, length);
+    bool copied = retro_clipboard_set_text(state->clipboard, selected, length);
     free(selected);
     if (copied) {
         state->error[0] = '\0';
@@ -333,9 +334,9 @@ static void np_cut_selection(NotepadState *state) {
 }
 
 static void np_paste_clipboard(NotepadState *state) {
-    if (!state || !retro_clipboard_has_text()) return;
+    if (!state || !retro_clipboard_has_text(state->clipboard)) return;
     size_t length = 0;
-    const char *clipboard = retro_clipboard_text(&length);
+    const char *clipboard = retro_clipboard_text(state->clipboard, &length);
     NotepadHistoryEntry before = {0};
     bool captured = np_history_capture(state, &before);
     if (!captured) np_clear_history(state);
@@ -377,6 +378,7 @@ static bool np_create(RetroAppInstance *instance, const RetroAppContext *ctx) {
     if (!instance || !ctx) return false;
     NotepadState *state = calloc(1, sizeof(*state));
     if (!state) return false;
+    state->clipboard = ctx->clipboard;
     state->buffer = text_buffer_create();
     if (!state->buffer) {
         free(state);

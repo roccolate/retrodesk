@@ -39,6 +39,7 @@ struct Desktop {
     PlatformBackend *platform;
     Renderer *renderer;
     AppRegistry *app_registry;
+    RetroClipboard *clipboard;
     WindowManager *wm;
     StatusBar *statusbar;
     DrawList *overlay_draw_list;
@@ -354,6 +355,9 @@ Desktop *desktop_create(const DesktopConfig *config) {
     desktop->app_registry = app_registry_create();
     if (!desktop->app_registry) goto fail;
 
+    desktop->clipboard = retro_clipboard_create();
+    if (!desktop->clipboard) goto fail;
+
     const PlatformFeatures *features = platform_features(desktop->platform);
     if (!features) goto fail;
 
@@ -436,6 +440,7 @@ RetroAppInstance *app_launch_with_path(Desktop *desktop, const char *app_id,
 
     instance->descriptor = desc;
     instance->ctx.desktop = desktop;
+    instance->ctx.clipboard = desktop->clipboard;
     instance->ctx.capabilities = &desktop->capabilities;
     instance->ctx.theme = desktop->theme;
     if (resource_path) {
@@ -995,6 +1000,8 @@ void desktop_shutdown(Desktop *desktop) {
 
     app_registry_destroy(desktop->app_registry);
     desktop->app_registry = NULL;
+    retro_clipboard_destroy(desktop->clipboard);
+    desktop->clipboard = NULL;
     draw_list_destroy(desktop->overlay_draw_list);
     statusbar_destroy(desktop->statusbar);
     wm_destroy(desktop->wm);

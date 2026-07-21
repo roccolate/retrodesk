@@ -1,0 +1,60 @@
+name: Materialize core event and close routing
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - tools/materialize_core_event_close_routing.py
+      - .github/workflows/materialize-core-event-close-routing.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'core/harden-event-close-routing'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc libncurses-dev python3
+
+      - name: Apply core hardening slice
+        run: python3 tools/materialize_core_event_close_routing.py
+
+      - name: Guard generated tree
+        run: |
+          git diff --check
+          python3 scripts/check_test_oracles.py
+          python3 scripts/check_djgpp_sources.py
+          ! grep -R "F1/F2 launcher" -n README.md INSTALL.md docs src || false
+
+      - name: Configure strict Debug build
+        run: |
+          cmake -S . -B build/core-hardening \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_TESTS=ON \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DENABLE_WERROR=ON
+
+      - name: Build and test
+        run: |
+          cmake --build build/core-hardening --parallel
+          ctest --test-dir build/core-hardening --output-on-failure
+
+      - name: Publish verified source tree
+        run: |
+          rm -f tools/materialize_core_event_close_routing.py
+          rm -f .github/workflows/materialize-core-event-close-routing.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "core: harden event and app-close routing"
+          git push origin HEAD:${{ github.head_ref }}

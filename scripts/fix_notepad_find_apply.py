@@ -39,4 +39,26 @@ if text.count('"ARBOL"') != 1:
     raise SystemExit("uppercase accented clipboard expectation marker missing")
 text = text.replace('"ARBOL"', '"ÁRBOL"', 1)
 
+unit_offset_old = """    TEST_REQUIRE(match.row == 2);
+    TEST_REQUIRE(match.start_col == 0);
+    TEST_REQUIRE(match.end_col == 5);
+"""
+unit_offset_new = """    TEST_REQUIRE(match.row == 2);
+    TEST_REQUIRE(match.start_col == 0);
+    TEST_REQUIRE(match.end_col == 6);
+"""
+if text.count(unit_offset_old) != 1:
+    raise SystemExit("uppercase accented unit offset marker missing")
+text = text.replace(unit_offset_old, unit_offset_new, 1)
+
+runtime_offset_old = """    TEST_REQUIRE(notepad_cursor_row_for_test(&instance) == 2);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 5);
+"""
+runtime_offset_new = """    TEST_REQUIRE(notepad_cursor_row_for_test(&instance) == 2);
+    TEST_REQUIRE(notepad_cursor_col_for_test(&instance) == 6);
+"""
+if text.count(runtime_offset_old) != 1:
+    raise SystemExit("uppercase accented runtime offset marker missing")
+text = text.replace(runtime_offset_old, runtime_offset_new, 1)
+
 path.write_text(text, encoding="utf-8")

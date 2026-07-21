@@ -8,10 +8,10 @@
 #include "core/event.h"
 #include "render/render.h"
 
-/* Multi-line UTF-8 text buffer with line array, insert/delete, cursor, and
-   viewport tracking. Cursor columns are byte offsets internally, but every
-   public mutation normalizes them to a valid UTF-8 codepoint boundary.
-   Rendering converts those offsets to terminal display-cell columns. */
+/* Multi-line UTF-8 text buffer with line array, insert/delete, cursor,
+   selection, and viewport tracking. Cursor and selection columns are byte
+   offsets internally, but every public mutation normalizes them to a valid
+   UTF-8 codepoint boundary. Rendering converts offsets to terminal cells. */
 
 typedef struct TextBuffer TextBuffer;
 
@@ -34,6 +34,13 @@ size_t text_buffer_cursor_row(const TextBuffer *buf);
 size_t text_buffer_cursor_col(const TextBuffer *buf);
 void text_buffer_set_cursor(TextBuffer *buf, size_t row, size_t col);
 
+/* Selection state. Shift-modified navigation extends from the anchor. */
+bool text_buffer_has_selection(const TextBuffer *buf);
+void text_buffer_clear_selection(TextBuffer *buf);
+void text_buffer_select_all(TextBuffer *buf);
+/* Returns selected UTF-8 text with LF separators. The caller owns it. */
+char *text_buffer_selected_text(const TextBuffer *buf, size_t *length);
+
 /* Scroll state. scroll_col is a UTF-8 byte offset. */
 size_t text_buffer_scroll_row(const TextBuffer *buf);
 size_t text_buffer_scroll_col(const TextBuffer *buf);
@@ -41,17 +48,27 @@ size_t text_buffer_scroll_col(const TextBuffer *buf);
 /* Editing */
 bool text_buffer_insert_char(TextBuffer *buf, char ch);
 bool text_buffer_insert_codepoint(TextBuffer *buf, uint32_t codepoint);
+/* Inserts validated UTF-8, replacing the selection when present. */
+bool text_buffer_insert_text(TextBuffer *buf, const char *text, size_t length);
 bool text_buffer_insert_newline(TextBuffer *buf);
+bool text_buffer_delete_selection(TextBuffer *buf);
 bool text_buffer_delete_backward(TextBuffer *buf);
 bool text_buffer_delete_forward(TextBuffer *buf);
 
 /* Event handling — returns true if the key was consumed. */
 bool text_buffer_handle_key(TextBuffer *buf, const RetroKeyEvent *key);
 
-/* Render into a draw list using terminal display-cell widths. */
+/* Compatibility renderer without selection highlighting. */
 void text_buffer_render(const TextBuffer *buf, DrawList *draw_list,
                         int y, int x, int visible_rows, int visible_cols,
                         const RenderStyle *style,
                         const RenderStyle *cursor_style);
+
+/* Selection-aware renderer used by editors. */
+void text_buffer_render_with_selection(
+    const TextBuffer *buf, DrawList *draw_list,
+    int y, int x, int visible_rows, int visible_cols,
+    const RenderStyle *style, const RenderStyle *cursor_style,
+    const RenderStyle *selection_style);
 
 #endif

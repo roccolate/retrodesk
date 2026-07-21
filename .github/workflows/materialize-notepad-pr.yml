@@ -101,6 +101,7 @@ text = text.replace(old, new, 1)'''
         run: |
           rm -f .github/workflows/materialize-notepad-native-ux.yml
           rm -f .github/workflows/materialize-notepad-pr.yml
+          rm -f .github/notepad-materialize-trigger
           rm -rf build-materialize
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -21,21 +21,9 @@ def update_section(source: str, start_marker: str, end_marker: str,
     return source[:start] + section + source[end:]
 
 
-text = replace_once(
-    text,
-    '''static RetroEvent make_quit_event(void) {
-    RetroEvent event = {0};
-    event.type = RETRO_EVENT_KEY;
-    event.data.key.key_code = RETRO_KEY_CTRL_Q;
-    event.data.key.is_printable = false;
-    event.data.key.ascii = '\0';
-    return event;
-}
-
-''',
-    "",
-    "obsolete fixture quit helper",
-)
+quit_start = text.index("static RetroEvent make_quit_event(void) {")
+quit_end = text.index("static RetroEvent make_focus_next_event(void) {", quit_start)
+text = text[:quit_start] + text[quit_end:]
 
 
 def update_drag(section: str) -> str:

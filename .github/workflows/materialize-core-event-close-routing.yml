@@ -27,14 +27,31 @@ jobs:
           sudo apt-get install -y cmake gcc libncurses-dev python3
 
       - name: Apply core hardening slice
-        run: python3 tools/materialize_core_event_close_routing.py
+        run: |
+          set +e
+          python3 tools/materialize_core_event_close_routing.py > /tmp/core-apply.log 2>&1
+          status=$?
+          cat /tmp/core-apply.log
+          if [ "$status" -ne 0 ]; then
+            mkdir -p ci-artifacts
+            cp /tmp/core-apply.log ci-artifacts/core-hardening-apply.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add ci-artifacts/core-hardening-apply.log
+            git commit -m "chore: capture core hardening apply failure"
+            git push origin HEAD:${{ github.head_ref }}
+            exit "$status"
+          fi
 
       - name: Guard generated tree
         run: |
           git diff --check
           python3 scripts/check_test_oracles.py
           python3 scripts/check_djgpp_sources.py
-          ! grep -R "F1/F2 launcher" -n README.md INSTALL.md docs src || false
+          if grep -R "F1/F2 launcher" -n README.md INSTALL.md docs src; then
+            echo "stale F1/F2 launcher documentation remains"
+            exit 1
+          fi
 
       - name: Configure strict Debug build
         run: |
@@ -53,6 +70,7 @@ jobs:
         run: |
           rm -f tools/materialize_core_event_close_routing.py
           rm -f .github/workflows/materialize-core-event-close-routing.yml
+          rm -rf ci-artifacts
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A

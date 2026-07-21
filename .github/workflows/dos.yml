@@ -12,6 +12,7 @@ permissions:
 env:
   DJGPP_RELEASE: v3.4
   DJGPP_ARCHIVE: djgpp-linux64-gcc1220.tar.bz2
+  DJGPP_SHA256: 8464f17017d6ab1b2bb2df4ed82357b5bf692e6e2b7fee37e315638f3d505f00
   PDCURSES_COMMIT: 6c1f95c4fa9f9f105879c2d99dd72a5bf335c046
   CWSDPMI_URL: https://www.delorie.com/pub/djgpp/current/v2misc/csdpmi7b.zip
   CWSDPMI_SHA256: deacda0488e1cdd7c4a9f32fab45662b34c0ed6b2d7d4d13bc07041b62004a8c
@@ -37,6 +38,7 @@ jobs:
           url="https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/${DJGPP_ARCHIVE}"
           curl --fail --silent --show-error --location --retry 3 \
             --output "$archive" "$url"
+          echo "$DJGPP_SHA256  $archive" | sha256sum -c -
           sha256sum "$archive" | tee djgpp-toolchain.sha256
           tar -xjf "$archive" -C "$GITHUB_WORKSPACE"
           test -x "$GITHUB_WORKSPACE/djgpp/bin/i586-pc-msdosdjgpp-gcc"
@@ -110,7 +112,10 @@ jobs:
         with:
           name: retrodesk-dos-djgpp
           path: |
-            build/dos
+            build/dos/retrodesk.exe
+            build/dos/CWSDPMI.EXE
+            build/dos/README.TXT
+            build/dos/SHA256SUMS
             djgpp-toolchain.sha256
             cwsdpmi.sha256
           if-no-files-found: error

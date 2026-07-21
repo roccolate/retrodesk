@@ -48,6 +48,7 @@ All items below must be satisfied before tagging `v0.1.0`.
 - [ ] `make strict` passes on Linux with curses development headers installed.
 - [ ] `make test` passes on Linux.
 - [ ] `make test-all` passes and Debug/Release CTest manifests match.
+- [ ] `make test-sanitize` passes with ASan/UBSan/leak detection enabled.
 - [ ] `make smoke` passes in an interactive terminal.
 - [ ] `make smoke-ci` passes in non-interactive CI/sandbox environments.
 - [ ] `make smoke-linux-vc` passes in an interactive PTY with `TERM=linux`.
@@ -151,6 +152,7 @@ make clean
 make strict
 make test
 make test-all
+make test-sanitize
 make smoke
 make smoke-ci
 make smoke-linux-vc

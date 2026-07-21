@@ -5,6 +5,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 : "${PDCURSES_DIR:?PDCURSES_DIR must point to a pinned PDCurses checkout}"
+: "${CWSDPMI_EXE:?CWSDPMI_EXE must point to the pinned DJGPP DPMI host}"
 
 cross_prefix=${DJGPP_CROSS_PREFIX:-i586-pc-msdosdjgpp-}
 cc=${DJGPP_CC:-${cross_prefix}gcc}
@@ -21,6 +22,10 @@ done
 
 if [[ ! -f "$PDCURSES_DIR/dos/Makefile" ]]; then
     echo "build_djgpp_ci: invalid PDCURSES_DIR: $PDCURSES_DIR" >&2
+    exit 2
+fi
+if [[ ! -s "$CWSDPMI_EXE" ]]; then
+    echo "build_djgpp_ci: invalid CWSDPMI_EXE: $CWSDPMI_EXE" >&2
     exit 2
 fi
 
@@ -56,20 +61,7 @@ fi
 "$strip" retrodesk.exe
 mkdir -p "$out_dir"
 cp retrodesk.exe "$out_dir/retrodesk.exe"
-
-# DJGPP protected-mode programs need a DPMI host. The prebuilt toolchain ships
-# CWSDPMI; keep it beside the executable so DOSBox and real DOS use the same
-# distribution layout.
-if [[ -n "${DJGPP_ROOT:-}" ]]; then
-    cwsdpmi=$(find "$DJGPP_ROOT" -type f -iname 'cwsdpmi.exe' -print -quit)
-else
-    cwsdpmi=""
-fi
-if [[ -z "$cwsdpmi" ]]; then
-    echo "build_djgpp_ci: CWSDPMI.EXE not found below DJGPP_ROOT" >&2
-    exit 1
-fi
-cp "$cwsdpmi" "$out_dir/CWSDPMI.EXE"
+cp "$CWSDPMI_EXE" "$out_dir/CWSDPMI.EXE"
 
 printf 'Built %s\n' "$out_dir/retrodesk.exe"
 "$cc" --version | head -n 1

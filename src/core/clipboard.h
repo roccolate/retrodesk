@@ -6,7 +6,9 @@
 
 /* Desktop-owned, backend-neutral clipboard. Stored text is validated UTF-8.
    Returned text remains owned by the service and is invalidated by the next
-   successful set or clear operation. */
+   successful set or clear operation. Applications receive a borrowed service
+   pointer through RetroAppContext and must never destroy it. Null service
+   pointers degrade to empty/unavailable clipboard behavior. */
 typedef struct RetroClipboard RetroClipboard;
 
 RetroClipboard *retro_clipboard_create(void);

@@ -3,6 +3,8 @@ name: Agent Win32 Storage Diagnostic
 on:
   push:
     branches: [agent/native-win32-storage]
+  pull_request:
+    branches: [main, master]
 
 permissions:
   contents: read

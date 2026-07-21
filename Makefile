@@ -4,16 +4,18 @@ TEST_BUILD_ROOT ?= build/tests
 CONFIG ?= Release
 STRICT ?= ON
 WERROR ?= ON
+SANITIZERS ?= OFF
 
 .PHONY: all configure build clean strict dev dos test test-debug test-release \
-        test-all _test check-test-oracles check-build-sources \
+        test-all test-sanitize _test check-test-oracles check-build-sources \
         smoke smoke-ci smoke-linux-vc
 
 all: build
 
 configure:
 	$(CMAKE) -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=$(CONFIG) \
-		-DENABLE_STRICT_WARNINGS=$(STRICT) -DENABLE_WERROR=$(WERROR)
+		-DENABLE_STRICT_WARNINGS=$(STRICT) -DENABLE_WERROR=$(WERROR) \
+		-DENABLE_SANITIZERS=$(SANITIZERS)
 
 build: configure
 	$(CMAKE) --build $(BUILD_DIR) --config $(CONFIG)
@@ -51,6 +53,12 @@ test-release:
 test-all: test-debug test-release
 	@python3 scripts/compare_ctest_manifests.py \
 		$(TEST_BUILD_ROOT)/debug $(TEST_BUILD_ROOT)/release
+
+test-sanitize:
+	ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:strict_string_checks=1 \
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+	$(MAKE) _test BUILD_DIR=$(TEST_BUILD_ROOT)/sanitizers CONFIG=Debug \
+		SANITIZERS=ON STRICT=ON WERROR=ON
 
 _test: check-test-oracles build
 	ctest --test-dir $(BUILD_DIR) --output-on-failure

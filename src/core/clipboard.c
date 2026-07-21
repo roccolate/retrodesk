@@ -1,5 +1,6 @@
 #include "core/clipboard.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,7 +25,7 @@ void retro_clipboard_destroy(RetroClipboard *clipboard) {
 
 bool retro_clipboard_set_text(RetroClipboard *clipboard,
                               const char *text, size_t length) {
-    if (!clipboard || (!text && length != 0) ||
+    if (!clipboard || length == SIZE_MAX || (!text && length != 0) ||
         (length > 0 && memchr(text, '\0', length) != NULL) ||
         !retro_utf8_validate(text, length)) {
         return false;

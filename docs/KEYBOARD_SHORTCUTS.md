@@ -15,8 +15,10 @@ rather than being guessed.
 | `Ctrl+W` | Request close of the active app window |
 | `Ctrl+Q` | Quit RetroDesk |
 
-Printable keys and ordinary `Tab` events are left to the focused application.
-A dirty app may reject `Ctrl+W` temporarily and present its own close workflow.
+Printable keys, ordinary `Tab`, and unclaimed function keys are left to the
+focused application. In particular, `F2` is application-local and reaches File
+Manager Rename instead of being consumed by Desktop. A dirty app may reject
+`Ctrl+W` temporarily and present its own close workflow.
 
 ## Move/resize mode
 

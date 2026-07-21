@@ -10,7 +10,8 @@
 
 /* Multi-line UTF-8 text buffer with line array, insert/delete, cursor, and
    viewport tracking. Cursor columns are byte offsets internally, but every
-   public mutation normalizes them to a valid UTF-8 codepoint boundary. */
+   public mutation normalizes them to a valid UTF-8 codepoint boundary.
+   Rendering converts those offsets to terminal display-cell columns. */
 
 typedef struct TextBuffer TextBuffer;
 

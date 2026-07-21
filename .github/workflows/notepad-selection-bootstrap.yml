@@ -1,0 +1,62 @@
+name: Materialize Notepad selection clipboard
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - scripts/apply_notepad_selection_clipboard.py
+      - .github/workflows/notepad-selection-bootstrap.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'agent/notepad-selection-clipboard'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: agent/notepad-selection-clipboard
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq cmake gcc libncurses-dev python3 >/dev/null
+
+      - name: Apply selection and clipboard integration
+        run: python3 scripts/apply_notepad_selection_clipboard.py
+
+      - name: Run source guards
+        run: |
+          git diff --check
+          python3 scripts/check_test_oracles.py
+          python3 scripts/check_djgpp_sources.py
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_TESTS=ON \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DENABLE_WERROR=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Publish verified integration
+        run: |
+          rm -f scripts/apply_notepad_selection_clipboard.py
+          rm -f .github/workflows/notepad-selection-bootstrap.yml
+          git config user.name "RetroDesk CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: add UTF-8 Notepad selection and clipboard"
+          git push origin HEAD:agent/notepad-selection-clipboard

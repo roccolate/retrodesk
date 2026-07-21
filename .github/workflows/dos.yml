@@ -90,6 +90,16 @@ jobs:
         shell: bash
         run: scripts/run_dosbox_smoke.sh build/dos
 
+      - name: Upload failed DOSBox smoke state
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: retrodesk-dosbox-smoke-state
+          path: |
+            build/dos
+            cwsdpmi.sha256
+          if-no-files-found: error
+
       - name: Upload DOS distribution
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

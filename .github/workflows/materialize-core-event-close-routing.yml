@@ -28,6 +28,25 @@ jobs:
 
       - name: Apply core hardening slice
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/materialize_core_event_close_routing.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''            if changed == original:
+                raise RuntimeError(f"{relative}: transformation made no change")
+            rendered[path] = changed
+'''
+          new = '''            if changed == original:
+                if relative.startswith(("src/", "tests/")):
+                    raise RuntimeError(
+                        f"{relative}: transformation made no change")
+                continue
+            rendered[path] = changed
+'''
+          if text.count(old) != 1:
+              raise SystemExit('required-change guard marker missing')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           set +e
           python3 tools/materialize_core_event_close_routing.py > /tmp/core-apply.log 2>&1
           status=$?

@@ -20,6 +20,12 @@ focused application. In particular, `F2` is application-local and reaches File
 Manager Rename instead of being consumed by Desktop. A dirty app may reject
 `Ctrl+W` temporarily and present its own close workflow.
 
+Global shutdown is transactional. Clean applications authorize their close but
+remain alive until every running application has also authorized. If one dirty
+application cancels, Desktop resets the complete negotiation and destroys no
+application window. Cancelling or failing a Save As that was opened by shutdown
+also cancels the global shutdown.
+
 ## Move/resize mode
 
 After pressing `F9`:

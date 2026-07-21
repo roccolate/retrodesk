@@ -21,6 +21,13 @@ def update_section(source: str, start_marker: str, end_marker: str,
     return source[:start] + section + source[end:]
 
 
+text = replace_once(
+    text,
+    "    if (platform->next_event >= platform->event_count) return RETRO_POLL_TIMEOUT;\n",
+    "    if (platform->next_event >= platform->event_count) return RETRO_POLL_CLOSED;\n",
+    "fixture exhaustion result",
+)
+
 quit_start = text.index("static RetroEvent make_quit_event(void) {")
 quit_end = text.index("static RetroEvent make_focus_next_event(void) {", quit_start)
 text = text[:quit_start] + text[quit_end:]
@@ -43,11 +50,11 @@ def update_drag(section: str) -> str:
         '''    events[0] = make_pointer_down_event(local_down_x, local_down_y);
     events[1] = make_pointer_move_event(local_down_x + dx, local_down_y + dy);
     events[2] = make_pointer_up_event(local_down_x + dx, local_down_y + dy);
-    for (size_t i = 0; i < sizeof(events) / sizeof(events[0]); ++i) {
-        TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &events[i]));
-    }
+    platform_stub_set_events(platform, events, sizeof(events) / sizeof(events[0]));
+
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
 ''',
-        "drag fixture dispatch",
+        "drag fixture replay",
     )
 
 
@@ -72,9 +79,11 @@ def update_focus(section: str) -> str:
     TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
 ''',
         '''    event = make_focus_next_event();
-    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &event));
+    platform_stub_set_events(platform, &event, 1);
+
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
 ''',
-        "focus fixture dispatch",
+        "focus fixture replay",
     )
 
 
@@ -99,9 +108,11 @@ def update_close(section: str) -> str:
     TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
 ''',
         '''    event = make_close_focused_window_event();
-    TEST_REQUIRE(desktop_dispatch_event_for_test(desktop, &event));
+    platform_stub_set_events(platform, &event, 1);
+
+    TEST_REQUIRE(desktop_run(desktop) == EXIT_SUCCESS);
 ''',
-        "close fixture dispatch",
+        "close fixture replay",
     )
 
 

@@ -45,4 +45,10 @@ updated, count = re.subn(pattern, lambda match: replacement,
                          text, count=1, flags=re.S)
 if count != 1:
     raise SystemExit(f"repair expected one update_makefile function, found {count}")
+
+ci_entry = '        ".github/workflows/ci.yml": update_ci,\n'
+if updated.count(ci_entry) != 1:
+    raise SystemExit("repair expected one CI update entry")
+updated = updated.replace(ci_entry, "", 1)
+
 path.write_text(updated, encoding="utf-8")

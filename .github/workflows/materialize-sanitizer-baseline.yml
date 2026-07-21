@@ -5,6 +5,7 @@ on:
     branches: [core/portable-storage-contract]
     paths:
       - tools/materialize_sanitizer_baseline.py
+      - tools/repair_sanitizer_materializer.py
       - .github/workflows/materialize-sanitizer-baseline.yml
 
 permissions:
@@ -39,8 +40,12 @@ jobs:
       - name: Apply sanitizer baseline
         run: |
           set +e
-          python3 tools/materialize_sanitizer_baseline.py > /tmp/sanitizer-apply.log 2>&1
+          python3 tools/repair_sanitizer_materializer.py > /tmp/sanitizer-apply.log 2>&1
           status=$?
+          if [ "$status" -eq 0 ]; then
+            python3 tools/materialize_sanitizer_baseline.py >> /tmp/sanitizer-apply.log 2>&1
+            status=$?
+          fi
           if [ "$status" -ne 0 ]; then
             mkdir -p ci-artifacts
             cp /tmp/sanitizer-apply.log ci-artifacts/sanitizer-apply.log
@@ -90,6 +95,7 @@ jobs:
         run: |
           rm -rf retrocore-spec build/materialize-sanitizers
           rm -f tools/materialize_sanitizer_baseline.py
+          rm -f tools/repair_sanitizer_materializer.py
           rm -f .github/workflows/materialize-sanitizer-baseline.yml
           rm -f ci-artifacts/sanitizer-apply.log
           rmdir ci-artifacts 2>/dev/null || true

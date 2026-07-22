@@ -389,13 +389,12 @@ redirects selected WM/statusbar operations to:
 
 - taskbar window bridge;
 - Launcher chrome bridge;
-- maximize bridge;
+- explicit `core/desktop_chrome` maximize gesture routing;
 - move/resize bridge.
 
-This preserves ordinary widget/WM link contracts for unrelated tests but is not
-the desired final architecture. Maximize/restore state now lives in each
-`RetroWindow`, so close/destruction and multiple Window Manager instances no
-longer share a bounded pointer-keyed catalog. Launcher, taskbar and operation-mode
+Maximize/restore state now lives in each `RetroWindow`, and F8/title-bar
+maximize gestures route explicitly through `core/desktop_chrome.c`; public
+headers no longer replace `wm_handle_event`. Launcher, taskbar and operation-mode
 bridge state still must become explicitly per-Desktop owned during decomposition.
 
 See [KNOWN_ISSUES.md](KNOWN_ISSUES.md), especially KB-011 and KB-012.

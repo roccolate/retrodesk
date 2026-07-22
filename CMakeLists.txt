@@ -20,6 +20,7 @@ set(RETRODESK_SOURCES
     src/core/cli.c
     src/core/clipboard.c
     src/core/desktop.c
+    src/core/desktop_chrome.c
     src/core/key_chord.c
     src/core/utf8.c
     src/platform/platform.c
@@ -55,6 +56,7 @@ set(RETRODESK_DJGPP_SOURCES
     src/core/cli.c
     src/core/clipboard.c
     src/core/desktop.c
+    src/core/desktop_chrome.c
     src/core/key_chord.c
     src/core/utf8.c
     src/storage/retro_fs_djgpp.c
@@ -198,6 +200,7 @@ if (ENABLE_TESTS)
         tests/wm_event_replay_test.c
         tests/wm_render_stub.c
         src/wm/window_manager.c
+        src/core/desktop_chrome.c
         src/ui/theme.c
     )
     target_include_directories(wm_event_replay_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -430,6 +433,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         tests/desktop_runtime_test.c
         tests/wm_render_stub.c
         src/core/desktop.c
+        src/core/desktop_chrome.c
         src/core/clipboard.c
         src/core/utf8.c
         src/app/app_runtime.c
@@ -474,6 +478,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             tests/retrocore_event_fixture_test.c
             tests/wm_render_stub.c
             src/core/desktop.c
+            src/core/desktop_chrome.c
             src/core/clipboard.c
             src/core/utf8.c
             src/app/app_runtime.c

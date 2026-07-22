@@ -5,17 +5,6 @@
 
 #include "wm/window_manager.h"
 
-/* The taskbar bridge is also compiled by its isolated widget regression. Desktop
-   may inject an after-focus hook before including this file; standalone users
-   keep the original focus contract with a no-op hook. */
-#ifndef RETRODESK_TASKBAR_AFTER_FOCUS
-#define RETRODESK_TASKBAR_AFTER_FOCUS(wm, id) \
-    do {                                                \
-        (void)(wm);                                     \
-        (void)(id);                                     \
-    } while (0)
-#endif
-
 /* Translation-unit-private adapter for core/desktop.c. The public StatusBar
    remains a pure action source; this bridge gives taskbar clicks the familiar
    desktop behavior without widening Desktop's public API. */
@@ -49,7 +38,6 @@ static inline void desktop_taskbar_focus_window(WindowManager *wm,
                                                  WindowId id) {
     if (!g_taskbar_window_bridge.activation_pending) {
         wm_focus_window(wm, id);
-        RETRODESK_TASKBAR_AFTER_FOCUS(wm, id);
         return;
     }
 
@@ -59,7 +47,6 @@ static inline void desktop_taskbar_focus_window(WindowManager *wm,
     if (wm_window_is_minimized(wm, id)) {
         (void)wm_restore_window(wm, id);
         wm_focus_window(wm, id);
-        RETRODESK_TASKBAR_AFTER_FOCUS(wm, id);
         return;
     }
 
@@ -70,7 +57,6 @@ static inline void desktop_taskbar_focus_window(WindowManager *wm,
     }
 
     wm_focus_window(wm, id);
-    RETRODESK_TASKBAR_AFTER_FOCUS(wm, id);
 }
 
 static inline void desktop_taskbar_bring_to_front(WindowManager *wm,

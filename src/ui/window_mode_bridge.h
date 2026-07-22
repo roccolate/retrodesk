@@ -4,7 +4,6 @@
 #include <stdbool.h>
 
 #include "ui/theme.h"
-#include "ui/window_maximize_bridge.h"
 #include "ui/window_mode_hud.h"
 #include "wm/window_manager.h"
 
@@ -137,7 +136,7 @@ static inline bool desktop_window_mode_move_active_window(
         return false;
     }
     if (dy == 0 && dx == 0) return false;
-    return desktop_maximize_move_active_window(wm, dy, dx);
+    return wm_move_active_window(wm, dy, dx);
 }
 
 static inline bool desktop_window_mode_resize_active_window(
@@ -152,7 +151,7 @@ static inline bool desktop_window_mode_resize_active_window(
         return false;
     }
     if (dh == 0 && dw == 0) return false;
-    return desktop_maximize_resize_active_window(wm, dh, dw);
+    return wm_resize_active_window(wm, dh, dw);
 }
 
 #endif

@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include "core/checked_size.h"
-#include "ui/window_maximize_bridge.h"
+#include "core/desktop_chrome.h"
 #include "ui/window_mode_hud.h"
 #include "wm/window_manager.h"
 
@@ -345,30 +345,29 @@ int main(void) {
     TEST_REQUIRE(max_x == 0);
     TEST_REQUIRE(max_h == 39);
     TEST_REQUIRE(max_w == 120);
-    TEST_REQUIRE(!desktop_maximize_move_active_window(wm, 1, 1));
-    TEST_REQUIRE(!desktop_maximize_resize_active_window(wm, -1, -1));
+    TEST_REQUIRE(!wm_move_active_window(wm, 1, 1));
+    TEST_REQUIRE(!wm_resize_active_window(wm, -1, -1));
 
     TEST_REQUIRE(wm_minimize_window(wm, b));
     TEST_REQUIRE(wm_window_is_minimized(wm, b));
     TEST_REQUIRE(wm_window_is_maximized(wm, b));
     TEST_REQUIRE(wm_restore_window(wm, b));
     wm_focus_window(wm, b);
-    desktop_maximize_after_focus(wm, b);
     retro_window_get_geometry(wm_window(wm, b), &max_y, &max_x, &max_h, &max_w);
     TEST_REQUIRE(max_y == 0 && max_x == 0 && max_h == 39 && max_w == 120);
 
     RetroEvent title_double_click = mouse_event(0, 1, false, false, false, false);
     title_double_click.data.mouse.button1_dblclick = true;
-    TEST_REQUIRE(desktop_maximize_handle_event(wm, &title_double_click));
+    TEST_REQUIRE(desktop_chrome_handle_window_event(wm, &title_double_click));
     TEST_REQUIRE(!wm_window_is_maximized(wm, b));
     retro_window_get_geometry(wm_window(wm, b), &max_y, &max_x, &max_h, &max_w);
     TEST_REQUIRE(max_y == restore_y && max_x == restore_x);
     TEST_REQUIRE(max_h == restore_h && max_w == restore_w);
 
     RetroEvent f8 = key_event(RETRO_KEY_F8, '\0');
-    TEST_REQUIRE(desktop_maximize_handle_event(wm, &f8));
+    TEST_REQUIRE(desktop_chrome_handle_window_event(wm, &f8));
     TEST_REQUIRE(wm_window_is_maximized(wm, b));
-    TEST_REQUIRE(desktop_maximize_handle_event(wm, &f8));
+    TEST_REQUIRE(desktop_chrome_handle_window_event(wm, &f8));
     TEST_REQUIRE(!wm_window_is_maximized(wm, b));
     retro_window_get_geometry(wm_window(wm, b), &max_y, &max_x, &max_h, &max_w);
     TEST_REQUIRE(max_y == restore_y && max_x == restore_x);

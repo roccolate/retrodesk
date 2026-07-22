@@ -31,6 +31,8 @@ typedef enum StatusBarActionKind {
 typedef struct StatusBarAction {
     StatusBarActionKind kind;
     size_t app_index;
+    size_t instance_count;
+    bool focused;
 } StatusBarAction;
 
 typedef struct StatusBar StatusBar;
@@ -44,10 +46,14 @@ StatusBarAction statusbar_hit_test(const StatusBar *sb, int y, int x);
 void statusbar_destroy(StatusBar *sb);
 
 /* desktop.c includes this header after core/desktop.h. Keep the temporary
-   launcher adaptation private to that one translation unit so widget tests and
-   other UI consumers retain the ordinary Window Manager link contract. */
+   launcher and taskbar adaptations private to that one translation unit so
+   widget tests and other UI consumers retain the ordinary WM link contract. */
 #if defined(RETRODESK_CORE_DESKTOP_H)
+#include "ui/taskbar_window_bridge.h"
 #include "ui/launcher_bridge.h"
+#define statusbar_hit_test desktop_taskbar_hit_test
+#define wm_focus_window desktop_taskbar_focus_window
+#define wm_bring_to_front desktop_taskbar_bring_to_front
 #define wm_create_window desktop_chrome_create_window
 #endif
 

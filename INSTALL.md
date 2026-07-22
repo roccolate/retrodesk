@@ -1,6 +1,11 @@
 # Installation and Quick Start
 
-## Linux (recommended product profile)
+> RetroDesk is pre-alpha. Linux is the recommended interactive development
+> profile. Windows and DOS have native storage implementations and automated
+> validation, but their release maturity still depends on exact-candidate manual
+> evidence.
+
+## Linux (Recommended)
 
 ### Prerequisites
 
@@ -25,33 +30,47 @@ make
 ./build/retrodesk
 ```
 
-The complete current File Manager and Notepad storage workflow uses the POSIX
-adapter in `src/storage/retro_fs_posix.c`.
+Equivalent direct CMake:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+./build/retrodesk
+```
+
+Linux uses the native POSIX storage adapter for File Manager and Notepad.
 
 ## First Run
 
-RetroDesk opens File Manager by default and displays an interactive taskbar on
-the bottom row.
+RetroDesk opens File Manager by default and renders a themed taskbar at the
+bottom. The exact colors and selection treatment depend on the active theme.
+
+Typical wide layout:
 
 ```text
-[Apps] [Files*] [Notepad ] [Diag ]                          19:42:33
+Apps | Files | Notepad | Diag                              19:42:33
 ```
 
-Essential desktop controls:
+Essential controls:
 
 ```text
-F1 or F2  open Launcher
-F6        focus next window
-F9        enter move/resize mode
-Ctrl+W    close active app window
-Ctrl+Q    quit RetroDesk
+F1/F10   open Launcher
+F6       focus next eligible window
+F8       maximize or restore active window
+F9       enter keyboard move mode
+Ctrl+W   request close of active app
+Ctrl+Q   coordinated shutdown
 ```
 
-In move/resize mode, use arrow keys, press `Tab` to switch between moving and
-resizing, and press `Esc` to leave the mode.
+In `F9` mode:
 
-See [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md) for File Manager,
-Notepad, Launcher, prompt, and taskbar controls.
+- arrows adjust position or size;
+- `Tab` toggles MOVE/RESIZE;
+- `Enter`, `F9`, or `Esc` finish;
+- a HUD above the taskbar displays mode and geometry.
+
+See [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md).
 
 ## Themes and Backends
 
@@ -69,93 +88,165 @@ Notepad, Launcher, prompt, and taskbar controls.
 # Input backends
 ./build/retrodesk --input-backend=curses
 ./build/retrodesk --input-backend=tty
+
+# Diagnostics
+./build/retrodesk --diagnose
+./build/retrodesk --bench-startup
+./build/retrodesk --help
 ```
 
-Curses is the recommended interactive path. ANSI/raw-TTY remains useful for
-bring-up and fallback testing, but terminal-specific smoke evidence is still
-required before release claims.
+Curses is the recommended interactive path. Raw TTY + ANSI is an experimental
+fallback/bring-up profile and requires terminal-specific acceptance before a
+release claim.
 
-## Built-In App Quick Tour
+## Desktop Quick Tour
+
+### Launcher
+
+- `F1` or `F10`: open.
+- arrows or `W/S/J/K`: navigate.
+- Home/End: first/last action.
+- Enter/Space: activate.
+- `F/N/D/X`: direct accelerators.
+- Esc/Q/F10: close.
+
+The Launcher is anchored above the bottom-left taskbar and remains in the one
+Desktop event loop.
+
+### Taskbar
+
+- Click Apps: toggle Launcher.
+- Click a closed app: launch.
+- Click a running background app: focus/raise.
+- Click the focused app: minimize.
+- Click a minimized app: restore/focus/raise.
+- Multiple Notepad instances cycle.
+
+Labels compact automatically. A general overflow surface for a future larger app
+catalog is not yet implemented.
 
 ### File Manager
 
-- Arrow keys or `J/K`: move selection.
-- `Page Up/Page Down`, `Home/End`: viewport navigation.
-- `Enter`: open directory or regular text file.
-- `Backspace`: parent directory.
-- `F2`: rename.
-- `F5`: refresh.
-- `F7`: new directory.
-- `F8`: new empty file.
+- arrows or `J/K`: move selection;
+- Page Up/Down, Home/End: viewport navigation;
+- Enter: open directory or regular validated text file;
+- Backspace: parent directory;
+- `F2`: rename;
+- `F5`: refresh;
+- `F7`: new directory;
+- `F8`: new empty file;
 - `H`: toggle hidden files.
 
 ### Notepad
 
-- `Shift` + arrows: select text.
-- `Ctrl+A/C/X/V`: select all, copy, cut, paste.
-- `Ctrl+Z/Y`: undo/redo.
-- `Ctrl+F`: Find; `Enter` moves to the next result.
-- `Ctrl+S`: save.
-- `F3`: Save As.
-- `F4`: toggle Word Wrap.
-- `Ctrl+W`: close; dirty documents offer Save/Discard/Cancel.
+- Shift+arrows: select;
+- `Ctrl+A/C/X/V`: select all/copy/cut/paste;
+- `Ctrl+Z/Y`: undo/redo;
+- `Ctrl+F`: Find; Enter selects next result;
+- `Ctrl+S`: Save;
+- `F3`: Save As;
+- `F4`: Word Wrap;
+- `Ctrl+W`: close with Save/Discard/Cancel when dirty.
 
-See [docs/BUILTIN_APPS.md](docs/BUILTIN_APPS.md) for implemented workflows and
-current exclusions.
+Native File/Edit/View menu chrome, `F11`, `Ctrl+N`, and `Ctrl+O` are proposed in
+open PR #24 and are not integrated on current `main`.
 
-## Development and Test Builds
-
-### Standard tests
+## Local Development Gates
 
 ```bash
 make clean
-make
-make test
-```
-
-### Full local gate
-
-```bash
-make clean
+make check-test-oracles
 make strict
 make test
 make test-all
+make test-sanitize
 make smoke-ci
 ```
 
-`make smoke` and `make smoke-linux-vc` require an interactive PTY and remain
-manual gates.
-
-### Direct CMake Debug build
+Interactive PTY gates:
 
 ```bash
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DENABLE_TESTS=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-./build/retrodesk
+make smoke
+make smoke-linux-vc
 ```
 
-### Strict build
+`make smoke-linux-vc` validates the keyboard-first `TERM=linux` policy. Interactive
+gates must be run in an actual PTY and recorded against the exact release
+candidate.
+
+## Windows with PDCurses
+
+Native Win32 storage is integrated. Windows Debug and Release builds/tests run in
+CI under `/W4 /WX`, including native storage contract tests.
+
+A representative local configuration:
+
+```powershell
+git clone https://github.com/roccolate/retrodesk.git
+cd retrodesk
+cmake -S . -B build -DPDCURSES_ROOT=C:/path/to/PDCurses `
+  -DENABLE_TESTS=ON -DENABLE_STRICT_WARNINGS=ON -DENABLE_WERROR=ON
+cmake --build build --config Debug
+ctest --test-dir build --output-on-failure -C Debug
+cmake --build build --config Release
+ctest --test-dir build --output-on-failure -C Release
+```
+
+The Win32 adapter provides UTF-8 public paths converted to UTF-16, Unicode
+filenames/data, deterministic listing, version conflicts, and native replacement
+APIs. Text operations reject reparse points.
+
+Before claiming Windows release parity, record native PDCurses interaction for:
+
+- taskbar/Launcher;
+- focus, minimize, maximize, and `F9` mode;
+- Unicode File Manager/Notepad workflows;
+- close/shutdown and console restoration.
+
+## DOS with DJGPP/PDCurses
+
+DOS is a validated **reduced** native profile. The repository workflow pins and
+builds DJGPP, PDCurses, and CWSDPMI, builds `retrodesk.exe` and `FSTEST.EXE`, runs
+storage and application diagnostics in DOSBox-X, and produces a distribution
+artifact.
+
+The specialized source list is in `Makefile.djgpp` and must remain synchronized:
 
 ```bash
-cmake -S . -B build \
-  -DENABLE_STRICT_WARNINGS=ON \
-  -DENABLE_WERROR=ON \
-  -DENABLE_TESTS=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+python3 scripts/check_djgpp_sources.py
+# or
+make check-build-sources
 ```
 
-Tests are non-interactive and must pass without modifying `TERM`.
+Important DOS limits:
 
-## Experimental Profiles
+- ASCII/DOS-oriented filenames and paths;
+- validated UTF-8 document content;
+- case-insensitive filename behavior;
+- backup/restore replacement rather than a universal atomic replace syscall;
+- reduced memory/profile expectations;
+- no raw POSIX TTY path;
+- no Tier 1 feature-parity claim.
 
-Linux/POSIX is the complete current product slice. Other recipes are bring-up or
-portable-runtime validation paths unless exact product support is documented.
+For ordinary development, use the official CI workflow rather than assuming a
+host-local DJGPP/PDCurses environment matches the pinned profile.
 
-### WSL2
+## macOS
+
+Expected development prerequisites:
+
+```bash
+brew install cmake ncurses
+git clone https://github.com/roccolate/retrodesk.git
+cd retrodesk
+make
+```
+
+The intended storage path is the POSIX adapter, but no current macOS build/test or
+interactive evidence is attached to the project snapshot. macOS remains
+experimental and unclaimed.
+
+## WSL2
 
 WSL2 follows the Linux instructions:
 
@@ -167,51 +258,15 @@ make
 ./build/retrodesk
 ```
 
-### Native Windows with PDCurses
-
-Windows Debug and Release portable-runtime builds are exercised in CI, but a
-native storage adapter or deterministic File Manager/Notepad gating is still
-required before equivalent product support is claimed.
-
-```bash
-# Build PDCurses separately, then:
-git clone https://github.com/roccolate/retrodesk.git
-cd retrodesk
-cmake -S . -B build -DPDCURSES_ROOT=../PDCurses
-cmake --build build --config Debug
-ctest --test-dir build --output-on-failure -C Debug
-cmake --build build --config Release
-ctest --test-dir build --output-on-failure -C Release
-```
-
-### macOS
-
-```bash
-brew install cmake ncurses
-git clone https://github.com/roccolate/retrodesk.git
-cd retrodesk
-make
-```
-
-macOS remains experimental until current build and interactive evidence is
-recorded.
-
-### DOS (DJGPP)
-
-DOS uses a reduced specialized source list in `Makefile.djgpp`. It does not claim
-POSIX storage, raw TTY, or complete Tier 1 app parity. Keep the source manifest
-synchronized with:
-
-```bash
-python3 scripts/check_djgpp_sources.py
-```
+Treat WSL terminal/mouse behavior as its own interactive environment when
+collecting evidence.
 
 ## Troubleshooting
 
 ### `curses.h` not found
 
 ```bash
-# Ubuntu / Debian
+# Debian / Ubuntu
 sudo apt install libncurses-dev
 
 # Fedora
@@ -221,53 +276,49 @@ sudo dnf install ncurses-devel
 brew install ncurses
 ```
 
-Then remove the old build tree and reconfigure:
+Then remove stale configuration:
 
 ```bash
 make clean
 make
 ```
 
-### CMake references another checkout path
+### CMake references another checkout
 
-CMake caches absolute paths. Remove `build/` or run `make clean` before building
-from a moved/copied checkout.
+CMake caches absolute paths. Delete the copied/moved build tree or run
+`make clean`; never use a stale tree as release evidence.
 
 ### Unsupported terminal or odd rendering
 
 ```bash
-./build/retrodesk --render-backend=ansi
+./build/retrodesk --render-backend=ansi --input-backend=tty
 echo "$TERM"
 TERM=xterm ./build/retrodesk
 ```
 
-### Mouse behavior is unavailable
+The ANSI/raw-TTY path is diagnostic/experimental. Report the terminal emulator,
+`TERM`, locale, backend combination, and exact commit when filing an issue.
 
-Mouse and drag are capability-gated. RetroDesk remains keyboard-operable when
-the backend cannot provide reliable pointer behavior.
+### Mouse/drag unavailable
 
-Try the raw-TTY input path for backend diagnosis:
+Mouse, drag, right-click, and double-click are capability-gated. All essential
+Desktop and app workflows remain keyboard-operable. On Linux virtual console,
+keyboard-first behavior is intentional.
 
-```bash
-./build/retrodesk --render-backend=ansi --input-backend=tty
-```
+### Terminal state is wrong after forced termination
 
-### Terminal state looks wrong after a crash
-
-RetroDesk saves and restores the original terminal mode during normal shutdown
-and initialization rollback. A process killed externally cannot always run its
-cleanup path. Recover with:
+Normal shutdown and initialization rollback restore the captured terminal mode.
+An externally killed process may not execute cleanup:
 
 ```bash
 stty sane
 reset
 ```
 
-## Docker (optional)
+## Docker (Optional Linux Build)
 
 ```dockerfile
 FROM ubuntu:22.04
-
 RUN apt update && apt install -y build-essential cmake libncurses-dev
 WORKDIR /app
 COPY . .
@@ -275,17 +326,21 @@ RUN make clean && make
 CMD ["./build/retrodesk"]
 ```
 
-Run Docker with an interactive TTY:
+Run with a PTY:
 
 ```bash
 docker build -t retrodesk .
 docker run --rm -it retrodesk
 ```
 
-## Next Steps
+Docker build success does not replace native terminal acceptance.
 
-1. Read [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md).
-2. Review [docs/BUILTIN_APPS.md](docs/BUILTIN_APPS.md).
-3. Run the Linux manual smoke workflows.
-4. Check [docs/ROADMAP.md](docs/ROADMAP.md) and
-   [docs/RELEASE_0.1_CHECKLIST.md](docs/RELEASE_0.1_CHECKLIST.md).
+## Next Reading
+
+1. [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
+2. [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
+3. [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md)
+4. [docs/BUILTIN_APPS.md](docs/BUILTIN_APPS.md)
+5. [docs/PORTABILITY.md](docs/PORTABILITY.md)
+6. [docs/TESTING.md](docs/TESTING.md)
+7. [docs/RELEASE_0.1_CHECKLIST.md](docs/RELEASE_0.1_CHECKLIST.md)

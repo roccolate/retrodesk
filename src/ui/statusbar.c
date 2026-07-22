@@ -238,7 +238,7 @@ void statusbar_render(StatusBar *sb, DrawList *draw_list, int screen_rows,
 }
 
 StatusBarAction statusbar_hit_test(const StatusBar *sb, int y, int x) {
-    StatusBarAction none = {STATUSBAR_ACTION_NONE, 0};
+    StatusBarAction none = {STATUSBAR_ACTION_NONE, 0, 0, false};
     if (!sb || !sb->snapshot_mode || y != sb->rendered_row ||
         x < 0 || x >= sb->rendered_cols) {
         return none;
@@ -247,13 +247,23 @@ StatusBarAction statusbar_hit_test(const StatusBar *sb, int y, int x) {
         const StatusBarRegion *region = &sb->regions[i];
         if (x < region->x || x >= region->x + region->width) continue;
         if (region->kind == STATUSBAR_REGION_MENU) {
-            StatusBarAction action = {STATUSBAR_ACTION_TOGGLE_MENU, 0};
+            StatusBarAction action = {
+                STATUSBAR_ACTION_TOGGLE_MENU,
+                0,
+                0,
+                false,
+            };
             return action;
         }
-        if (region->kind == STATUSBAR_REGION_APP) {
+        if (region->kind == STATUSBAR_REGION_APP &&
+            region->app_index < sb->snapshot.app_count) {
+            const StatusBarAppSnapshot *app =
+                &sb->snapshot.apps[region->app_index];
             StatusBarAction action = {
                 STATUSBAR_ACTION_ACTIVATE_APP,
                 region->app_index,
+                app->instance_count,
+                app->focused,
             };
             return action;
         }

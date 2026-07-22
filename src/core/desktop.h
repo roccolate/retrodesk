@@ -51,7 +51,8 @@ WindowId desktop_active_window(const Desktop *desktop);
 WindowId desktop_app_window_id(const Desktop *desktop, const char *app_id);
 #ifdef RETRODESK_ENABLE_TEST_HOOKS
 bool desktop_register_app_for_test(Desktop *desktop,
-                                   const RetroAppDescriptor *desc);
+                                    const RetroAppDescriptor *desc);
+void desktop_fail_next_app_growth_for_test(Desktop *desktop);
 bool desktop_dispatch_event_for_test(Desktop *desktop,
                                      const RetroEvent *event);
 RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,

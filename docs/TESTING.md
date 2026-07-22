@@ -333,3 +333,11 @@ contain:
 - platform smoke/manual acceptance;
 - artifact checksums;
 - exact known issues and excluded profiles.
+
+## Capacity and identifier boundary coverage
+
+`wm_event_replay_test` covers checked capacity arithmetic, injected Window
+Manager growth failure, successful retry, and deterministic `WindowId`
+exhaustion at `INT_MAX`. `desktop_runtime_test` injects failure at the
+8-to-16 running-app table transition and verifies that app/window counts and
+existing entries remain unchanged before a successful retry.

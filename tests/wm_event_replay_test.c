@@ -1,7 +1,12 @@
+#define RETRODESK_ENABLE_TEST_HOOKS
+
 #include "test_harness.h"
+#include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
+#include "core/checked_size.h"
 #include "ui/window_maximize_bridge.h"
 #include "ui/window_mode_hud.h"
 #include "wm/window_manager.h"
@@ -57,6 +62,91 @@ static RetroEvent mouse_event(int y, int x, bool moved, bool b1_pressed, bool b1
     return event;
 }
 
+static RetroWindowSpec boundary_spec(const char *title) {
+    RetroWindowSpec spec = {
+        .height = 6,
+        .width = 18,
+        .y = 1,
+        .x = 1,
+        .title = title,
+        .flags = WINDOW_FLAG_APP_OWNED,
+        .draw_cb = NULL,
+        .event_cb = NULL,
+        .user_data = NULL,
+    };
+    return spec;
+}
+
+static void test_checked_capacity_growth(void) {
+    size_t capacity = 0;
+    TEST_REQUIRE(retro_checked_capacity_grow(0, 1, sizeof(void *), 8,
+                                   &capacity));
+    TEST_REQUIRE(capacity == 8);
+    TEST_REQUIRE(retro_checked_capacity_grow(8, 9, sizeof(void *), 8,
+                                   &capacity));
+    TEST_REQUIRE(capacity == 16);
+    TEST_REQUIRE(!retro_checked_capacity_grow(0, SIZE_MAX,
+                                    sizeof(void *), 8,
+                                    &capacity));
+    TEST_REQUIRE(!retro_checked_capacity_grow(SIZE_MAX, SIZE_MAX, 2, 8,
+                                    &capacity));
+}
+
+static void test_wm_growth_failure_preserves_state(void) {
+    Renderer *renderer = renderer_create(NULL);
+    TEST_REQUIRE(renderer != NULL);
+    WindowManager *wm = wm_create(renderer);
+    TEST_REQUIRE(wm != NULL);
+
+    RetroWindowSpec spec = boundary_spec("growth");
+    WindowId ids[9] = {0};
+    for (size_t i = 0; i < 8; ++i) {
+        ids[i] = wm_create_window(wm, &spec);
+        TEST_REQUIRE(ids[i] > 0);
+    }
+    TEST_REQUIRE(wm_window_count(wm) == 8);
+    TEST_REQUIRE(wm_active_window(wm) == ids[7]);
+
+    wm_fail_next_growth_for_test(wm);
+    TEST_REQUIRE(wm_create_window(wm, &spec) == WINDOW_ID_INVALID);
+    TEST_REQUIRE(wm_window_count(wm) == 8);
+    TEST_REQUIRE(wm_active_window(wm) == ids[7]);
+    TEST_REQUIRE(wm_window_exists(wm, ids[0]));
+    TEST_REQUIRE(wm_window_exists(wm, ids[7]));
+
+    ids[8] = wm_create_window(wm, &spec);
+    TEST_REQUIRE(ids[8] > 0);
+    TEST_REQUIRE(wm_window_count(wm) == 9);
+    TEST_REQUIRE(wm_active_window(wm) == ids[8]);
+
+    wm_destroy(wm);
+    renderer_destroy(renderer);
+}
+
+static void test_window_id_exhaustion(void) {
+    Renderer *renderer = renderer_create(NULL);
+    TEST_REQUIRE(renderer != NULL);
+    WindowManager *wm = wm_create(renderer);
+    TEST_REQUIRE(wm != NULL);
+
+    RetroWindowSpec spec = boundary_spec("last-id");
+    TEST_REQUIRE(wm_set_next_id_for_test(wm, INT_MAX));
+    WindowId last = wm_create_window(wm, &spec);
+    TEST_REQUIRE(last == INT_MAX);
+    TEST_REQUIRE(wm_window_count(wm) == 1);
+    TEST_REQUIRE(wm_active_window(wm) == last);
+    TEST_REQUIRE(wm_window_exists(wm, last));
+
+    TEST_REQUIRE(wm_create_window(wm, &spec) == WINDOW_ID_INVALID);
+    TEST_REQUIRE(wm_window_count(wm) == 1);
+    TEST_REQUIRE(wm_active_window(wm) == last);
+    TEST_REQUIRE(wm_window_exists(wm, last));
+    TEST_REQUIRE(!wm_set_next_id_for_test(wm, last));
+
+    wm_destroy(wm);
+    renderer_destroy(renderer);
+}
+
 static void test_window_mode_hud_contract(void) {
     WindowModeHudSnapshot snapshot = {
         .active = true,
@@ -108,6 +198,9 @@ static void test_window_mode_hud_contract(void) {
 }
 
 int main(void) {
+    test_checked_capacity_growth();
+    test_wm_growth_failure_preserves_state();
+    test_window_id_exhaustion();
     test_window_mode_hud_contract();
 
     Renderer *renderer = renderer_create(NULL);

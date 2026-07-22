@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "app/app_runtime.h"
+#include "core/checked_size.h"
 #include "apps/apps.h"
 #include "core/key_chord.h"
 #include "ui/statusbar.h"
@@ -63,6 +64,7 @@ struct Desktop {
     RunningApp *apps;
     size_t app_count;
     size_t app_capacity;
+    bool fail_next_app_growth_for_test;
 };
 
 static const LauncherItem k_launcher_items[] = {
@@ -126,18 +128,33 @@ static int desktop_poll_timeout_ms(const Desktop *desktop) {
     return timeout_ms;
 }
 
-static bool desktop_add_app(Desktop *desktop, RetroAppInstance *app, WindowId window_id) {
-    if (!desktop || !app) return false;
-    if (desktop->app_count == desktop->app_capacity) {
-        size_t next_cap = desktop->app_capacity ? desktop->app_capacity * 2 : 8;
-        RunningApp *next = realloc(desktop->apps, next_cap * sizeof(*next));
+static bool desktop_add_app(Desktop *desktop, RetroAppInstance *app,
+                  WindowId window_id) {
+    if (!desktop || !app || desktop->app_count == SIZE_MAX) return false;
+
+    size_t required_count = desktop->app_count + 1;
+    if (required_count > desktop->app_capacity) {
+        size_t next_capacity = 0;
+        if (!retro_checked_capacity_grow(desktop->app_capacity, required_count,
+                               sizeof(*desktop->apps), 8,
+                               &next_capacity)) {
+  return false;
+        }
+        if (desktop->fail_next_app_growth_for_test) {
+  desktop->fail_next_app_growth_for_test = false;
+  return false;
+        }
+
+        RunningApp *next = realloc(desktop->apps,
+                         next_capacity * sizeof(*desktop->apps));
         if (!next) return false;
         desktop->apps = next;
-        desktop->app_capacity = next_cap;
+        desktop->app_capacity = next_capacity;
     }
+
     desktop->apps[desktop->app_count].app = app;
     desktop->apps[desktop->app_count].window_id = window_id;
-    desktop->app_count++;
+    desktop->app_count = required_count;
     return true;
 }
 
@@ -573,6 +590,10 @@ WindowId desktop_app_window_id(const Desktop *desktop, const char *app_id) {
 bool desktop_register_app_for_test(Desktop *desktop, const RetroAppDescriptor *desc) {
     if (!desktop || !desktop->app_registry || !desc) return false;
     return app_registry_register(desktop->app_registry, desc);
+}
+
+void desktop_fail_next_app_growth_for_test(Desktop *desktop) {
+    if (desktop) desktop->fail_next_app_growth_for_test = true;
 }
 
 static void desktop_cleanup_apps(Desktop *desktop) {

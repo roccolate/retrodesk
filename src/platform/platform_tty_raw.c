@@ -109,7 +109,10 @@ bool platform_init_tty_raw_backend(PlatformBackend *platform) {
     platform->uses_curses = false;
     platform->features.input_backend = INPUT_BACKEND_TTY_RAW;
     platform->features.keyboard_basic = true;
-    platform->features.unicode_basic = true;
+    /* The current raw decoder emits one byte per key event and the ANSI
+       renderer preserves only ASCII cells. Keep the capability honest until
+       end-to-end UTF-8 codepoint and display-width handling is implemented. */
+    platform->features.unicode_basic = false;
     platform->features.color = term && strcmp(term, "dumb") != 0;
     platform->features.resize_events =
         platform_query_tty_size(&platform->tty_rows, &platform->tty_cols);

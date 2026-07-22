@@ -9,6 +9,9 @@ enum {
     STATUSBAR_TEXT_CAP = 256,
     STATUSBAR_LABEL_CAP = 48,
     STATUSBAR_MAX_REGIONS = STATUSBAR_MAX_APPS + 1,
+    STATUSBAR_MENU_WIDTH = 6,
+    STATUSBAR_CLOCK_WIDTH = 10,
+    STATUSBAR_CLOCK_MIN_COLS = 24,
 };
 
 typedef enum StatusBarRegionKind {
@@ -60,33 +63,40 @@ void statusbar_set_snapshot(StatusBar *sb, const StatusBarSnapshot *snapshot) {
     sb->snapshot_mode = true;
 }
 
-static char status_mark(const StatusBarAppSnapshot *app) {
-    if (!app || app->instance_count == 0) return ' ';
-    return app->focused ? '*' : '.';
-}
-
 static void format_label(const StatusBarAppSnapshot *app, bool compact,
                          char *out, size_t out_size) {
     const char *label = app && app->label && app->label[0] ? app->label : "?";
-    char mark = status_mark(app);
+    size_t instances = app ? app->instance_count : 0;
+
     if (compact) {
-        (void)snprintf(out, out_size, "[%c%c]", label[0], mark);
-    } else if (app && app->instance_count > 1) {
-        (void)snprintf(out, out_size, "[%s:%zu%c]", label,
-                       app->instance_count, mark);
+        if (instances > 1) {
+            (void)snprintf(out, out_size, " %c%zu ", label[0], instances);
+        } else {
+            (void)snprintf(out, out_size, " %c ", label[0]);
+        }
+    } else if (instances > 1) {
+        (void)snprintf(out, out_size, " %s x%zu ", label, instances);
     } else {
-        (void)snprintf(out, out_size, "[%s%c]", label, mark);
+        (void)snprintf(out, out_size, " %s ", label);
     }
 }
 
-static bool needs_compact_labels(const StatusBar *sb, int cols) {
-    int required = 6 + 1 + 8;
+static int taskbar_content_start(int content_limit) {
+    if (content_limit < STATUSBAR_MENU_WIDTH) return 0;
+    return content_limit >= STATUSBAR_MENU_WIDTH + 2
+               ? STATUSBAR_MENU_WIDTH + 2
+               : STATUSBAR_MENU_WIDTH;
+}
+
+static bool needs_compact_labels(const StatusBar *sb, int content_limit) {
+    int required = taskbar_content_start(content_limit);
     for (size_t i = 0; i < sb->snapshot.app_count; ++i) {
         char label[STATUSBAR_LABEL_CAP];
         format_label(&sb->snapshot.apps[i], false, label, sizeof(label));
-        required += 1 + (int)strlen(label);
+        required += (int)strlen(label);
+        if (i + 1 < sb->snapshot.app_count) required += 1;
     }
-    return required > cols;
+    return required > content_limit;
 }
 
 static bool add_region(StatusBar *sb, int x, int width,
@@ -102,16 +112,37 @@ static bool add_region(StatusBar *sb, int x, int width,
     return true;
 }
 
+static RenderStyle menu_style(const RenderStyle *base, bool open) {
+    RenderStyle style = *base;
+    style.bold = true;
+    if (open) style.reverse = !style.reverse;
+    return style;
+}
+
+static RenderStyle app_style(const RenderStyle *base,
+                             const StatusBarAppSnapshot *app) {
+    RenderStyle style = *base;
+    if (app && app->instance_count > 0) style.bold = true;
+    if (app && app->focused) style.reverse = !style.reverse;
+    return style;
+}
+
+static RenderStyle clock_style(const RenderStyle *base) {
+    RenderStyle style = *base;
+    style.bold = true;
+    style.reverse = !style.reverse;
+    return style;
+}
+
 static void render_snapshot(StatusBar *sb, DrawList *draw_list,
                             int rows, int cols, const RenderStyle *style) {
     int y = rows - 1;
-    int clock_x = cols >= 8 ? cols - 8 : -1;
-    int content_limit = clock_x >= 0 ? clock_x - 1 : cols;
+    bool show_clock = cols >= STATUSBAR_CLOCK_MIN_COLS;
+    int clock_x = show_clock ? cols - STATUSBAR_CLOCK_WIDTH : -1;
+    int clock_separator_x = show_clock ? clock_x - 1 : -1;
+    int content_limit = show_clock ? clock_separator_x : cols;
     int cursor = 0;
-    bool compact = needs_compact_labels(sb, cols);
-    RenderStyle active = *style;
-    active.reverse = !active.reverse;
-    active.bold = true;
+    bool compact = needs_compact_labels(sb, content_limit);
 
     sb->rendered_row = y;
     sb->rendered_cols = cols;
@@ -119,11 +150,17 @@ static void render_snapshot(StatusBar *sb, DrawList *draw_list,
 
     (void)draw_list_hline(draw_list, y, 0, cols, ' ', style);
 
-    if (content_limit >= 6) {
-        const RenderStyle *menu_style = sb->snapshot.menu_open ? &active : style;
-        (void)draw_list_text(draw_list, y, cursor, "[Apps]", menu_style);
-        (void)add_region(sb, cursor, 6, STATUSBAR_REGION_MENU, 0);
-        cursor += 7;
+    if (content_limit >= STATUSBAR_MENU_WIDTH) {
+        RenderStyle button = menu_style(style, sb->snapshot.menu_open);
+        (void)draw_list_text(draw_list, y, cursor, " Apps ", &button);
+        (void)add_region(sb, cursor, STATUSBAR_MENU_WIDTH,
+                         STATUSBAR_REGION_MENU, 0);
+        cursor += STATUSBAR_MENU_WIDTH;
+
+        if (cursor < content_limit) {
+            (void)draw_list_text(draw_list, y, cursor, "|", style);
+            cursor += 2;
+        }
     }
 
     for (size_t i = 0; i < sb->snapshot.app_count; ++i) {
@@ -131,15 +168,23 @@ static void render_snapshot(StatusBar *sb, DrawList *draw_list,
                      sb->labels[i], sizeof(sb->labels[i]));
         int width = (int)strlen(sb->labels[i]);
         if (cursor + width > content_limit) break;
-        const RenderStyle *app_style = sb->snapshot.apps[i].focused ? &active : style;
-        (void)draw_list_text(draw_list, y, cursor, sb->labels[i], app_style);
+
+        RenderStyle button = app_style(style, &sb->snapshot.apps[i]);
+        (void)draw_list_text(draw_list, y, cursor, sb->labels[i], &button);
         (void)add_region(sb, cursor, width, STATUSBAR_REGION_APP, i);
-        cursor += width + 1;
+        cursor += width;
+        if (cursor < content_limit) cursor++;
     }
 
-    if (clock_x >= 0) {
-        (void)draw_list_text(draw_list, y, clock_x,
-                             sb->snapshot.clock_text, style);
+    if (show_clock) {
+        const char *source = sb->snapshot.clock_text[0]
+                                 ? sb->snapshot.clock_text
+                                 : "--:--:--";
+        char clock_text[STATUSBAR_CLOCK_WIDTH + 1];
+        RenderStyle clock = clock_style(style);
+        (void)snprintf(clock_text, sizeof(clock_text), " %.8s ", source);
+        (void)draw_list_text(draw_list, y, clock_separator_x, "|", style);
+        (void)draw_list_text(draw_list, y, clock_x, clock_text, &clock);
     }
 }
 

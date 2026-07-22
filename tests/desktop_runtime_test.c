@@ -868,6 +868,39 @@ static void test_desktop_clipboards_are_isolated(void) {
     destroy_test_desktop(second_desktop, second_platform);
 }
 
+static void test_launcher_state_is_desktop_owned(void) {
+    PlatformBackend *first_platform = NULL;
+    PlatformBackend *second_platform = NULL;
+    Desktop *first = create_test_desktop(&first_platform);
+    Desktop *second = create_test_desktop(&second_platform);
+
+    RetroEvent open = key_event(RETRO_KEY_F10, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(first, &open));
+    TEST_REQUIRE(desktop_dispatch_event_for_test(second, &open));
+    TEST_REQUIRE(desktop_launcher_open_for_test(first));
+    TEST_REQUIRE(desktop_launcher_open_for_test(second));
+    TEST_REQUIRE(desktop_launcher_selected_for_test(first) == 0);
+    TEST_REQUIRE(desktop_launcher_selected_for_test(second) == 0);
+
+    RetroEvent down = key_event(RETRO_KEY_DOWN, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(first, &down));
+    TEST_REQUIRE(desktop_launcher_selected_for_test(first) == 1);
+    TEST_REQUIRE(desktop_launcher_selected_for_test(second) == 0);
+
+    RetroEvent end = key_event(RETRO_KEY_END, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(second, &end));
+    TEST_REQUIRE(desktop_launcher_selected_for_test(first) == 1);
+    TEST_REQUIRE(desktop_launcher_selected_for_test(second) == 4);
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    TEST_REQUIRE(desktop_dispatch_event_for_test(first, &escape));
+    TEST_REQUIRE(!desktop_launcher_open_for_test(first));
+    TEST_REQUIRE(desktop_launcher_open_for_test(second));
+
+    destroy_test_desktop(first, first_platform);
+    destroy_test_desktop(second, second_platform);
+}
+
 static int g_key_sink_f2_count;
 
 static bool key_sink_create(RetroAppInstance *instance,
@@ -1416,6 +1449,7 @@ int main(void) {
     test_notepad_word_wrap_navigation();
     test_notepad_shift_selection_replacement();
     test_desktop_clipboards_are_isolated();
+    test_launcher_state_is_desktop_owned();
     test_desktop_f2_reaches_focused_app();
     test_launcher_close_respects_dirty_notepad();
     test_ctrl_q_cancel_preserves_all_apps();

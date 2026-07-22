@@ -4,6 +4,7 @@
 #include "wm/window_manager.h"
 
 typedef struct WindowSpy {
+    int draw_events;
     int key_events;
     int mouse_events;
     bool close_on_x;
@@ -11,7 +12,8 @@ typedef struct WindowSpy {
 
 static void spy_draw(RetroWindow *window, DrawList *draw_list, void *user_data) {
     (void)window;
-    (void)user_data;
+    WindowSpy *spy = (WindowSpy *)user_data;
+    if (spy) spy->draw_events++;
     RenderStyle style = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
     draw_list_text(draw_list, 1, 1, "spy", &style);
 }
@@ -102,6 +104,43 @@ int main(void) {
     TEST_REQUIRE(wm_window_count(wm) == 2);
     TEST_REQUIRE(wm_active_window(wm) == b);
 
+    wm_render(wm, renderer, NULL);
+    TEST_REQUIRE(spy_a.draw_events == 1);
+    TEST_REQUIRE(spy_b.draw_events == 1);
+
+    TEST_REQUIRE(wm_minimize_window(wm, b));
+    TEST_REQUIRE(wm_window_is_minimized(wm, b));
+    TEST_REQUIRE(wm_active_window(wm) == a);
+    TEST_REQUIRE(!wm_minimize_window(wm, b));
+
+    RetroEvent hidden_key = key_event('h', 'h');
+    TEST_REQUIRE(wm_handle_event(wm, &hidden_key));
+    TEST_REQUIRE(spy_a.key_events == 1);
+    TEST_REQUIRE(spy_b.key_events == 0);
+
+    RetroEvent hidden_overlap = mouse_event(4, 8, false, false, false, true);
+    TEST_REQUIRE(wm_handle_event(wm, &hidden_overlap));
+    TEST_REQUIRE(wm_active_window(wm) == a);
+    TEST_REQUIRE(spy_a.mouse_events == 1);
+    TEST_REQUIRE(spy_b.mouse_events == 0);
+
+    wm_render(wm, renderer, NULL);
+    TEST_REQUIRE(spy_a.draw_events == 2);
+    TEST_REQUIRE(spy_b.draw_events == 1);
+
+    TEST_REQUIRE(wm_restore_window(wm, b));
+    TEST_REQUIRE(!wm_window_is_minimized(wm, b));
+    TEST_REQUIRE(wm_active_window(wm) == a);
+    wm_focus_window(wm, b);
+    wm_bring_to_front(wm, b);
+    TEST_REQUIRE(wm_active_window(wm) == b);
+
+    TEST_REQUIRE(wm_minimize_window(wm, b));
+    TEST_REQUIRE(wm_window_is_minimized(wm, b));
+    wm_focus_window(wm, b);
+    TEST_REQUIRE(!wm_window_is_minimized(wm, b));
+    TEST_REQUIRE(wm_active_window(wm) == b);
+
     RetroEvent click_a = mouse_event(2, 2, false, false, false, true);
     TEST_REQUIRE(wm_handle_event(wm, &click_a));
     TEST_REQUIRE(wm_active_window(wm) == a);
@@ -117,6 +156,8 @@ int main(void) {
     TEST_REQUIRE(fixed > 0);
     TEST_REQUIRE(wm_window_count(wm) == 3);
     TEST_REQUIRE(wm_active_window(wm) == fixed);
+    TEST_REQUIRE(!wm_minimize_window(wm, fixed));
+    TEST_REQUIRE(!wm_window_is_minimized(wm, fixed));
 
     TEST_REQUIRE(wm_cycle_focus(wm));
     TEST_REQUIRE(wm_active_window(wm) == a);

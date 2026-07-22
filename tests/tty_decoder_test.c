@@ -22,6 +22,17 @@ static void require_navigation(const RetroEvent *event, int key_code,
     TEST_REQUIRE(event->data.key.modifiers == modifiers);
 }
 
+static void require_non_text_byte(const RetroEvent *event,
+                                  unsigned char byte) {
+    TEST_REQUIRE(event != NULL);
+    TEST_REQUIRE(event->type == RETRO_EVENT_KEY);
+    TEST_REQUIRE(event->data.key.key_code == (int)byte);
+    TEST_REQUIRE(!event->data.key.is_printable);
+    TEST_REQUIRE(event->data.key.ascii == 0);
+    TEST_REQUIRE(event->data.key.text_codepoint == 0);
+    TEST_REQUIRE(event->data.key.modifiers == RETRO_MOD_NONE);
+}
+
 int main(void) {
     TtyDecoder decoder;
     tty_decoder_init(&decoder);
@@ -42,6 +53,16 @@ int main(void) {
     TEST_REQUIRE(event.data.key.ascii == 'a');
     TEST_REQUIRE(event.data.key.text_codepoint == 'a');
     TEST_REQUIRE(event.data.key.modifiers == RETRO_MOD_NONE);
+
+    /* Until the raw decoder gains incremental UTF-8 support, high-bit bytes
+       are ordinary non-text key bytes and must not be advertised as Unicode
+       text events by the platform capability contract. */
+    const unsigned char utf8_n_tilde[] = {0xC3, 0xB1};
+    tty_decoder_append(&decoder, utf8_n_tilde, sizeof(utf8_n_tilde));
+    TEST_REQUIRE(decode_event(&decoder, &keys, &event));
+    require_non_text_byte(&event, utf8_n_tilde[0]);
+    TEST_REQUIRE(decode_event(&decoder, &keys, &event));
+    require_non_text_byte(&event, utf8_n_tilde[1]);
 
     const unsigned char up[] = {0x1b, '[', 'A'};
     tty_decoder_append(&decoder, up, sizeof(up));

@@ -1,6 +1,7 @@
 #include "test_harness.h"
 #include <stdbool.h>
 
+#include "ui/window_maximize_bridge.h"
 #include "wm/window_manager.h"
 
 typedef struct WindowSpy {
@@ -141,6 +142,53 @@ int main(void) {
     TEST_REQUIRE(!wm_window_is_minimized(wm, b));
     TEST_REQUIRE(wm_active_window(wm) == b);
 
+    int restore_y = 0;
+    int restore_x = 0;
+    int restore_h = 0;
+    int restore_w = 0;
+    retro_window_get_geometry(wm_window(wm, b), &restore_y, &restore_x,
+                              &restore_h, &restore_w);
+    TEST_REQUIRE(wm_maximize_window(wm, b));
+    TEST_REQUIRE(wm_window_is_maximized(wm, b));
+
+    int max_y = -1;
+    int max_x = -1;
+    int max_h = 0;
+    int max_w = 0;
+    retro_window_get_geometry(wm_window(wm, b), &max_y, &max_x, &max_h, &max_w);
+    TEST_REQUIRE(max_y == 0);
+    TEST_REQUIRE(max_x == 0);
+    TEST_REQUIRE(max_h == 39);
+    TEST_REQUIRE(max_w == 120);
+    TEST_REQUIRE(!desktop_maximize_move_active_window(wm, 1, 1));
+    TEST_REQUIRE(!desktop_maximize_resize_active_window(wm, -1, -1));
+
+    TEST_REQUIRE(wm_minimize_window(wm, b));
+    TEST_REQUIRE(wm_window_is_minimized(wm, b));
+    TEST_REQUIRE(wm_window_is_maximized(wm, b));
+    TEST_REQUIRE(wm_restore_window(wm, b));
+    wm_focus_window(wm, b);
+    desktop_maximize_after_focus(wm, b);
+    retro_window_get_geometry(wm_window(wm, b), &max_y, &max_x, &max_h, &max_w);
+    TEST_REQUIRE(max_y == 0 && max_x == 0 && max_h == 39 && max_w == 120);
+
+    RetroEvent title_double_click = mouse_event(0, 1, false, false, false, false);
+    title_double_click.data.mouse.button1_dblclick = true;
+    TEST_REQUIRE(desktop_maximize_handle_event(wm, &title_double_click));
+    TEST_REQUIRE(!wm_window_is_maximized(wm, b));
+    retro_window_get_geometry(wm_window(wm, b), &max_y, &max_x, &max_h, &max_w);
+    TEST_REQUIRE(max_y == restore_y && max_x == restore_x);
+    TEST_REQUIRE(max_h == restore_h && max_w == restore_w);
+
+    RetroEvent f8 = key_event(RETRO_KEY_F8, '\0');
+    TEST_REQUIRE(desktop_maximize_handle_event(wm, &f8));
+    TEST_REQUIRE(wm_window_is_maximized(wm, b));
+    TEST_REQUIRE(desktop_maximize_handle_event(wm, &f8));
+    TEST_REQUIRE(!wm_window_is_maximized(wm, b));
+    retro_window_get_geometry(wm_window(wm, b), &max_y, &max_x, &max_h, &max_w);
+    TEST_REQUIRE(max_y == restore_y && max_x == restore_x);
+    TEST_REQUIRE(max_h == restore_h && max_w == restore_w);
+
     RetroEvent click_a = mouse_event(2, 2, false, false, false, true);
     TEST_REQUIRE(wm_handle_event(wm, &click_a));
     TEST_REQUIRE(wm_active_window(wm) == a);
@@ -158,6 +206,8 @@ int main(void) {
     TEST_REQUIRE(wm_active_window(wm) == fixed);
     TEST_REQUIRE(!wm_minimize_window(wm, fixed));
     TEST_REQUIRE(!wm_window_is_minimized(wm, fixed));
+    TEST_REQUIRE(!wm_maximize_window(wm, fixed));
+    TEST_REQUIRE(!wm_window_is_maximized(wm, fixed));
 
     TEST_REQUIRE(wm_cycle_focus(wm));
     TEST_REQUIRE(wm_active_window(wm) == a);

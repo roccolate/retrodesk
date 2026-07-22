@@ -46,15 +46,22 @@ StatusBarAction statusbar_hit_test(const StatusBar *sb, int y, int x);
 void statusbar_destroy(StatusBar *sb);
 
 /* desktop.c includes this header after core/desktop.h. Keep the temporary
-   launcher and taskbar adaptations private to that one translation unit so
-   widget tests and other UI consumers retain the ordinary WM link contract. */
+   launcher, taskbar, and maximize adaptations private to that translation unit
+   so widget tests and other UI consumers retain the ordinary WM link contract. */
 #if defined(RETRODESK_CORE_DESKTOP_H)
+#include "ui/window_maximize_bridge.h"
+#define RETRODESK_TASKBAR_AFTER_FOCUS(wm, id) \
+    desktop_maximize_after_focus((wm), (id))
 #include "ui/taskbar_window_bridge.h"
+#undef RETRODESK_TASKBAR_AFTER_FOCUS
 #include "ui/launcher_bridge.h"
 #define statusbar_hit_test desktop_taskbar_hit_test
 #define wm_focus_window desktop_taskbar_focus_window
 #define wm_bring_to_front desktop_taskbar_bring_to_front
 #define wm_create_window desktop_chrome_create_window
+#define wm_handle_event desktop_maximize_handle_event
+#define wm_move_active_window desktop_maximize_move_active_window
+#define wm_resize_active_window desktop_maximize_resize_active_window
 #endif
 
 #endif

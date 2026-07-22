@@ -73,6 +73,15 @@ bool wm_minimize_window(WindowManager *wm, WindowId id);
 bool wm_restore_window(WindowManager *wm, WindowId id);
 bool wm_window_is_minimized(const WindowManager *wm, WindowId id);
 
+/* Maximize/restore geometry is owned by each RetroWindow. Fixed and modal
+   windows reject this contract. Minimized maximized windows retain their mode
+   and refresh to current terminal geometry when restored or focused. */
+bool wm_maximize_window(WindowManager *wm, WindowId id);
+bool wm_unmaximize_window(WindowManager *wm, WindowId id);
+bool wm_toggle_maximize_window(WindowManager *wm, WindowId id);
+bool wm_window_is_maximized(const WindowManager *wm, WindowId id);
+bool wm_refresh_maximized_window(WindowManager *wm, WindowId id);
+
 bool wm_move_active_window(WindowManager *wm, int dy, int dx);
 bool wm_resize_active_window(WindowManager *wm, int dh, int dw);
 bool wm_get_drag_preview(const WindowManager *wm, WindowId *id, int *y, int *x);

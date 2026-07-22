@@ -147,6 +147,43 @@ static void test_window_id_exhaustion(void) {
     renderer_destroy(renderer);
 }
 
+static void test_maximize_state_is_window_owned(void) {
+    Renderer *first_renderer = renderer_create(NULL);
+    Renderer *second_renderer = renderer_create(NULL);
+    TEST_REQUIRE(first_renderer != NULL);
+    TEST_REQUIRE(second_renderer != NULL);
+    WindowManager *first = wm_create(first_renderer);
+    WindowManager *second = wm_create(second_renderer);
+    TEST_REQUIRE(first != NULL);
+    TEST_REQUIRE(second != NULL);
+
+    RetroWindowSpec spec = boundary_spec("owned-maximize");
+    WindowId first_id = wm_create_window(first, &spec);
+    WindowId second_id = wm_create_window(second, &spec);
+    TEST_REQUIRE(first_id == 1 && second_id == 1);
+    TEST_REQUIRE(wm_maximize_window(first, first_id));
+    TEST_REQUIRE(wm_window_is_maximized(first, first_id));
+    TEST_REQUIRE(!wm_window_is_maximized(second, second_id));
+
+    wm_close_window(first, first_id);
+    TEST_REQUIRE(!wm_window_exists(first, first_id));
+    WindowId replacement = wm_create_window(first, &spec);
+    TEST_REQUIRE(replacement > first_id);
+    TEST_REQUIRE(!wm_window_is_maximized(first, replacement));
+
+    RetroWindowSpec modal = boundary_spec("modal");
+    modal.flags = WINDOW_FLAG_MODAL;
+    WindowId modal_id = wm_create_window(first, &modal);
+    TEST_REQUIRE(modal_id > replacement);
+    TEST_REQUIRE(!wm_maximize_window(first, modal_id));
+    TEST_REQUIRE(!wm_window_is_maximized(first, modal_id));
+
+    wm_destroy(first);
+    wm_destroy(second);
+    renderer_destroy(first_renderer);
+    renderer_destroy(second_renderer);
+}
+
 static void test_window_mode_hud_contract(void) {
     WindowModeHudSnapshot snapshot = {
         .active = true,
@@ -201,6 +238,7 @@ int main(void) {
     test_checked_capacity_growth();
     test_wm_growth_failure_preserves_state();
     test_window_id_exhaustion();
+    test_maximize_state_is_window_owned();
     test_window_mode_hud_contract();
 
     Renderer *renderer = renderer_create(NULL);

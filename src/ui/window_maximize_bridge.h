@@ -3,7 +3,6 @@
 
 #include "core/key_chord.h"
 #include "wm/window_manager.h"
-#include "wm/window_maximize.h"
 
 /* Translation-unit-private desktop input adapter. The maximize contract owns
    geometry state; this bridge maps portable F8 and title-bar double-click input

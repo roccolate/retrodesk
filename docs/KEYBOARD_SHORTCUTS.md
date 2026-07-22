@@ -1,114 +1,186 @@
-# Keyboard and Taskbar Reference
+# Keyboard, Mouse, and Taskbar Reference
 
-This document describes the shortcuts implemented on `main`. Terminal support can
-vary by backend; unsupported modifier sequences degrade to their unmodified key
-rather than being guessed.
+> Describes behavior integrated on `main`. Backend support can vary; RetroDesk
+> degrades unsupported modifiers or pointer features rather than guessing.
 
-## Global desktop shortcuts
+## Routing Rules
+
+Global commands are limited to unambiguous function keys and control chords.
+Printable text, ordinary `Tab`, and unclaimed function keys are delivered to the
+focused application.
+
+Important consequences:
+
+- `F2` remains app-local for File Manager Rename;
+- `F4` reaches Notepad Word Wrap;
+- `F10` is the global Launcher key;
+- proposed Notepad `F11` menus from PR #24 are not integrated on `main`;
+- unsupported modified-key sequences degrade to deterministic unmodified behavior.
+
+## Global Desktop Shortcuts
 
 | Key | Action |
 | --- | --- |
 | `F1` | Open the Launcher |
-| `F10` | Open the Launcher; close it when it is already focused |
-| `F6` | Focus the next window |
-| `F9` | Enter move/resize mode for the active window |
+| `F10` | Open the Launcher; close it when the Launcher is focused |
+| `F6` | Focus the next eligible visible window |
+| `F8` | Maximize or restore the active ordinary window |
+| `F9` | Enter keyboard MOVE mode for the active ordinary window |
 | `Ctrl+W` | Request close of the active app window |
-| `Ctrl+Q` | Request coordinated shutdown; dirty apps may Save, Discard, or Cancel |
+| `Ctrl+Q` | Begin coordinated shutdown; dirty apps may Save, Discard, or Cancel |
 
-Printable keys, ordinary `Tab`, and unclaimed function keys are left to the
-focused application. In particular, `F2` is application-local and reaches File
-Manager Rename instead of being consumed by Desktop. A dirty app may reject
-`Ctrl+W` temporarily and present its own close workflow.
+A dirty app may defer `Ctrl+W`. Global shutdown is transactional: applications
+remain alive until every running app authorizes the operation. Cancelling any
+deferred close resets the negotiation and destroys no app window.
 
-Global shutdown is transactional. Clean applications authorize their close but
-remain alive until every running application has also authorized. If one dirty
-application cancels, Desktop resets the complete negotiation and destroys no
-application window. Cancelling or failing a Save As that was opened by shutdown
-also cancels the global shutdown.
+## Window Focus, Minimize, and Maximize
 
-## Move/resize mode
+### Focus
 
-After pressing `F9`:
+- `F6` skips minimized and ineligible fixed/modal windows.
+- Clicking an ordinary window focuses and raises it according to modal policy.
+- Explicitly focusing a minimized app restores it first.
+
+### Maximize
+
+- `F8` toggles maximize/unmaximize.
+- Double-clicking the active title bar performs the same toggle when the backend
+  reports double click.
+- Maximized windows cannot be moved/resized until restored.
+- Fixed and modal windows reject maximize.
+
+### Keyboard move/resize mode
+
+Press `F9` while an ordinary, non-maximized app window is active.
 
 | Key | Action |
 | --- | --- |
-| Arrow keys | Move or resize the active window |
-| `Tab` | Toggle between move and resize |
-| `Esc` | Leave move/resize mode |
+| Arrow keys | Move or resize by one unit |
+| `Tab` | Toggle between MOVE and RESIZE |
+| `Enter` | Finish the operation |
+| `F9` | Finish the operation |
+| `Esc` | Finish/cancel the operation mode |
+
+The active frame uses the operation theme style and a HUD above the taskbar shows
+the mode, live `width x height @ x,y` geometry, and available controls. Changing
+focus automatically ends the mode. Attempting `F9` on a fixed/no window or a
+maximized window produces a brief explanatory HUD instead of a stuck mode.
 
 ## Launcher
 
+The Launcher is a modal Start-menu-style surface above the bottom-left taskbar.
+
 | Key | Action |
 | --- | --- |
-| `W` / `K` | Move selection up |
-| `S` / `J` | Move selection down |
-| `Enter` or `Space` | Execute the selected action |
-| `Esc` or `Q` | Close the Launcher |
+| Up / `W` / `K` | Move selection up |
+| Down / `S` / `J` | Move selection down |
+| `Home` | First action |
+| `End` | Last action |
+| `Enter` / Space | Execute selected action |
+| `F`, `N`, `D`, `X` | Direct accelerator for the matching Files, Notepad, Diagnostics, or Close action |
+| `Esc` / `Q` | Close the Launcher |
 | `F10` | Close the Launcher |
+
+Mouse movement/press/click can select Launcher rows when the backend provides
+reliable pointer events. A click activates the selected row.
 
 ## Taskbar
 
-The bottom status widget operates as an interactive taskbar:
+The bottom status widget renders a themed taskbar. The old `*`/`.` text markers
+are no longer the visual contract.
+
+Typical wide layout:
 
 ```text
-[Apps] [Files*] [Notepad:2.] [Diag ]                         19:42:33
+Apps | Files | Notepad x2 | Diag                         19:42:33
 ```
 
-- `*` means the app owns the focused window.
-- `.` means the app is running but not focused.
-- A blank mark means no instance is running.
-- `:N` is the number of running instances.
-- Clicking `Apps` toggles the Launcher.
-- Clicking a closed app launches it.
-- Clicking a running app focuses it.
-- Clicking an already focused app with multiple instances cycles to the next
-  instance.
-- Labels compact automatically on narrow terminals.
+The actual colors/reverse/bold treatment depend on XP, Hacker, Amiga, or Win31.
+
+### Mouse behavior
+
+- Click Apps: toggle Launcher.
+- Click a closed app: launch it.
+- Click a running background app: focus and raise it.
+- Click the focused app: minimize its active window.
+- Click a minimized app: restore, focus, and raise it.
+- Click an app with multiple instances: cycle deterministically.
+- Clock and separator regions are not app buttons.
+
+Full labels switch to compact labels when necessary. The current catalog contains
+Files, Notepad, and Diagnostics. A general overflow menu for a larger catalog is
+not yet implemented.
 
 ## File Manager
 
 | Key | Action |
 | --- | --- |
-| Arrow keys or `J` / `K` | Move selection |
-| `Page Up` / `Page Down` | Move by one page |
+| Up/Down or `J`/`K` | Move selection |
+| Page Up/Page Down | Move by one viewport page |
 | `Home` / `End` | First or last entry |
-| `Enter` | Open directory or regular text file |
-| `Backspace` | Parent directory |
+| `Enter` | Open selected directory or regular validated text file |
+| Backspace | Parent directory |
 | `F2` | Rename selected file or directory |
-| `F5` | Refresh |
+| `F5` | Refresh while retaining selection where possible |
 | `F7` | Create directory |
 | `F8` | Create empty file |
 | `H` | Toggle hidden files |
-| `Esc` | Close File Manager when no prompt is active |
+| `Esc` | Cancel active prompt, otherwise close File Manager |
 
-Inside a rename/create prompt, `Enter` confirms and `Esc` cancels.
+Inside a rename/create prompt:
+
+- `Enter` confirms;
+- `Esc` cancels;
+- invalid or conflicting names keep the prompt active and preserve existing data.
 
 ## Notepad
 
 | Key | Action |
 | --- | --- |
 | Arrow keys | Move cursor |
-| `Shift` + arrows | Extend or shrink selection |
+| Shift + arrows | Extend or shrink selection |
 | `Ctrl+A` | Select all |
-| `Ctrl+C` | Copy selection |
-| `Ctrl+X` | Cut selection |
-| `Ctrl+V` | Paste, replacing the selection when present |
+| `Ctrl+C` | Copy selection to Desktop clipboard |
+| `Ctrl+X` | Cut selection as one undoable edit |
+| `Ctrl+V` | Paste as one undoable edit, replacing selection |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Y` | Redo |
-| `Ctrl+F` | Open Find; `Enter` selects the next result |
-| `Ctrl+S` | Save, or enter Save As for an untitled document |
+| `Ctrl+F` | Open Find |
+| `Enter` in Find | Select next result and wrap when needed |
+| `Ctrl+S` | Save, or enter Save As for untitled document |
 | `F3` | Save As |
 | `F4` | Toggle soft Word Wrap |
-| `Esc` | Cancel the active prompt/search or clear a selection |
-| `Ctrl+W` | Close; dirty documents show Save/Discard/Cancel |
+| `Esc` | Cancel prompt/search or clear selection |
+| `Ctrl+W` | Request close; dirty document shows Save/Discard/Cancel |
 
-The close prompt accepts `S` to save, `D` to discard, and `Esc` to cancel.
-Find is case-insensitive for ASCII and Latin letter case, but accents remain
-significant: `árbol` matches `ÁRBOL`, not `ARBOL`.
+Dirty close prompt:
 
-## Terminal control keys
+- `S`: save before closing;
+- `D`: discard and close;
+- `Esc`: cancel and preserve document.
 
-The curses backend remains in `cbreak()` mode, but releases editor control keys
-from terminal flow control and signal handling where the host supports it. The
-original terminal mode is restored during shutdown. RetroDesk does not switch to
-permanent `raw()` mode.
+Find is case-insensitive for ASCII and supported Latin letter case, but accents
+remain significant: `árbol` matches `ÁRBOL`, not `ARBOL`. No Unicode
+normalization is performed.
+
+`F11`, `Ctrl+N`, `Ctrl+O`, and native File/Edit/View menus belong to open PR #24
+and are not current `main` shortcuts.
+
+## Terminal Control Keys
+
+The curses backend uses `cbreak()` rather than permanent `raw()` mode. On POSIX it
+selectively releases editor controls from terminal flow control/signal handling
+where available so Copy/Paste/Undo/Redo reach apps. The original terminal mode is
+restored during normal shutdown and initialization rollback.
+
+A process killed externally may not execute cleanup; `stty sane` or `reset` may
+be required.
+
+## Pointer and Modifier Degradation
+
+- Mouse, drag, right click, double click, and resize events are capability-gated.
+- Linux `TERM=linux` remains keyboard-first.
+- Raw-TTY decoding supports tested xterm-style modified navigation sequences.
+- Unknown or malformed sequences are consumed/rejected deterministically and do
+  not leak bytes into app text.
+- Advanced pointer semantics are not assumed across all curses/PDCurses hosts.

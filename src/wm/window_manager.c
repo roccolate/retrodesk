@@ -17,6 +17,11 @@ struct RetroWindow {
     WindowFlags flags;
     bool is_active;
     bool minimized;
+    bool maximized;
+    int restore_y;
+    int restore_x;
+    int restore_h;
+    int restore_w;
     bool close_requested;
     DrawList *draw_list;
     WindowDrawCallback draw_cb;
@@ -135,6 +140,45 @@ static void wm_clamp_window(WindowManager *wm, RetroWindow *window) {
     if (window->x < 0) window->x = 0;
     if (window->y > max_y) window->y = max_y;
     if (window->x > max_x) window->x = max_x;
+}
+
+static bool window_can_maximize(const RetroWindow *window) {
+    return window && !window->close_requested &&
+           (window->flags & (WINDOW_FLAG_FIXED | WINDOW_FLAG_MODAL)) == 0;
+}
+
+static bool wm_apply_maximized_geometry(WindowManager *wm,
+                                        RetroWindow *window) {
+    if (!wm || !window_can_maximize(window) || window->minimized) return false;
+    int rows = 0;
+    int cols = 0;
+    renderer_get_screen_size(wm->renderer, &rows, &cols);
+    if (rows < 5 || cols < 8) return false;
+    window->y = 0;
+    window->x = 0;
+    window->h = rows - 1;
+    window->w = cols;
+    return true;
+}
+
+static bool wm_apply_restore_geometry(WindowManager *wm,
+                                      RetroWindow *window) {
+    if (!wm || !window) return false;
+    int rows = 0;
+    int cols = 0;
+    renderer_get_screen_size(wm->renderer, &rows, &cols);
+    if (rows < 5 || cols < 8) return false;
+
+    int max_h = rows - 1;
+    int max_w = cols;
+    window->h = window->restore_h < 4 ? 4 : window->restore_h;
+    window->w = window->restore_w < 8 ? 8 : window->restore_w;
+    if (window->h > max_h) window->h = max_h;
+    if (window->w > max_w) window->w = max_w;
+    window->y = window->restore_y;
+    window->x = window->restore_x;
+    wm_clamp_window(wm, window);
+    return true;
 }
 
 static void wm_cleanup_closed(WindowManager *wm) {
@@ -323,6 +367,7 @@ void wm_focus_window(WindowManager *wm, WindowId id) {
        shutdown prompts, and taskbar restoration. */
     window->minimized = false;
     wm->active_id = id;
+    if (window->maximized) (void)wm_apply_maximized_geometry(wm, window);
     wm_update_active_flags(wm);
 }
 
@@ -404,6 +449,7 @@ bool wm_restore_window(WindowManager *wm, WindowId id) {
     RetroWindow *window = wm_find_window(wm, id);
     if (!window || !window->minimized) return false;
     window->minimized = false;
+    if (window->maximized) (void)wm_apply_maximized_geometry(wm, window);
     wm_update_active_flags(wm);
     return true;
 }
@@ -413,11 +459,56 @@ bool wm_window_is_minimized(const WindowManager *wm, WindowId id) {
     return window && window->minimized;
 }
 
+bool wm_maximize_window(WindowManager *wm, WindowId id) {
+    if (!wm || id == WINDOW_ID_INVALID || wm->active_id != id) return false;
+    RetroWindow *window = wm_find_window(wm, id);
+    if (!window_can_maximize(window) || window->minimized ||
+        window->maximized) {
+        return false;
+    }
+
+    window->restore_y = window->y;
+    window->restore_x = window->x;
+    window->restore_h = window->h;
+    window->restore_w = window->w;
+    if (!wm_apply_maximized_geometry(wm, window)) return false;
+    window->maximized = true;
+    return true;
+}
+
+bool wm_unmaximize_window(WindowManager *wm, WindowId id) {
+    if (!wm || id == WINDOW_ID_INVALID || wm->active_id != id) return false;
+    RetroWindow *window = wm_find_window(wm, id);
+    if (!window || !window->maximized || window->minimized) return false;
+    if (!wm_apply_restore_geometry(wm, window)) return false;
+    window->maximized = false;
+    return true;
+}
+
+bool wm_toggle_maximize_window(WindowManager *wm, WindowId id) {
+    return wm_window_is_maximized(wm, id)
+               ? wm_unmaximize_window(wm, id)
+               : wm_maximize_window(wm, id);
+}
+
+bool wm_window_is_maximized(const WindowManager *wm, WindowId id) {
+    RetroWindow *window = wm_find_window(wm, id);
+    return window && window->maximized;
+}
+
+bool wm_refresh_maximized_window(WindowManager *wm, WindowId id) {
+    RetroWindow *window = wm_find_window(wm, id);
+    if (!window || !window->maximized) return false;
+    return wm_apply_maximized_geometry(wm, window);
+}
+
 bool wm_move_active_window(WindowManager *wm, int dy, int dx) {
     if (!wm) return false;
     RetroWindow *active = wm_find_window(wm, wm->active_id);
     if (!window_is_visible(active)) return false;
-    if (active->flags & WINDOW_FLAG_FIXED) return false;
+    if ((active->flags & WINDOW_FLAG_FIXED) || active->maximized) {
+        return false;
+    }
     active->y += dy;
     active->x += dx;
     wm_clamp_window(wm, active);
@@ -428,7 +519,7 @@ bool wm_resize_active_window(WindowManager *wm, int dh, int dw) {
     if (!wm) return false;
     RetroWindow *window = wm_find_window(wm, wm->active_id);
     if (!window_is_visible(window) ||
-        (window->flags & WINDOW_FLAG_FIXED)) {
+        (window->flags & WINDOW_FLAG_FIXED) || window->maximized) {
         return false;
     }
     int rows = 0;
@@ -504,7 +595,7 @@ static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
     }
 
     if (wm->drag_enabled && mouse->button1_pressed && !mouse->button1_clicked &&
-        hit && !(hit->flags & WINDOW_FLAG_FIXED) &&
+        hit && !(hit->flags & WINDOW_FLAG_FIXED) && !hit->maximized &&
         window_title_hit(hit, mouse->y, mouse->x)) {
         wm->dragging = true;
         wm->drag_window_id = hit->id;
@@ -567,7 +658,12 @@ bool wm_handle_event(WindowManager *wm, const RetroEvent *event) {
 
     if (event->type == RETRO_EVENT_RESIZE) {
         for (size_t i = 0; i < wm->count; ++i) {
-            wm_clamp_window(wm, wm->windows[i]);
+            RetroWindow *window = wm->windows[i];
+            if (window->maximized && !window->minimized) {
+                (void)wm_apply_maximized_geometry(wm, window);
+            } else {
+                wm_clamp_window(wm, window);
+            }
         }
         wm_cleanup_closed(wm);
         return true;

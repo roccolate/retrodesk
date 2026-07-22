@@ -393,9 +393,10 @@ redirects selected WM/statusbar operations to:
 - move/resize bridge.
 
 This preserves ordinary widget/WM link contracts for unrelated tests but is not
-the desired final architecture. Bridge-local static state and the bounded
-maximize catalog must become per-Desktop/per-WM owned state during Desktop
-decomposition.
+the desired final architecture. Maximize/restore state now lives in each
+`RetroWindow`, so close/destruction and multiple Window Manager instances no
+longer share a bounded pointer-keyed catalog. Launcher, taskbar and operation-mode
+bridge state still must become explicitly per-Desktop owned during decomposition.
 
 See [KNOWN_ISSUES.md](KNOWN_ISSUES.md), especially KB-011 and KB-012.
 

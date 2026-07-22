@@ -5,22 +5,17 @@
 
 ## Evidence Layers
 
-RetroDesk uses several distinct forms of evidence. They are complementary, not
-interchangeable.
+RetroDesk uses complementary evidence types:
 
-1. **Unit tests** — pure helpers, widgets, parsers, UTF-8, storage behavior.
-2. **Integration tests** — Desktop, Window Manager, app lifecycle, rendering,
-   platform event translation, and app workflows.
-3. **Shared fixture tests** — behavior from pinned `retrocore-spec` fixtures.
-4. **Static analysis and strict compilation** — warnings/errors and analyzer
-   findings across supported toolchains.
-5. **Sanitizers** — AddressSanitizer, UndefinedBehaviorSanitizer, and leak checks
-   where supported.
-6. **Non-interactive smoke** — startup/diagnostic sanity without a PTY.
-7. **Native/emulator smoke** — Windows build/test and native DJGPP execution in
-   DOSBox-X.
-8. **Manual interaction/visual acceptance** — terminal behavior that headless
-   tests cannot prove.
+1. unit tests for pure helpers, widgets, UTF-8, storage, and parsers;
+2. integration tests for Desktop, Window Manager, app lifecycle, rendering,
+   platform translation, and app workflows;
+3. pinned shared fixture tests from `retrocore-spec`;
+4. strict compilation and static analysis;
+5. ASan/UBSan/leak validation where supported;
+6. non-interactive startup smoke;
+7. native/emulator Windows and DOS validation;
+8. manual interaction and visual acceptance.
 
 A release claim requires the appropriate combination for the exact candidate SHA.
 
@@ -29,56 +24,51 @@ A release claim requires the appropriate combination for the exact candidate SHA
 Tests use always-active oracles from `tests/test_harness.h`.
 
 - Do not use `<assert.h>` as the sole correctness oracle.
-- `NDEBUG` must not disable the behavior checks used by release tests.
-- Run `python3 scripts/check_test_oracles.py` before collecting evidence.
-- Prefer public behavior and observable DrawList/event results over private
+- `NDEBUG` must not disable release behavior checks.
+- Run `python3 scripts/check_test_oracles.py` before evidence collection.
+- Prefer public behavior, event results, geometry, and DrawList output over private
   implementation coupling.
 
 ## Runtime and Lifecycle Coverage
 
 Required coverage includes:
 
-- Desktop create/run/shutdown and partial-initialization rollback;
+- Desktop create/run/shutdown and partial-init rollback;
 - app registration, capability rejection, and create-failure destroy rollback;
-- app service budget and poll-timeout policy;
-- ordinary and transactional global close flows;
-- Desktop-owned clipboard isolation between Desktop instances;
+- app service budget and active-service timeout policy;
+- ordinary close and transactional global shutdown;
+- clipboard validation and isolation among Desktop instances;
 - focus, z-order, modal routing, drag, movement, resize, and degradation;
-- minimized-window exclusion from rendering/input/focus/modal/drag;
-- taskbar minimize/restore behavior;
-- maximize geometry, exact restore geometry, terminal resize, and minimize while
-  maximized;
+- minimized-window exclusion from render/input/focus/modal/drag;
+- taskbar minimize/restore;
+- maximize geometry, exact restore, resize refresh, and minimize while maximized;
 - `F8` and title-bar double-click routing;
-- `F9` move/resize mode, finish keys, focus cancellation, blocked-window notices,
-  and responsive HUD rendering;
+- `F9` mode, finish keys, focus cancellation, blocked notices, and HUD rendering;
 - one renderer flush per dirty frame;
-- CLI/backend option validation and unsupported profile rejection.
+- CLI/backend validation and unsupported profile rejection.
 
 ## Taskbar, Launcher, and Theme Coverage
 
-The DrawList and bridge tests cover:
+Current tests cover:
 
 - legacy StatusBar compatibility;
 - wide, medium, and compact taskbar layouts;
-- exact rendered x positions and widths;
-- exact mouse hit regions;
-- Apps menu normal/open state;
-- app idle/running/focused styles;
+- exact x positions, widths, and mouse regions;
+- Apps normal/open state;
+- app idle/running/focused style;
 - instance counts and compact labels;
 - clock visibility and separation;
-- taskbar launch/focus/minimize/restore bridge behavior;
-- Launcher geometry, section grouping, selection, keyboard wrap, Home/End,
-  accelerators, and mouse hit testing;
-- XP, Hacker, Amiga, and Win31 exact surface-token matching;
-- operation HUD copy, geometry formatting, row placement, and two-command render
-  contract.
+- launch/focus/minimize/restore taskbar bridge behavior;
+- Launcher geometry, groups, keyboard wrap, Home/End, accelerators, and mouse hits;
+- XP, Hacker, Amiga, and Win31 exact surface tokens;
+- operation HUD copy, geometry, row, and two-command DrawList contract.
 
-Remaining required work:
+Remaining:
 
-- larger catalog/overflow behavior;
-- focused/running priority under severe congestion;
-- visual snapshots or manual acceptance across all themes and both render paths;
-- stronger end-to-end focus/cycling coverage after overflow exists.
+- larger-catalog overflow and priority behavior;
+- severe congestion/narrow focus tests;
+- visual/manual acceptance across every theme and render path;
+- stronger end-to-end cycling after overflow exists.
 
 ## Input Coverage
 
@@ -86,66 +76,62 @@ Required:
 
 - curses/PDCurses normalized keys;
 - raw-TTY ordinary and modified navigation;
-- Shift/Alt/Ctrl combinations where encoded by the terminal;
-- fragmented CSI sequences;
+- fragmented CSI input;
 - invalid-sequence consumption without text leakage;
-- mouse decoding unaffected by keyboard parser changes;
+- mouse decoder stability;
 - editor control-key delivery;
-- terminal mode restoration during shutdown and initialization rollback;
-- Linux `TERM=linux` keyboard-first behavior.
+- terminal-state restoration on shutdown/init rollback;
+- `TERM=linux` keyboard-first policy.
 
-Headless parser tests do not prove every terminal emulator's behavior. Manual PTY
-smoke remains mandatory for claimed profiles.
+Parser tests do not prove every terminal emulator. Manual PTY smoke remains
+mandatory for profiles claimed in a release.
 
 ## UTF-8 and Notepad Coverage
 
-Required:
-
-- valid accented-character insertion and roundtrip;
+- accented UTF-8 insertion/roundtrip;
 - malformed UTF-8 rejection without data loss;
-- codepoint-safe cursor movement, Backspace, and Delete;
-- display-cell-aware navigation and rendering;
+- codepoint-safe movement/Backspace/Delete;
+- display-cell-aware navigation/rendering;
 - multiline selection and replacement;
-- clipboard validation and exchange between instances;
+- clipboard exchange among Notepad instances;
 - cut/paste as undoable edits;
-- bounded undo/redo history and dirty baseline behavior;
+- bounded history and dirty baseline;
 - Find wraparound, limited case folding, accent significance, and byte ranges;
-- soft Word Wrap navigation without logical-text mutation;
+- Word Wrap navigation without logical-text mutation;
 - Save/Save As, stale-version conflict, recovery, and failed-save behavior;
 - Save/Discard/Cancel close;
-- transactional global shutdown involving dirty Notepad instances.
+- transactional shutdown involving dirty instances.
 
-The native responsive menu/status work in PR #24 is not part of the current
-`main` test manifest until rebuilt and integrated.
+PR #24 menu/status behavior is not part of current `main` tests until rebuilt and
+integrated.
 
 ## Storage and File Manager Coverage
 
 Common adapter coverage:
 
-- path init/destroy/parent/join;
-- bounded and empty listing;
-- deterministic ordering and portable kinds;
-- validated UTF-8 text roundtrip;
-- malformed text, controls, mixed newline, and size rejection;
+- path lifecycle/parent/join;
+- bounded empty/deterministic listing;
+- portable kind/size/version metadata;
+- UTF-8 text roundtrip;
+- malformed text, controls, newline, and size rejection;
 - exclusive create/mkdir and duplicate conflict;
-- rename success, missing source, and no-overwrite behavior;
-- optimistic concurrency and stale-token conflict;
-- aliasing expected/written version pointers;
+- rename success/missing source/no-overwrite;
+- expected-version stale conflict;
+- expected/written version pointer aliasing;
 - unsupported target/link policy;
-- File Manager viewport, hidden files, refresh, open, create, rename, and prompt
-  cancellation.
+- File Manager viewport, hidden, refresh, open, create, rename, cancellation.
 
 Platform-specific:
 
-- POSIX native behavior;
-- Win32 UTF-8/UTF-16 conversion, Unicode filenames, identity/version, atomic
-  replacement, and reparse-point rejection;
-- DJGPP DOS paths, case-insensitive ordering, explicit parent entry, fingerprinted
-  version token, replacement transaction, and native execution.
+- POSIX native behavior and replacement path;
+- Win32 UTF-8/UTF-16, Unicode names, identity/version, native replacement, and
+  reparse rejection;
+- DJGPP paths, case ordering, explicit parent, content fingerprint, replacement
+  transaction, and native DOS execution.
 
 ## Main Test Areas
 
-Representative executables include:
+Representative executables:
 
 - `cli_parse_test`;
 - `key_chord_test`;
@@ -170,57 +156,55 @@ Debug and Release test manifests must match.
 
 ## Automated CI Matrix
 
-### Linux job
+### Linux
 
 - checkout repository and pinned fixtures;
-- install pinned/declared toolchain dependencies;
-- guard test oracles;
-- configure Debug, Release, and sanitizer trees;
+- oracle guard;
+- Debug/Release/sanitizer configure;
 - static analysis;
 - complete Debug tests;
 - complete Release tests;
-- sanitizer tests and leak checks where supported;
-- compare Debug/Release manifests;
-- verify DJGPP source-list synchronization;
+- sanitizer/leak tests;
+- manifest comparison;
+- DJGPP source parity;
 - non-interactive startup smoke.
 
-### Windows jobs
+### Windows
 
-Both Debug and Release:
+Debug and Release:
 
-- pinned PDCurses/vcpkg setup;
+- pinned/configured PDCurses toolchain;
 - strict `/W4 /WX` configure/build;
 - complete tests;
 - native Win32 storage contract.
 
-Windows currently has native storage. Remaining platform uncertainty is
-interactive product maturity, not a missing adapter.
+Windows has native storage. Remaining uncertainty is interactive product maturity,
+not a missing adapter.
 
-### DOS job
+### DOS
 
-- install/pin DJGPP toolchain;
-- pin/build PDCurses;
-- install official CWSDPMI runtime;
-- build and strip `retrodesk.exe`;
-- build native `FSTEST.EXE`;
-- execute storage contract in DOSBox-X;
-- execute RetroDesk diagnostic smoke in DOSBox-X;
-- create/upload distribution artifact and checksums;
-- retain failed logs/state as diagnostic artifacts when needed.
+- pinned DJGPP/PDCurses/CWSDPMI inputs;
+- product build;
+- native `FSTEST.EXE` build;
+- storage contract in DOSBox-X;
+- RetroDesk diagnostic in DOSBox-X;
+- distribution artifact and checksums;
+- failure artifacts/logs when needed.
 
-## Latest Integrated Desktop Checkpoint
+## Latest Development Checkpoint
 
-The compact head of PR #36 passed:
+The compact PR #36 head passed:
 
-- CI run `29900244919`;
-- DOS run `29900244867`.
+- CI `29900244919`;
+- DOS `29900244867`;
+- tested head `f2e9e83ea2b6f2c55ad6ec9c4e9c414efe103985`.
 
-The tested head was `f2e9e83ea2b6f2c55ad6ec9c4e9c414efe103985`.
-The squash merge produced main commit
-`31273f8c888b6074f416a938847e3124b88f9464`.
+The current repository baseline for the integrated latest desktop slice is
+`c36ceb92b269c4c485798eed2b8413ea6c096164`.
 
-This is valid development evidence for the integrated changes. It is not an exact
-release-candidate evidence bundle because the final merge SHA was not the PR head.
+The green PR runs remain strong development evidence, but they are not attached
+to the current exact `main` SHA. A release candidate must rerun/attach evidence to
+its own final commit and remain unchanged afterward.
 
 ## Local Commands
 
@@ -241,7 +225,7 @@ make smoke
 make smoke-linux-vc
 ```
 
-Strict direct CMake example:
+Strict direct CMake:
 
 ```bash
 cmake -S . -B build-strict \
@@ -255,81 +239,74 @@ ctest --test-dir build-strict --output-on-failure
 
 ## Sanitizer Contract
 
-`make test-sanitize` creates a dedicated Debug build with AddressSanitizer and
-UndefinedBehaviorSanitizer. Leak detection is enabled on supported Linux
-configurations. Findings are fatal.
+`make test-sanitize` creates a dedicated Debug ASan/UBSan build. Leak detection is
+enabled where supported. Findings are fatal.
 
-Sanitizers do not replace:
-
-- Windows strict compilation;
-- native storage tests;
-- DOS native execution;
-- manual terminal smoke;
-- failure-injection tests for allocation/ID boundaries.
+Sanitizers do not replace Windows strict builds, native storage tests, DOS native
+execution, manual terminal smoke, or allocation/identifier failure injection.
 
 ## Manual Acceptance Matrix
-
-Before a release claim, record at minimum:
 
 ### Linux ncurses
 
 - all themes;
 - Launcher keyboard/mouse;
-- taskbar full/compact behavior;
-- focus, minimize, maximize, and `F9` HUD;
+- taskbar full/compact/minimize/restore;
+- focus, maximize, and `F9` HUD;
 - File Manager open/create/rename;
-- Notepad UTF-8 edit/find/wrap/save/close;
+- Notepad UTF-8/find/wrap/save/close;
 - terminal restoration.
 
 ### Linux raw TTY + ANSI
 
-- supported terminal emulators;
-- keyboard modifiers and fragmented escape behavior;
+- representative terminal emulators;
+- modifiers/fragmented escape input;
 - resize and redraw/flicker;
-- application workflows without curses assumptions.
+- complete keyboard app workflows.
 
 ### `TERM=linux`
 
 - keyboard-only complete workflow;
-- no reliance on unsupported mouse/drag;
+- no dependency on unsupported pointer behavior;
 - terminal restoration.
 
 ### Windows/PDCurses
 
-- native file browsing/edit/save with Unicode names;
+- Unicode native file browse/edit/save;
 - taskbar/Launcher/window controls;
-- console restoration and close behavior.
+- close/shutdown and console restoration.
 
 ### DOS/DJGPP
 
-- reduced-profile startup;
-- storage/file workflows within DOS path limits;
-- taskbar/Launcher/window behavior at realistic DOS console size;
-- documented replacement and filename limits.
+- reduced startup;
+- file workflows within DOS path limits;
+- desktop behavior at realistic console size;
+- replacement/filename limitations recorded.
 
 ## Regression Rules
 
 - Public behavior changes update status and user references.
-- Input/focus/window/storage/lifecycle changes add lower-level and end-to-end tests.
+- Input/focus/window/storage/lifecycle changes add lower-level and end-to-end
+  tests.
 - Parser changes cover complete, fragmented, and invalid input.
-- App-service changes test budgets, timeout policy, cleanup, and redraw intent.
-- File-app changes test both adapter and app event flows.
-- Platform-specific adapters receive native tests, not only cross-platform mocks.
-- A headless green test is never described as complete interactive proof.
-- A PR-only green branch is never described as integrated `main` behavior.
+- App-service changes test budget, timeout, cleanup, and redraw.
+- File-app changes test adapter and app flows.
+- Platform adapters receive native tests.
+- Headless green is never complete interactive proof.
+- PR-only green is never integrated `main` behavior.
 
 ## Release Evidence
 
-Release sign-off follows
-[RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md). The evidence record must
-contain:
+The release bundle must contain:
 
 - exact candidate SHA and clean-tree confirmation;
-- compiler, CMake, curses/PDCurses, analyzer, Python, fixture, and DOS toolchain
-  versions;
-- complete job/run identifiers;
-- test manifests and counts;
-- sanitizer and static-analysis output;
+- compiler, CMake, curses/PDCurses, analyzer, fixture, Python, Windows, and DOS
+  toolchain versions;
+- workflow/run identifiers;
+- test manifests/results;
+- static-analysis/sanitizer output;
 - platform smoke/manual acceptance;
-- artifact checksums;
-- exact known issues and excluded profiles.
+- artifact checksums/provenance;
+- exact compatibility and known-issue record.
+
+See [RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md).

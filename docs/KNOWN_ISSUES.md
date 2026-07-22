@@ -1,7 +1,7 @@
 # Known Issues and Active Risks
 
 > Snapshot: 2026-07-22  
-> Applies to `main` at `31273f8c888b6074f416a938847e3124b88f9464`.
+> Applies to `main` at `c36ceb92b269c4c485798eed2b8413ea6c096164`.
 
 This register distinguishes defects and structural risks from ordinary future
 features. An item stays here until it is fixed, explicitly accepted with a
@@ -25,8 +25,8 @@ removal trigger, or moved to a release-specific known-issues record.
 **Impact:** no version tag should be called a validated release.
 
 Development PR heads have repeatedly passed Linux, Windows, sanitizer, and DOS
-matrices. The latest desktop slice was squash-merged, so its strongest workflow
-evidence is attached to the pre-merge PR head rather than the final `main` commit.
+matrices. Repository history has also been rewritten/rebased during integration,
+so historical green run IDs do not automatically validate the current final SHA.
 
 **Required resolution:** choose one exact candidate commit and record clean-tree,
 toolchain, Debug/Release, sanitizer, manifest, platform smoke, and manual app

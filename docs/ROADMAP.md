@@ -1,10 +1,11 @@
 # Roadmap
 
 > Status (2026-07): RetroDesk remains pre-alpha. The File Manager, taskbar, input,
-> UTF-8 storage, and Notepad parity stack is now integrated into `main`. The code
-> has passed the automated Linux/Windows matrix used during development, but no
-> stable release tag should be created until clean candidate evidence and manual
-> terminal smoke results are attached to the exact release commit.
+> UTF-8 storage, Notepad parity stack, native Win32/DJGPP storage adapters, and
+> budgeted app-service tick are integrated into `main`. Automated Linux, Windows,
+> and DOS development matrices exist, but no stable release tag should be created
+> until clean candidate evidence and manual terminal smoke results are attached to
+> the exact release commit.
 
 ## Current State
 
@@ -16,6 +17,10 @@
 - Global shortcuts no longer steal printable editor text.
 - The bottom status widget provides an interactive taskbar with Launcher access,
   app state, instance counts, clock, compact labels, and mouse hit testing.
+- The taskbar and Launcher are functionally useful but visually provisional; a
+  focused redesign is scheduled under `v0.5.0`.
+- Optional app services receive bounded, non-blocking callbacks from the Desktop
+  loop without introducing worker-owned UI state or nested event loops.
 - Focus, drag, move/resize, modal routing, and lifecycle-aware close behavior are
   test-backed.
 
@@ -49,11 +54,14 @@ Implemented on the Linux/POSIX product slice:
 
 ### Platform status
 
-- Linux/POSIX is the complete current file-app profile.
-- Windows Debug/Release portable-runtime builds and tests pass with PDCurses.
-- Native Windows storage or explicit file-app gating is still required before
-  equivalent product support is claimed.
-- macOS and DOS remain experimental/reduced profiles.
+- Linux/POSIX remains the most complete and manually exercised file-app profile.
+- Windows Debug/Release portable-runtime builds and tests pass with PDCurses, and
+  the native Win32 storage adapter is integrated. Interactive Windows validation
+  remains required before claiming equivalent product maturity.
+- The native DJGPP storage adapter, DOS target, and automated DOS smoke path are
+  integrated. DOS remains a deliberately reduced profile with exact exclusions.
+- macOS remains experimental until current build, input, and smoke evidence is
+  recorded.
 
 ## Release Gates
 
@@ -105,14 +113,15 @@ Current progress:
 
 - Linux static analysis and Debug/Release tests exist;
 - Windows Debug/Release portable-runtime tests exist;
+- native Win32 storage is integrated and has platform-specific contract tests;
+- native DJGPP storage, target build, source synchronization, and DOS smoke exist;
 - Debug/Release manifest comparison exists;
-- DOS source-manifest synchronization is guarded;
-- user, architecture, storage, testing, portability, app, and shortcut docs are
-  synchronized with the integrated product slice.
+- user, architecture, storage, testing, portability, app, and shortcut docs exist
+  for the integrated product slice.
 
 Remaining work:
 
-- decide native Windows storage versus explicit app gating;
+- synchronize all documentation and product claims with the Win32/DJGPP adapters;
 - add macOS evidence or keep the profile explicitly experimental;
 - automate more release-evidence capture;
 - establish a concise known-issues document for candidate releases.
@@ -136,26 +145,53 @@ Remaining exit work:
 
 Goal: establish credible platform breadth.
 
-- add a native Windows storage adapter or explicit filesystem-app gating;
-- validate Windows interactive PDCurses behavior;
-- document macOS build/input evidence;
-- keep DOS as a reduced profile with exact exclusions;
+Current progress:
+
+- native Win32 and DJGPP storage adapters are integrated;
+- Windows Debug/Release builds and tests are automated;
+- the native DOS target and DOSBox-X smoke path are automated.
+
+Remaining work:
+
+- validate Windows interactive PDCurses behavior and native file workflows;
+- document exact Win32 storage guarantees and known limitations;
+- document macOS build/input evidence or retain its experimental status;
+- validate the reduced DOS profile and record its exact exclusions;
 - ensure all profiles restore terminal/console state on failure and shutdown.
 
 Exit criteria: every claimed platform feature is backed by current build, test,
 and smoke evidence.
 
-### `v0.5.0`: Window Manager and Desktop Polish
+### `v0.5.0`: Window Manager, Launcher, and Desktop Polish
 
-Goal: make multi-window workflows feel complete.
+Goal: make multi-window workflows feel complete and give the desktop a coherent,
+intentional visual identity instead of a merely functional status row.
 
 Planned work:
 
+- redesign the taskbar visual hierarchy so the Apps button, running applications,
+  instance state, notifications/status area, and clock read as distinct regions;
+- redesign the Launcher geometry, spacing, borders, selected-row treatment, and
+  grouping so it feels like a real Start menu rather than a debug popup;
+- define theme-specific taskbar and Launcher treatments for XP, Win31, Amiga, and
+  Hacker themes while preserving the same interaction contract;
+- improve focused, running, background, multiple-instance, disabled, pressed,
+  hovered, and future minimized-window indicators;
+- replace fragile compact labels with deterministic truncation and prioritization
+  rules for narrow terminals;
+- ensure taskbar hit regions always match the rendered buttons and never overlap
+  the clock or adjacent application entries;
+- add draw-list regressions for normal, crowded, and narrow-screen taskbar layouts;
+- perform manual visual smoke checks across curses/ANSI backends and every theme;
 - define minimize/restore and maximize contracts;
 - extend taskbar behavior to minimized windows after the WM contract exists;
 - improve keyboard move/resize feedback;
 - add stronger focus/cycling and narrow-screen behavior tests;
 - reduce redraw/flicker without violating the single-flush rule.
+
+Exit criteria: the taskbar and Launcher remain fully keyboard-usable, preserve
+correct mouse hit testing, degrade predictably on narrow terminals, and have an
+approved visual treatment in every supported theme.
 
 ### `v0.6.0`: File and Editor Expansion
 
@@ -217,6 +253,7 @@ Target outcome:
 - Preserve the single event loop and single flush point.
 - Keep backend-native and OS-native details behind adapters.
 - Require tests for input, focus, render, lifecycle, storage, and fallback changes.
+- Treat the taskbar and Launcher as first-class desktop UI, not diagnostic chrome.
 - Prefer small behavior slices that exercise existing contracts.
 - Do not claim platform or Unicode support beyond current evidence.
 - Never trade data safety or deterministic cleanup for superficial parity.

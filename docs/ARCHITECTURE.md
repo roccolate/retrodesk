@@ -412,3 +412,13 @@ DJGPP, but maturity claims differ:
 - raw-TTY/ANSI and macOS remain experimental evidence profiles.
 
 See [PORTABILITY.md](PORTABILITY.md) for the authoritative claim matrix.
+
+## Capacity and identifier invariants
+
+Desktop and Window Manager dynamic tables use checked element-capacity
+growth before byte-size multiplication or `realloc`. Failed growth leaves
+the previous table, count, focus, z-order, and ownership unchanged.
+
+Window IDs are positive and monotonic. `INT_MAX` is the final valid ID;
+live IDs are never reused, and later creation returns
+`WINDOW_ID_INVALID` without mutating existing windows.

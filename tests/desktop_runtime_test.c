@@ -198,6 +198,77 @@ PlatformBackend *platform_create(const PlatformConfig *config) {
     return NULL;
 }
 
+static void init_growth_descriptor(RetroAppDescriptor *desc,
+                         const char *app_id) {
+    TEST_REQUIRE(desc != NULL);
+    TEST_REQUIRE(app_id != NULL);
+    memset(desc, 0, sizeof(*desc));
+    desc->app_id = app_id;
+    desc->display_name = app_id;
+    desc->default_height = 6;
+    desc->default_width = 20;
+    desc->default_y = 1;
+    desc->default_x = 1;
+    desc->window_flags = WINDOW_FLAG_APP_OWNED;
+}
+
+static void test_desktop_growth_failure_preserves_state(void) {
+    PlatformBackend *platform = platform_stub_new(true);
+    TEST_REQUIRE(platform != NULL);
+
+    DesktopConfig cfg = {
+        .platform = platform,
+        .input_timeout_ms = 20,
+        .bench_mode = true,
+        .render_backend = RENDER_BACKEND_CURSES,
+        .theme_kind = RETRO_THEME_XP,
+    };
+    Desktop *desktop = desktop_create(&cfg);
+    TEST_REQUIRE(desktop != NULL);
+    TEST_REQUIRE(desktop_app_count(desktop) < 8);
+
+    RetroAppDescriptor descriptors[16] = {0};
+    char app_ids[16][32] = {{0}};
+    size_t used = 0;
+    while (desktop_app_count(desktop) < 8) {
+        TEST_REQUIRE(used < 15);
+        snprintf(app_ids[used], sizeof(app_ids[used]), "test-growth-%u",
+       (unsigned int)used);
+        init_growth_descriptor(&descriptors[used], app_ids[used]);
+        TEST_REQUIRE(desktop_register_app_for_test(desktop,
+                                         &descriptors[used]));
+        TEST_REQUIRE(app_launch(desktop, app_ids[used]) != NULL);
+        used++;
+    }
+
+    TEST_REQUIRE(used > 0);
+    WindowId anchor = desktop_app_window_id(desktop, app_ids[0]);
+    TEST_REQUIRE(anchor != WINDOW_ID_INVALID);
+    size_t stable_app_count = desktop_app_count(desktop);
+    size_t stable_window_count = desktop_window_count(desktop);
+
+    snprintf(app_ids[used], sizeof(app_ids[used]), "test-growth-%u",
+   (unsigned int)used);
+    init_growth_descriptor(&descriptors[used], app_ids[used]);
+    TEST_REQUIRE(desktop_register_app_for_test(desktop,
+                                     &descriptors[used]));
+
+    desktop_fail_next_app_growth_for_test(desktop);
+    TEST_REQUIRE(app_launch(desktop, app_ids[used]) == NULL);
+    TEST_REQUIRE(desktop_app_count(desktop) == stable_app_count);
+    TEST_REQUIRE(desktop_window_count(desktop) == stable_window_count);
+    TEST_REQUIRE(desktop_app_window_id(desktop, app_ids[0]) == anchor);
+    TEST_REQUIRE(desktop_app_window_id(desktop, app_ids[used]) ==
+       WINDOW_ID_INVALID);
+
+    TEST_REQUIRE(app_launch(desktop, app_ids[used]) != NULL);
+    TEST_REQUIRE(desktop_app_count(desktop) == stable_app_count + 1);
+    TEST_REQUIRE(desktop_window_count(desktop) == stable_window_count + 1);
+
+    desktop_shutdown(desktop);
+    platform_destroy(platform);
+}
+
 static void test_capability_rejection(void) {
     PlatformBackend *platform = platform_stub_new(false);
     TEST_REQUIRE(platform != NULL);
@@ -1199,6 +1270,7 @@ static void test_filemanager_navigation_port(void) {
 #endif
 
 int main(void) {
+    test_desktop_growth_failure_preserves_state();
     test_capability_rejection();
     test_failed_create_calls_destroy();
     test_launch_and_clean_close();

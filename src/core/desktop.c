@@ -8,12 +8,12 @@
 #include "app/app_runtime.h"
 #include "core/checked_size.h"
 #include "core/desktop_chrome.h"
+#include "core/desktop_window_mode.h"
 #include "apps/apps.h"
 #include "core/key_chord.h"
 #include "ui/launcher_menu.h"
 #include "ui/statusbar.h"
 #include "ui/theme_surface.h"
-#include "ui/window_mode_hud.h"
 #include "wm/window_manager.h"
 
 typedef struct RunningApp {
@@ -42,14 +42,6 @@ typedef struct LauncherState {
     WindowId window_id;
 } LauncherState;
 
-typedef struct WindowModeState {
-    bool active;
-    bool resize;
-    WindowId target_window;
-    bool blocked_notice;
-    bool blocked_maximized;
-} WindowModeState;
-
 static const int k_active_service_poll_ms = 16;
 static const size_t k_app_service_budget = 8192;
 
@@ -67,7 +59,7 @@ struct Desktop {
     DesktopDiagnostics diagnostics;
     bool running;
     bool needs_redraw;
-    WindowModeState window_mode;
+    DesktopWindowMode window_mode;
     bool shutdown_requested;
     size_t shutdown_index;
     WindowId shutdown_waiting_window;
@@ -163,117 +155,6 @@ static int desktop_poll_timeout_ms(const Desktop *desktop) {
         timeout_ms = k_active_service_poll_ms;
     }
     return timeout_ms;
-}
-
-static void desktop_window_mode_clear(Desktop *desktop) {
-    if (!desktop) return;
-    desktop->window_mode.active = false;
-    desktop->window_mode.resize = false;
-    desktop->window_mode.target_window = WINDOW_ID_INVALID;
-}
-
-static bool desktop_window_mode_can_transform(Desktop *desktop,
-                                              WindowId active) {
-    if (!desktop || !desktop->wm || active == WINDOW_ID_INVALID ||
-        wm_window_is_minimized(desktop->wm, active) ||
-        wm_window_is_maximized(desktop->wm, active)) {
-        return false;
-    }
-
-    /* A zero-delta move is the public capability probe. Fixed windows reject
-       it; ordinary visible windows keep identical geometry. */
-    return wm_move_active_window(desktop->wm, 0, 0);
-}
-
-static void desktop_window_mode_block(Desktop *desktop, WindowId active) {
-    if (!desktop) return;
-    desktop->window_mode.blocked_notice = true;
-    desktop->window_mode.blocked_maximized =
-        desktop->wm && active != WINDOW_ID_INVALID &&
-        wm_window_is_maximized(desktop->wm, active);
-    desktop_window_mode_clear(desktop);
-}
-
-static void desktop_window_mode_start(Desktop *desktop) {
-    if (!desktop || !desktop->wm) return;
-    WindowId active = wm_active_window(desktop->wm);
-    desktop->window_mode.blocked_notice = false;
-    desktop->window_mode.blocked_maximized = false;
-    desktop->window_mode.resize = false;
-    desktop->window_mode.target_window = active;
-    if (!desktop_window_mode_can_transform(desktop, active)) {
-        desktop_window_mode_block(desktop, active);
-    } else {
-        desktop->window_mode.active = true;
-    }
-    desktop_request_redraw(desktop);
-}
-
-static bool desktop_window_mode_sync(Desktop *desktop) {
-    if (!desktop || !desktop->window_mode.active) return false;
-    WindowId active = wm_active_window(desktop->wm);
-    if (active != desktop->window_mode.target_window) {
-        desktop_window_mode_clear(desktop);
-        return false;
-    }
-    if (!desktop_window_mode_can_transform(desktop, active)) {
-        desktop_window_mode_block(desktop, active);
-        return false;
-    }
-    return true;
-}
-
-static const RetroTheme *desktop_window_mode_render_theme(
-    Desktop *desktop, RetroTheme *operation_theme) {
-    if (!desktop || !desktop->theme || !operation_theme ||
-        !desktop_window_mode_sync(desktop)) {
-        return desktop ? desktop->theme : NULL;
-    }
-    *operation_theme = *desktop->theme;
-    operation_theme->window_frame_active =
-        desktop->theme->window_frame_drag;
-    return operation_theme;
-}
-
-static void desktop_window_mode_render_hud(Desktop *desktop,
-                                           DrawList *draw_list,
-                                           int screen_rows,
-                                           int screen_cols,
-                                           const RenderStyle *status_style) {
-    if (!desktop || !draw_list) return;
-
-    WindowModeHudSnapshot snapshot = {0};
-    if (desktop->window_mode.active) {
-        WindowId active = wm_active_window(desktop->wm);
-        RetroWindow *window = wm_window(desktop->wm, active);
-        if (!window || active != desktop->window_mode.target_window) return;
-        snapshot.active = true;
-        snapshot.resize = desktop->window_mode.resize;
-        snapshot.transformable = true;
-        snapshot.maximized = false;
-        retro_window_get_geometry(window, &snapshot.y, &snapshot.x,
-                                  &snapshot.h, &snapshot.w);
-    } else if (desktop->window_mode.blocked_notice) {
-        snapshot.active = true;
-        snapshot.transformable = false;
-        snapshot.maximized = desktop->window_mode.blocked_maximized;
-        desktop->window_mode.blocked_notice = false;
-        desktop->window_mode.blocked_maximized = false;
-    } else {
-        return;
-    }
-
-    RenderStyle fallback = status_style
-                               ? *status_style
-                               : (RenderStyle){RENDER_COLOR_BLACK,
-                                               RENDER_COLOR_WHITE,
-                                               false,
-                                               true};
-    const RenderStyle *hud_style = desktop->theme
-                                       ? &desktop->theme->window_frame_drag
-                                       : &fallback;
-    (void)window_mode_hud_render(&snapshot, draw_list, screen_rows,
-                                 screen_cols, hud_style);
 }
 
 static bool desktop_add_app(Desktop *desktop, RetroAppInstance *app,
@@ -609,7 +490,7 @@ Desktop *desktop_create(const DesktopConfig *config) {
     desktop->theme = retro_theme_get(desktop->config.theme_kind);
     desktop->last_status_tick = (time_t)-1;
     desktop->launcher.window_id = WINDOW_ID_INVALID;
-    desktop->window_mode.target_window = WINDOW_ID_INVALID;
+    desktop_window_mode_init(&desktop->window_mode);
     desktop->shutdown_waiting_window = WINDOW_ID_INVALID;
 
     desktop->app_registry = app_registry_create();
@@ -919,7 +800,7 @@ static void desktop_continue_shutdown(Desktop *desktop) {
 static void desktop_begin_shutdown(Desktop *desktop) {
     if (!desktop || desktop->shutdown_requested) return;
     if (desktop->launcher.open) desktop_launcher_close(desktop);
-    desktop_window_mode_clear(desktop);
+    desktop_window_mode_clear(&desktop->window_mode);
     desktop->shutdown_requested = true;
     desktop->shutdown_index = 0;
     desktop->shutdown_waiting_window = WINDOW_ID_INVALID;
@@ -1006,8 +887,9 @@ static void desktop_render_frame(Desktop *desktop) {
     renderer_get_screen_size(desktop->renderer, &rows, &cols);
     renderer_clear(desktop->renderer);
     RetroTheme operation_theme;
-    const RetroTheme *render_theme =
-        desktop_window_mode_render_theme(desktop, &operation_theme);
+    const RetroTheme *render_theme = desktop_window_mode_render_theme(
+        &desktop->window_mode, desktop->wm, desktop->theme,
+        &operation_theme);
     wm_render(desktop->wm, desktop->renderer, render_theme);
 
     RenderContext *screen = renderer_begin_screen(desktop->renderer);
@@ -1016,7 +898,8 @@ static void desktop_render_frame(Desktop *desktop) {
         statusbar_render(desktop->statusbar, desktop->overlay_draw_list, rows, cols,
                          status_style);
         desktop_window_mode_render_hud(
-            desktop, desktop->overlay_draw_list, rows, cols, status_style);
+            &desktop->window_mode, desktop->wm, desktop->theme,
+            desktop->overlay_draw_list, rows, cols, status_style);
         renderer_draw_list(screen, desktop->overlay_draw_list);
         renderer_end(desktop->renderer, screen);
     }
@@ -1118,28 +1001,11 @@ static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
         return false;
     }
 
-    if (desktop->window_mode.active) {
-        if (window_mode_hud_finish_key(key->key_code)) {
-            desktop_window_mode_clear(desktop);
-            desktop_request_redraw(desktop);
-            return true;
-        }
-        if (key->key_code == RETRO_KEY_TAB) {
-            desktop->window_mode.resize = !desktop->window_mode.resize;
-            desktop_request_redraw(desktop);
-            return true;
-        }
-        int dy = 0;
-        int dx = 0;
-        if (key->key_code == RETRO_KEY_UP) dy = -1;
-        if (key->key_code == RETRO_KEY_DOWN) dy = 1;
-        if (key->key_code == RETRO_KEY_LEFT) dx = -1;
-        if (key->key_code == RETRO_KEY_RIGHT) dx = 1;
-        if (dy == 0 && dx == 0) return true;
-        bool changed = desktop->window_mode.resize
-                           ? wm_resize_active_window(desktop->wm, dy, dx)
-                           : wm_move_active_window(desktop->wm, dy, dx);
-        if (changed) desktop_request_redraw(desktop);
+    bool window_mode_redraw = false;
+    if (desktop_window_mode_handle_key(
+            &desktop->window_mode, desktop->wm, key->key_code,
+            &window_mode_redraw)) {
+        if (window_mode_redraw) desktop_request_redraw(desktop);
         return true;
     }
 
@@ -1161,7 +1027,9 @@ static bool desktop_handle_key_command(Desktop *desktop, const RetroKeyEvent *ke
     }
 
     if (key->key_code == RETRO_KEY_F9) {
-        desktop_window_mode_start(desktop);
+        (void)desktop_window_mode_start(
+            &desktop->window_mode, desktop->wm);
+        desktop_request_redraw(desktop);
         return true;
     }
 
@@ -1229,20 +1097,24 @@ int desktop_launcher_selected_for_test(const Desktop *desktop) {
 }
 
 bool desktop_window_mode_active_for_test(const Desktop *desktop) {
-    return desktop && desktop->window_mode.active;
+    return desktop &&
+           desktop_window_mode_is_active(&desktop->window_mode);
 }
 
 bool desktop_window_resize_mode_for_test(const Desktop *desktop) {
-    return desktop && desktop->window_mode.resize;
+    return desktop &&
+           desktop_window_mode_is_resize(&desktop->window_mode);
 }
 
 WindowId desktop_window_mode_target_for_test(const Desktop *desktop) {
-    return desktop ? desktop->window_mode.target_window
-                   : WINDOW_ID_INVALID;
+    return desktop
+               ? desktop_window_mode_target(&desktop->window_mode)
+               : WINDOW_ID_INVALID;
 }
 
 bool desktop_window_mode_blocked_for_test(const Desktop *desktop) {
-    return desktop && desktop->window_mode.blocked_notice;
+    return desktop && desktop_window_mode_has_blocked_notice(
+                          &desktop->window_mode);
 }
 
 int desktop_run(Desktop *desktop) {

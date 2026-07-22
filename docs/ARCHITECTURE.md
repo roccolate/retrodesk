@@ -44,8 +44,10 @@ Owns:
 - running-app table and app/window association;
 - budgeted app-service scheduling.
 
-`core/desktop.c` is currently too concentrated and remains an explicit
-refactoring target.
+`core/desktop.c` remains a decomposition target, but F9 move/resize state,
+target synchronization, drag-theme projection and HUD behavior now live in the
+private `core/desktop_window_mode` controller. Desktop retains composition,
+command routing and the single render/flush sequence.
 
 ### `platform`
 
@@ -84,9 +86,9 @@ Owns:
 - minimized-window visibility/input/focus policy;
 - draw lists associated with windows.
 
-Maximize/restore geometry currently uses a header-only state extension and
-Desktop-private bridge rather than final native Window Manager ownership. This is
-integrated behavior but accepted temporary architecture.
+Maximize/restore state and exact restore geometry are owned by each
+`RetroWindow`; ordinary Window Manager APIs implement maximize, restore, resize
+refresh and rejection policy.
 
 ### `app`
 
@@ -119,8 +121,7 @@ Owns reusable presentation and interaction components:
 - status bar/taskbar;
 - Launcher menu presentation;
 - theme and desktop-surface tokens;
-- move/resize HUD;
-- temporary Desktop-private integration bridges.
+- move/resize HUD presentation.
 
 ### `storage`
 
@@ -239,9 +240,9 @@ A dirty frame is rendered as:
 5. renderer executes the overlay;
 6. `renderer_flush()` runs exactly once.
 
-The operation-mode bridge may copy the immutable selected theme for one frame and
-replace only the active-frame token with `window_frame_drag`. It does not mutate
-the authoritative theme catalog.
+The private window-mode controller may copy the immutable selected theme for one
+frame and replace only the active-frame token with `window_frame_drag`. It does
+not mutate the authoritative theme catalog.
 
 ## Theme Model
 
@@ -289,8 +290,8 @@ a future larger app set.
 ## Launcher Model
 
 The Launcher is a modal fixed popup anchored bottom-left above the taskbar. It
-uses a pure menu layout/presentation contract and a Desktop-private adapter to the
-legacy Launcher callbacks.
+uses a pure menu layout/presentation contract and explicit Desktop-owned
+callbacks, state and lifetime.
 
 It groups Applications and Desktop actions, supports responsive descriptions,
 keyboard navigation/accelerators, and mouse row activation. It remains in the

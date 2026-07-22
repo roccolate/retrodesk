@@ -8,6 +8,7 @@
 
 #include "core/checked_size.h"
 #include "core/desktop_chrome.h"
+#include "core/desktop_window_mode.h"
 #include "ui/window_mode_hud.h"
 #include "wm/window_manager.h"
 
@@ -229,6 +230,89 @@ static void test_taskbar_activation_is_explicit_and_stateless(void) {
     renderer_destroy(second_renderer);
 }
 
+static void test_window_mode_controller_is_instance_owned(void) {
+    Renderer *first_renderer = renderer_create(NULL);
+    Renderer *second_renderer = renderer_create(NULL);
+    TEST_REQUIRE(first_renderer != NULL);
+    TEST_REQUIRE(second_renderer != NULL);
+    WindowManager *first_wm = wm_create(first_renderer);
+    WindowManager *second_wm = wm_create(second_renderer);
+    TEST_REQUIRE(first_wm != NULL);
+    TEST_REQUIRE(second_wm != NULL);
+
+    RetroWindowSpec spec = boundary_spec("window-mode");
+    WindowId first_id = wm_create_window(first_wm, &spec);
+    WindowId second_id = wm_create_window(second_wm, &spec);
+    TEST_REQUIRE(first_id == 1 && second_id == 1);
+
+    DesktopWindowMode first_mode;
+    DesktopWindowMode second_mode;
+    desktop_window_mode_init(&first_mode);
+    desktop_window_mode_init(&second_mode);
+    TEST_REQUIRE(desktop_window_mode_target(&first_mode) == WINDOW_ID_INVALID);
+    TEST_REQUIRE(desktop_window_mode_target(&second_mode) == WINDOW_ID_INVALID);
+
+    TEST_REQUIRE(desktop_window_mode_start(&first_mode, first_wm));
+    TEST_REQUIRE(desktop_window_mode_is_active(&first_mode));
+    TEST_REQUIRE(!desktop_window_mode_is_active(&second_mode));
+    TEST_REQUIRE(desktop_window_mode_target(&first_mode) == first_id);
+
+    bool redraw = false;
+    TEST_REQUIRE(desktop_window_mode_handle_key(
+        &first_mode, first_wm, RETRO_KEY_TAB, &redraw));
+    TEST_REQUIRE(redraw);
+    TEST_REQUIRE(desktop_window_mode_is_resize(&first_mode));
+    TEST_REQUIRE(!desktop_window_mode_is_resize(&second_mode));
+
+    RetroWindow *first_window = wm_window(first_wm, first_id);
+    int old_width = 0;
+    retro_window_get_geometry(first_window, NULL, NULL, NULL, &old_width);
+    redraw = false;
+    TEST_REQUIRE(desktop_window_mode_handle_key(
+        &first_mode, first_wm, RETRO_KEY_RIGHT, &redraw));
+    TEST_REQUIRE(redraw);
+    int new_width = 0;
+    retro_window_get_geometry(first_window, NULL, NULL, NULL, &new_width);
+    TEST_REQUIRE(new_width == old_width + 1);
+
+    const RetroTheme *theme = retro_theme_get(RETRO_THEME_XP);
+    RetroTheme operation_theme;
+    const RetroTheme *projected = desktop_window_mode_render_theme(
+        &first_mode, first_wm, theme, &operation_theme);
+    TEST_REQUIRE(projected == &operation_theme);
+    TEST_REQUIRE(projected->window_frame_active.fg ==
+                 theme->window_frame_drag.fg);
+    TEST_REQUIRE(projected->window_frame_active.bg ==
+                 theme->window_frame_drag.bg);
+
+    redraw = false;
+    TEST_REQUIRE(desktop_window_mode_handle_key(
+        &first_mode, first_wm, RETRO_KEY_CR, &redraw));
+    TEST_REQUIRE(redraw);
+    TEST_REQUIRE(!desktop_window_mode_is_active(&first_mode));
+    TEST_REQUIRE(desktop_window_mode_target(&first_mode) == WINDOW_ID_INVALID);
+
+    TEST_REQUIRE(wm_maximize_window(second_wm, second_id));
+    TEST_REQUIRE(desktop_window_mode_start(&second_mode, second_wm));
+    TEST_REQUIRE(!desktop_window_mode_is_active(&second_mode));
+    TEST_REQUIRE(desktop_window_mode_has_blocked_notice(&second_mode));
+    TEST_REQUIRE(desktop_window_mode_blocked_maximized(&second_mode));
+    TEST_REQUIRE(!desktop_window_mode_has_blocked_notice(&first_mode));
+
+    DrawList *list = draw_list_create();
+    TEST_REQUIRE(list != NULL);
+    desktop_window_mode_render_hud(&second_mode, second_wm, theme, list,
+                                   40, 120, &theme->statusbar);
+    TEST_REQUIRE(draw_list_count(list) >= 2);
+    TEST_REQUIRE(!desktop_window_mode_has_blocked_notice(&second_mode));
+    draw_list_destroy(list);
+
+    wm_destroy(first_wm);
+    wm_destroy(second_wm);
+    renderer_destroy(first_renderer);
+    renderer_destroy(second_renderer);
+}
+
 static void test_window_mode_hud_contract(void) {
     WindowModeHudSnapshot snapshot = {
         .active = true,
@@ -285,6 +369,7 @@ int main(void) {
     test_window_id_exhaustion();
     test_maximize_state_is_window_owned();
     test_taskbar_activation_is_explicit_and_stateless();
+    test_window_mode_controller_is_instance_owned();
     test_window_mode_hud_contract();
 
     Renderer *renderer = renderer_create(NULL);

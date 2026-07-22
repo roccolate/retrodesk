@@ -80,18 +80,18 @@ bounded deferral.
 ### KB-011 — Desktop integration is too concentrated
 
 **Area:** `src/core/desktop.c`, UI/WM integration  
-**Status:** partially resolved; decomposition still pending
+**Status:** partially resolved; first private controller extracted
 
 Desktop still coordinates app services, registry/lifecycle, shutdown, Launcher,
-taskbar, window commands, diagnostics, status updates, and rendering. The hidden
-header-only bridges and all macro remapping from `statusbar.h` have been removed;
-chrome state is now explicitly Desktop/WM-owned.
+taskbar, diagnostics, status updates, rendering and the event loop. F9 move/resize
+state and behavior now live in `core/desktop_window_mode`, which receives the
+Window Manager, theme and render arguments explicitly and owns no heap or windows.
 
 **Risk:** the remaining issue is file-level concentration and change coupling, not
 process-global bridge state or macro-sensitive call flow.
 
-**Required resolution:** continue decomposing `desktop.c` into explicit private
-controllers/services without reintroducing hidden ownership.
+**Required resolution:** continue with Launcher, taskbar, shutdown and diagnostic
+controllers under #54 without reintroducing hidden ownership.
 
 ### KB-012 — Temporary bridge state is process-global within translation units
 

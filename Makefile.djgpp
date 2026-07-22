@@ -32,6 +32,7 @@ SRCS = \
 	src/core/clipboard.c \
 	src/core/desktop.c \
 	src/core/desktop_chrome.c \
+	src/core/desktop_window_mode.c \
 	src/core/key_chord.c \
 	src/core/utf8.c \
 	src/storage/retro_fs_djgpp.c \

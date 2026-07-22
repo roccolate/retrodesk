@@ -1,227 +1,380 @@
-# Core Module Hardening Plan
+# Core Hardening Status and Plan
 
-Tracking document for the systematic cleanup of `src/core/`. This document is
-current against the source layout audited on 2026-07-09.
+> Current audit snapshot: 2026-07-22. This document distinguishes integrated
+> hardening from work proposed in stale branches.
 
-Every phase must be independently executable and verifiable. Each commit must
-keep Debug and Release `ctest` at 100%.
+## Objective
 
-## Current Source Status
+Keep the Desktop/runtime core predictable under failure, explicit about
+ownership, portable across active profiles, and small enough to reason about.
+Every hardening slice must preserve the one-event-loop and one-flush contracts and
+must pass Debug, Release, strict warning, sanitizer, Windows, and DOS gates where
+the changed code is portable.
 
-The following items are still pending in the current source:
+## Current Assessment
 
-- `app_launch` returns `NULL` for multiple meanings: launch failure and
-  "already running, focused existing window".
-- Several `desktop.c` helpers still duplicate app lookup and capability /
-  diagnostics state handling.
-- Uppercase `Q`/`W` hotkeys are still tracked as a polish item unless source
-  changes prove otherwise.
-- Selective redraw and statusbar text caching are not implemented.
+The core is structurally sound enough to continue; it does not require a rewrite.
+The strongest foundations are:
 
-Completed hardening items:
+- explicit Desktop lifecycle;
+- normalized events;
+- backend-neutral rendering;
+- descriptor-based apps;
+- rollback-aware create failure;
+- transactional close/shutdown;
+- Desktop-owned clipboard;
+- adapter-neutral storage;
+- budgeted app services;
+- test-backed focus/window behavior.
 
-- `app_launch` now calls the descriptor `destroy` callback when `create` fails
-  after the app window has already been created. `tests/desktop_runtime_test.c`
-  registers a test-only failing app descriptor and asserts create/destroy/count
-  behavior.
-- `retro_cli_parse` returns `RetroCliParseResult`, distinguishing valid parse,
-  help/usage, and parse errors. `main()` exits successfully for `--help` / `-h`.
-- Function-key vocabulary is now documented as the explicitly supported F1..F12
-  range. F13..F24 are intentionally not claimed until backend mapping and tests
-  prove consistent support.
-- `RetroKeyEvent.ascii` is `unsigned char`, documented in `src/core/event.h`, and
-  covered by `tests/key_chord_test.c` with an extended-byte preservation check.
+The highest remaining risks are not missing architecture layers. They are:
 
-Do not mark an item complete without the matching source change and a regression
-test.
+- stale collection/identifier hardening not integrated;
+- concentrated Desktop ownership and macro bridges;
+- ambiguous APIs and duplicated authority;
+- broader-than-needed redraw;
+- incomplete failure propagation for built-in registration;
+- future async workload policy not yet measured.
 
-## Goals
+## Integrated Hardening
 
-1. Public API is unambiguous.
-2. `RetroKeyEvent` is sign-safe across platforms.
-3. Key vocabulary covers the function keys supported by target backends.
-4. Every bug-shaped cleanup has a regression test that fails on the old code and
-   passes on the new code.
-5. Zero warnings under the project warning policy.
-6. No leaks or undefined behavior under sanitizer builds where supported.
+### App create-failure rollback
 
-## Phase 1 — Bug-Shaped Cleanup
+Once a descriptor's `create` callback begins, a failure invokes matching
+`destroy`, closes the created window, releases the resource-path copy, and leaves
+no running-app slot.
 
-### 1.1 App create-failure cleanup — done
+Coverage: test-only failing descriptor checks create/destroy counts and stable
+app/window totals.
 
-`app_launch` now performs descriptor cleanup when `create` fails after window
-creation:
+### CLI result disambiguation
 
-```c
-if (desc->create && !desc->create(instance, &instance->ctx)) {
-    if (desc->destroy) desc->destroy(instance);
-    wm_close_window(desktop->wm, wid);
-    free(instance);
-    return NULL;
-}
-```
+CLI parsing distinguishes:
 
-Test coverage: `tests/desktop_runtime_test.c` registers a test-only descriptor
-whose `create` callback fails and whose `destroy` callback increments a counter.
-The test asserts that:
+- valid configuration;
+- help/usage shown;
+- parse error.
 
-- `create` is called once,
-- `destroy` is called once,
-- no app instance is recorded,
-- no extra window remains,
-- `desktop_app_window_id()` returns `WINDOW_ID_INVALID` for the failed app.
+`main()` exits successfully for help and fails for invalid arguments/backend
+combinations.
 
-The test uses `RETRODESK_ENABLE_TEST_HOOKS` to expose
-`desktop_register_app_for_test()` without adding the artificial descriptor to
-normal runtime app registration.
+### Portable function-key vocabulary
 
-### 1.2 CLI parse result states — done
+The currently claimed portable vocabulary is F1..F12. Higher function keys and
+raw-TTY mappings are not claimed without consistent backend support/tests.
 
-`retro_cli_parse(...)` now returns:
+### Sign-safe input byte
 
-```c
-typedef enum RetroCliParseResult {
-    RETRO_CLI_OK = 0,
-    RETRO_CLI_SHOWED_USAGE,
-    RETRO_CLI_PARSE_ERROR,
-} RetroCliParseResult;
-```
+`RetroKeyEvent.ascii` is unsigned so bytes `0x80..0xFF` are not corrupted by
+platform `char` signedness. Portable printability/codepoint behavior remains
+separate.
 
-Behavior:
+### Transactional global shutdown
 
-- `--help` / `-h` prints usage and returns `RETRO_CLI_SHOWED_USAGE`.
-- Unknown arguments print usage/error details and return `RETRO_CLI_PARSE_ERROR`.
-- Invalid backend combinations return `RETRO_CLI_PARSE_ERROR`.
-- Valid configurations return `RETRO_CLI_OK`.
-- `main()` returns `EXIT_SUCCESS` for help/usage and `EXIT_FAILURE` only for
-  parse errors.
+A global close does not destroy early-authorized apps while a later dirty app is
+still deciding. Cancellation restores the entire runtime to ordinary operation.
 
-Test coverage: `tests/cli_parse_test.c` covers OK, help, short help, invalid
-backend combinations, invalid theme, unknown flag, invalid argc, null argv, and
-null output options.
+### Desktop-owned clipboard
 
-### 1.3 Function-key vocabulary — done
+Clipboard ownership is no longer hidden inside Notepad instances. Separate
+Desktop objects have isolated clipboard services.
 
-`key_chord.h` now documents the current portable function-key vocabulary as
-F1..F12 only. That matches the currently translated curses/PDCurses backend
-surface.
+### App service boundary
 
-F13..F24 are deliberately not added yet because the supported backends do not
-currently expose a tested, consistent mapping for them. Raw TTY function-key
-escape handling is also not claimed yet.
+Optional callbacks run inside the one Desktop loop with a bounded 8192-unit
+budget and 16 ms active-service poll cap. They cannot render, flush, poll platform
+input, or create a nested UI loop.
 
-Test coverage: `tests/key_chord_test.c` verifies that F1..F12 are sequential,
-classified as chords, non-printable, non-control, and live outside raw byte and
-navigation ranges.
+### Native storage boundaries
 
-## Phase 2 — API Disambiguation
+POSIX, Win32, and DJGPP adapters isolate OS-native filesystem details and keep
+fixed-width public metadata. Platform-specific storage failures and stale-version
+conflicts are tested.
 
-### 2.1 `app_launch` return value
+### Window lifecycle expansion
 
-Current return type conflates failure and already-running behavior:
+Minimize/restore, maximize/unmaximize, and move/resize feedback preserve app
+instance ownership, close/shutdown behavior, and single-flush rendering.
 
-```c
-RetroAppInstance *app_launch(Desktop *desktop, const char *app_id);
-```
+## Priority 0/1 — Rebuild Collection and ID Hardening
 
-Target shape:
+### Current state
+
+Open PR #27 proposes this work but is based on older `main`. Its historically
+green branch is not integrated and should not be merged without reconstruction.
+
+### Required behavior
+
+#### Checked capacity growth
+
+Desktop running-app and Window Manager window arrays must:
+
+- reject element-count overflow;
+- check `SIZE_MAX / element_size` before byte multiplication;
+- use deterministic geometric growth;
+- preserve pointer, count, capacity, active window, and existing entries when
+  growth/allocation fails;
+- allow a later successful retry.
+
+#### `WindowId` exhaustion
+
+- IDs remain positive and monotonic.
+- Live IDs are never reused.
+- `INT_MAX` may be issued once as the last valid ID.
+- Later window creation returns `WINDOW_ID_INVALID` without signed overflow.
+- Failed creation does not consume an ID unless the contract explicitly decides
+  otherwise; the rebuilt test must freeze the chosen behavior.
+
+### Required tests
+
+- pure checked-capacity arithmetic boundaries;
+- injected WM 8->16 growth failure, state preservation, retry;
+- injected Desktop running-app growth failure, rollback, retry;
+- `WindowId` boundary at `INT_MAX`;
+- full existing minimize/maximize/bridge tests on the rebuilt current branch;
+- all Linux/Windows/DOS matrices.
+
+### Completion condition
+
+A fresh PR directly based on current `main` is merged. The old #27 is then closed
+as superseded or updated to the replacement branch.
+
+## Priority 1 — Desktop Decomposition
+
+### Problem
+
+`desktop.c` currently coordinates:
+
+- service scheduling;
+- registry and launch;
+- app/window association;
+- Launcher;
+- taskbar;
+- maximize/window operations;
+- shutdown negotiation;
+- diagnostics/status refresh;
+- event routing;
+- rendering.
+
+Recent UI work uses private header-only bridges and macro remapping from
+`statusbar.h` to avoid premature public API expansion. This was effective for
+small validated slices but should not become permanent architecture.
+
+### Target decomposition
+
+Create explicit per-Desktop components/interfaces for:
+
+1. **App controller** — lookup, launch result, running table, close cleanup.
+2. **Desktop chrome controller** — taskbar snapshot/actions and Launcher state.
+3. **Window command controller** — minimize/maximize/move/resize state and input.
+4. **Shutdown coordinator** — transaction state machine.
+5. **Status/diagnostics projection** — read-only view of platform/runtime state.
+6. **Service scheduler** — current simple policy isolated behind one contract.
+
+### Removal goals
+
+- remove `wm_*`/`statusbar_*` macro remapping from UI headers;
+- remove bridge-local static owner state;
+- move maximize state into a WM/Desktop-owned structure;
+- make multiple Desktop instances independent by construction;
+- preserve ordinary widget tests without special link stubs.
+
+### Constraints
+
+- no new global owner;
+- no second event loop;
+- no independent render/flush owner;
+- no backend types in core/controller headers;
+- no behavior change without regression coverage.
+
+## Priority 1 — API Disambiguation
+
+### `app_launch`
+
+Current shape conflates failure and “existing single-instance app focused.”
+
+Target concept:
 
 ```c
 typedef enum RetroAppLaunchResult {
     RETRO_APP_LAUNCHED = 0,
     RETRO_APP_ALREADY_RUNNING,
+    RETRO_APP_REJECTED,
     RETRO_APP_FAILED,
 } RetroAppLaunchResult;
-
-RetroAppLaunchResult app_launch(Desktop *desktop, const char *app_id,
-                                RetroAppInstance **out_instance);
 ```
 
-Tests: cover launched, already-running, missing app, and capability rejection.
+The final API may expose an optional instance/window output, but callers must be
+able to distinguish policy success from failure.
 
-### 2.2 Diagnostics vs capabilities
+Coverage:
 
-Keep `PlatformFeatures` as the source of capability booleans. `DesktopDiagnostics`
-should contain only diagnostic fields that are not already represented by
-`PlatformFeatures`.
+- launched new instance;
+- focused existing single instance;
+- multiple-instance launch;
+- unknown descriptor;
+- capability rejection;
+- window/create/running-table failure.
 
-Tests: bench mode and shell diagnostics must still expose the same user-visible
-fields.
+### App lookup
 
-### 2.3 Sign-safe ASCII byte — done
+Replace repeated `app_id` scans with one helper returning the running slot/index
+set required by launch, taskbar snapshot, cleanup, and test access.
 
-Changed:
+## Priority 1 — Capability and Diagnostics Authority
 
-```c
-char ascii;
-```
+`PlatformFeatures` must remain the source of truth for backend capabilities.
+Desktop diagnostics should be a read-only projection plus runtime-only values
+such as selected backend name and current drag degradation.
 
-to:
+Required work:
 
-```c
-unsigned char ascii;
-```
+- stop diagnostic refresh from mutating authoritative capability state;
+- distinguish configured, reported, and degraded runtime values;
+- keep app launch gating tied to authoritative capability mask;
+- preserve current user-visible diagnostics through tests.
 
-`src/core/event.h` now documents that `0x80..0xFF` may be valid byte values in
-some locales/codepages and must not be corrupted by signed `char` behavior.
+## Priority 1 — Built-In Registration Failure
 
-Test coverage: `tests/key_chord_test.c` checks that byte `0xE9` is preserved as
-an unsigned byte and is not misclassified as a RetroDesk chord, portable
-printable character, or ASCII control value.
+`apps_register_builtin()` should report failure. `desktop_create()` should treat an
+incomplete catalog as an initialization failure and rollback like other owned
+resources.
 
-## Phase 3 — Internal Refactors
+Required tests:
 
-- Extract a single app lookup helper for repeated `app_id` scans.
-- Ensure diagnostic refresh helpers do not mutate capability state.
-- Replace launcher geometry magic numbers with named constants.
-- Add a `LauncherAction` sentinel/count value instead of relying on repeated
-  `sizeof(array) / sizeof(array[0])` patterns.
-- Remove stale comments from public headers.
+- duplicate or injected registry allocation failure;
+- no partially usable Desktop returned;
+- all previously created services destroyed;
+- normal registration remains deterministic.
 
-## Phase 4 — Polish
+## Priority 2 — Selective Redraw
 
-- Accept uppercase `Q`/`W` for quit/close hotkeys if lowercase equivalents are
-  supported.
-- Avoid unnecessary full-frame redraws for non-visual events.
-- Cache statusbar text and skip no-op `statusbar_set_text` calls.
+### Current issue
 
-## Required Verification Matrix
+Desktop frequently marks the frame dirty after dispatch even when no visible state
+changed. Taskbar/status updates may rebuild equivalent snapshots/text.
+
+### Target
+
+- callbacks/actions report visual change explicitly where practical;
+- cache the last taskbar/status snapshot;
+- skip no-op statusbar setters;
+- avoid rendering on service idle/no-op events;
+- preserve animation/service responsiveness;
+- preserve one authoritative frame render and flush.
+
+### Metrics
+
+Instrument before/after:
+
+- poll iterations;
+- dirty frames;
+- flush count;
+- ANSI bytes/cells emitted;
+- taskbar snapshot changes;
+- service redraw requests.
+
+Do not create separate taskbar/window flush paths.
+
+## Priority 2 — Service Scheduler Readiness
+
+The current O(N) equal-budget scheduler is acceptable for the current app count.
+Before changing it, introduce a real workload and measure:
+
+- service count;
+- work consumed per tick;
+- redraw rate;
+- backlog/latency;
+- poll wakeups;
+- shutdown/close interaction.
+
+Possible future contracts:
+
+- app-declared pending work;
+- adaptive finite budgets;
+- fairness/round-robin cursor;
+- backpressure;
+- service-specific close/drain policy.
+
+No worker-owned UI state or direct backend render is permitted.
+
+## Priority 2 — Launcher/Taskbar Constants and Catalog
+
+- replace remaining geometry/action magic values with named contracts;
+- define catalog ownership independent of hardcoded three-app array;
+- add count/sentinel helpers;
+- implement congestion/overflow policy;
+- ensure all actions remain reachable by keyboard;
+- keep hit regions derived from exact render widths.
+
+## Open PR Handling
+
+### PR #27
+
+Rebuild, validate, merge, then close/supersede the stale branch.
+
+### PR #24
+
+Do not merge directly. It depends on superseded hardening history and modifies
+Desktop/app context in areas changed since. Rebuild after #27 decision and Desktop
+contract reconciliation.
+
+## Verification Matrix for Every Core Slice
 
 ```bash
-# Debug, asserts enabled
-cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTS=ON
-cmake --build build-debug
-ctest --test-dir build-debug --output-on-failure
-
-# Release
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
-
-# Strict warnings + Werror
-cmake -S . -B build-strict \
-      -DENABLE_STRICT_WARNINGS=ON -DENABLE_WERROR=ON \
-      -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-strict
-
-# Optional sanitizer pass on supported platforms
-cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
-      -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
-      -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
-cmake --build build-asan
-ctest --test-dir build-asan --output-on-failure
+make clean
+make check-test-oracles
+make strict
+make test
+make test-all
+make test-sanitize
+make smoke-ci
 ```
+
+Also required through official workflows:
+
+- Linux static analysis;
+- Windows Debug and Release `/W4 /WX`;
+- native Win32 storage tests when affected;
+- DJGPP source guard and product build;
+- native `FSTEST.EXE` and DOSBox-X diagnostic;
+- manual PTY smoke for public input/render behavior changes.
 
 ## Completion Checklist
 
-- [x] 1.1 — `app_launch` calls `destroy` on `create` failure.
-- [x] 1.2 — CLI parse result distinguishes OK, usage, and parse error.
-- [x] 1.3 — function-key vocabulary/comment is corrected and tested.
-- [ ] 2.1 — `app_launch` return type is unambiguous.
-- [ ] 2.2 — diagnostics no longer duplicate capability ownership.
-- [x] 2.3 — `RetroKeyEvent.ascii` is `unsigned char` and documented.
-- [ ] 3.x — repeated app lookup and launcher internals are simplified.
-- [ ] 4.x — uppercase hotkeys, selective redraw, and statusbar cache are done.
-- [ ] Debug and Release tests pass.
-- [ ] Strict warnings pass.
-- [ ] Sanitizers report zero issues where supported.
+### Integrated
+
+- [x] create-failure destroy rollback;
+- [x] CLI result states;
+- [x] F1..F12 portable vocabulary;
+- [x] unsigned input byte;
+- [x] transactional shutdown;
+- [x] Desktop clipboard ownership;
+- [x] app service boundary;
+- [x] native POSIX/Win32/DJGPP storage isolation;
+- [x] minimize/maximize/window-operation lifecycle preservation.
+
+### Pending
+
+- [ ] rebuild checked capacity growth and `WindowId` exhaustion;
+- [ ] disambiguate `app_launch`;
+- [ ] isolate app lookup/controller;
+- [ ] make diagnostics a read-only capability projection;
+- [ ] propagate built-in registration failure;
+- [ ] decompose Desktop chrome/window command integration;
+- [ ] remove macro/private global bridge ownership;
+- [ ] selective redraw/status snapshot cache;
+- [ ] measured service scheduling improvements if a real workload requires them;
+- [ ] full strict/sanitizer/Windows/DOS validation on each resulting slice.
+
+## Definition of Done
+
+A hardening item is complete only when:
+
+- source is merged into `main`;
+- public/ownership behavior is explicit;
+- old behavior fails a regression or boundary test where applicable;
+- failure leaves state deterministic;
+- all active build profiles pass;
+- status, architecture, known-issue, and debt documents are updated;
+- obsolete PRs/comments are closed or marked superseded.

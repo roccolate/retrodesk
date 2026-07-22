@@ -177,15 +177,14 @@ static void render_snapshot(StatusBar *sb, DrawList *draw_list,
     }
 
     if (show_clock) {
+        const char *source = sb->snapshot.clock_text[0]
+                                 ? sb->snapshot.clock_text
+                                 : "--:--:--";
+        char clock_text[STATUSBAR_CLOCK_WIDTH + 1];
         RenderStyle clock = clock_style(style);
+        (void)snprintf(clock_text, sizeof(clock_text), " %.8s ", source);
         (void)draw_list_text(draw_list, y, clock_separator_x, "|", style);
-        (void)draw_list_text(draw_list, y, clock_x, " 00:00:00 ", &clock);
-        if (sb->snapshot.clock_text[0]) {
-            char clock_text[STATUSBAR_CLOCK_WIDTH + 1];
-            (void)snprintf(clock_text, sizeof(clock_text), " %.8s ",
-                           sb->snapshot.clock_text);
-            (void)draw_list_text(draw_list, y, clock_x, clock_text, &clock);
-        }
+        (void)draw_list_text(draw_list, y, clock_x, clock_text, &clock);
     }
 }
 

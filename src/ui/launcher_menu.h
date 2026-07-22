@@ -28,6 +28,15 @@ typedef struct LauncherMenuSnapshot {
     LauncherMenuItemView items[LAUNCHER_MENU_MAX_ITEMS];
 } LauncherMenuSnapshot;
 
+typedef struct LauncherMenuStyles {
+    RenderStyle header;
+    RenderStyle section;
+    RenderStyle item;
+    RenderStyle selected;
+    RenderStyle separator;
+    RenderStyle footer;
+} LauncherMenuStyles;
+
 static inline size_t launcher_menu_count(const LauncherMenuSnapshot *snapshot) {
     if (!snapshot) return 0;
     return snapshot->item_count > LAUNCHER_MENU_MAX_ITEMS
@@ -119,12 +128,10 @@ static inline void launcher_menu_write(char *row, size_t row_size,
     memcpy(row + offset, text, length);
 }
 
-static inline void launcher_menu_render(const LauncherMenuSnapshot *snapshot,
-                                        DrawList *draw_list,
-                                        int window_rows, int window_cols,
-                                        const RenderStyle *text_style,
-                                        const RenderStyle *selected_style) {
-    if (!snapshot || !draw_list || !text_style || !selected_style ||
+static inline void launcher_menu_render_styled(
+    const LauncherMenuSnapshot *snapshot, DrawList *draw_list,
+    int window_rows, int window_cols, const LauncherMenuStyles *styles) {
+    if (!snapshot || !draw_list || !styles ||
         window_rows < 6 || window_cols < LAUNCHER_MENU_MIN_WIDTH) {
         return;
     }
@@ -135,33 +142,31 @@ static inline void launcher_menu_render(const LauncherMenuSnapshot *snapshot,
     bool compact = window_cols < 38;
     int inner_width = window_cols - 2;
     if (inner_width > 95) inner_width = 95;
-    size_t row_size = (size_t)inner_width + 1;
-
-    RenderStyle heading = *text_style;
-    heading.bold = true;
 
     draw_list_text(draw_list, 1, 2,
                    snapshot->brand && snapshot->brand[0]
                        ? snapshot->brand
                        : "RetroDesk",
-                   &heading);
+                   &styles->header);
     draw_list_text(draw_list, 2, 2,
                    snapshot->section_label && snapshot->section_label[0]
                        ? snapshot->section_label
                        : "Applications",
-                   text_style);
-    draw_list_hline(draw_list, 3, 1, window_cols - 2, '-', text_style);
+                   &styles->section);
+    draw_list_hline(draw_list, 3, 1, window_cols - 2, '-',
+                    &styles->separator);
 
     for (size_t i = 0; i < count; ++i) {
         if (secondary && i == primary) {
             int separator_row = 4 + (int)primary;
             if (separator_row < window_rows - 1) {
                 draw_list_hline(draw_list, separator_row, 1,
-                                window_cols - 2, '-', text_style);
+                                window_cols - 2, '-',
+                                &styles->separator);
             }
             if (separator_row + 1 < window_rows - 1) {
                 draw_list_text(draw_list, separator_row + 1, 2,
-                               "Desktop", &heading);
+                               "Desktop", &styles->section);
             }
         }
 
@@ -175,45 +180,64 @@ static inline void launcher_menu_render(const LauncherMenuSnapshot *snapshot,
         bool selected = (int)i ==
                         launcher_menu_normalize_selection(snapshot,
                                                           snapshot->selected);
-        launcher_menu_write(row, row_size, 0, selected ? " > " : "   ");
+        launcher_menu_write(row, sizeof(row), 0, selected ? " > " : "   ");
 
         char shortcut[6] = "";
         if (snapshot->items[i].accelerator) {
             (void)snprintf(shortcut, sizeof(shortcut), "[%c] ",
                            snapshot->items[i].accelerator);
-            launcher_menu_write(row, row_size, 3, shortcut);
+            launcher_menu_write(row, sizeof(row), 3, shortcut);
         }
 
         const char *label = snapshot->items[i].label &&
                                     snapshot->items[i].label[0]
                                 ? snapshot->items[i].label
                                 : "Unnamed";
-        launcher_menu_write(row, row_size, 7, label);
+        launcher_menu_write(row, sizeof(row), 7, label);
 
         if (!compact && snapshot->items[i].detail &&
             snapshot->items[i].detail[0]) {
             size_t detail_column = 26;
             if (detail_column < (size_t)inner_width) {
-                launcher_menu_write(row, row_size, detail_column,
+                launcher_menu_write(row, sizeof(row), detail_column,
                                     snapshot->items[i].detail);
             }
         }
 
         draw_list_text(draw_list, row_y, 1, row,
-                       selected ? selected_style : text_style);
+                       selected ? &styles->selected : &styles->item);
     }
 
     int footer_separator = secondary ? 6 + (int)count : 4 + (int)count;
     if (footer_separator < window_rows - 1) {
         draw_list_hline(draw_list, footer_separator, 1,
-                        window_cols - 2, '-', text_style);
+                        window_cols - 2, '-', &styles->separator);
     }
     if (footer_separator + 1 < window_rows - 1) {
         draw_list_text(draw_list, footer_separator + 1, 2,
                        compact ? "Enter open | Esc close"
                                : "Enter open   Esc close   Arrows navigate",
-                       text_style);
+                       &styles->footer);
     }
+}
+
+static inline void launcher_menu_render(
+    const LauncherMenuSnapshot *snapshot, DrawList *draw_list,
+    int window_rows, int window_cols, const RenderStyle *text_style,
+    const RenderStyle *selected_style) {
+    if (!text_style || !selected_style) return;
+    LauncherMenuStyles styles = {
+        .header = *text_style,
+        .section = *text_style,
+        .item = *text_style,
+        .selected = *selected_style,
+        .separator = *text_style,
+        .footer = *text_style,
+    };
+    styles.header.bold = true;
+    styles.section.bold = true;
+    launcher_menu_render_styled(snapshot, draw_list, window_rows,
+                                window_cols, &styles);
 }
 
 #endif

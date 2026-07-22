@@ -6,6 +6,7 @@
 
 #include "core/key_chord.h"
 #include "ui/launcher_menu.h"
+#include "ui/theme_surface.h"
 #include "wm/window_manager.h"
 
 /* Temporary compile-unit bridge used only by core/desktop.c. It adapts the
@@ -70,6 +71,52 @@ static inline void launcher_chrome_select(RetroWindow *window,
     }
 }
 
+static inline LauncherMenuStyles launcher_chrome_styles(
+    const DrawList *draw_list) {
+    LauncherMenuStyles styles = {0};
+    DrawCommandView fill = {0};
+    DrawCommandView box = {0};
+    const RetroSurfaceTheme *surface = NULL;
+
+    if (draw_list_get(draw_list, 0, &fill) &&
+        draw_list_get(draw_list, 1, &box) &&
+        fill.type == DRAW_COMMAND_FILL &&
+        box.type == DRAW_COMMAND_BOX) {
+        surface = retro_surface_theme_match_window_chrome(
+            &box.style, &box.alt_style, &fill.style);
+    }
+
+    if (surface) {
+        styles.header = surface->launcher_header;
+        styles.section = surface->launcher_section;
+        styles.item = surface->launcher_item;
+        styles.selected = surface->launcher_selected;
+        styles.separator = surface->launcher_separator;
+        styles.footer = surface->launcher_footer;
+        return styles;
+    }
+
+    RenderStyle fallback = {
+        RENDER_COLOR_BLACK,
+        RENDER_COLOR_WHITE,
+        false,
+        false,
+    };
+    if (fill.type == DRAW_COMMAND_FILL) fallback = fill.style;
+
+    styles.header = fallback;
+    styles.header.bold = true;
+    styles.section = fallback;
+    styles.section.bold = true;
+    styles.item = fallback;
+    styles.selected = fallback;
+    styles.selected.reverse = !styles.selected.reverse;
+    styles.selected.bold = true;
+    styles.separator = fallback;
+    styles.footer = fallback;
+    return styles;
+}
+
 static inline void launcher_chrome_draw(RetroWindow *window,
                                         DrawList *draw_list,
                                         void *user_data) {
@@ -80,22 +127,10 @@ static inline void launcher_chrome_draw(RetroWindow *window,
     int width = 0;
     retro_window_get_geometry(window, NULL, NULL, &height, &width);
 
-    RenderStyle text = {
-        RENDER_COLOR_BLACK,
-        RENDER_COLOR_WHITE,
-        false,
-        false,
-    };
-    DrawCommandView fill = {0};
-    if (draw_list_get(draw_list, 0, &fill)) text = fill.style;
-
-    RenderStyle selected = text;
-    selected.reverse = !selected.reverse;
-    selected.bold = true;
-
     LauncherMenuSnapshot snapshot = launcher_chrome_snapshot();
-    launcher_menu_render(&snapshot, draw_list, height, width,
-                         &text, &selected);
+    LauncherMenuStyles styles = launcher_chrome_styles(draw_list);
+    launcher_menu_render_styled(&snapshot, draw_list, height, width,
+                                &styles);
 }
 
 static inline void launcher_chrome_event(RetroWindow *window,

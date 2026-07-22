@@ -43,4 +43,12 @@ void statusbar_render(StatusBar *sb, DrawList *draw_list, int screen_rows,
 StatusBarAction statusbar_hit_test(const StatusBar *sb, int y, int x);
 void statusbar_destroy(StatusBar *sb);
 
+/* desktop.c includes this header after core/desktop.h. Keep the temporary
+   launcher adaptation private to that one translation unit so widget tests and
+   other UI consumers retain the ordinary Window Manager link contract. */
+#if defined(RETRODESK_CORE_DESKTOP_H)
+#include "ui/launcher_bridge.h"
+#define wm_create_window desktop_chrome_create_window
+#endif
+
 #endif

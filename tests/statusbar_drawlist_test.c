@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "render/render.h"
+#include "ui/launcher_menu.h"
 #include "ui/statusbar.h"
 
 static StatusBarSnapshot taskbar_snapshot(bool menu_open) {
@@ -200,9 +201,65 @@ static void test_taskbar_responsive_layouts(void) {
     statusbar_destroy(status);
 }
 
+static void test_launcher_menu_layout_contract(void) {
+    LauncherMenuSnapshot snapshot = {0};
+    snapshot.brand = "RetroDesk";
+    snapshot.section_label = "Applications";
+    snapshot.item_count = 4;
+    snapshot.primary_count = 3;
+    snapshot.selected = 1;
+    snapshot.items[0] =
+        (LauncherMenuItemView){"Files", "Browse files", 'F'};
+    snapshot.items[1] =
+        (LauncherMenuItemView){"Notepad", "Edit text", 'N'};
+    snapshot.items[2] =
+        (LauncherMenuItemView){"Diagnostics", "Runtime status", 'D'};
+    snapshot.items[3] =
+        (LauncherMenuItemView){"Close active window", "Ctrl+W", 'X'};
+
+    TEST_REQUIRE(launcher_menu_preferred_height(&snapshot) == 13);
+    TEST_REQUIRE(launcher_menu_item_row(&snapshot, 0) == 4);
+    TEST_REQUIRE(launcher_menu_item_row(&snapshot, 3) == 9);
+    TEST_REQUIRE(launcher_menu_move_selection(&snapshot, 0, -1) == 3);
+    TEST_REQUIRE(launcher_menu_find_accelerator(&snapshot, 'n') == 1);
+    TEST_REQUIRE(launcher_menu_hit_test(&snapshot, 4, 5, 13, 46) == 1);
+    TEST_REQUIRE(launcher_menu_hit_test(&snapshot, 6, 5, 13, 46) == -1);
+
+    RenderStyle text = {RENDER_COLOR_BLACK, RENDER_COLOR_WHITE, false, false};
+    RenderStyle selected = {RENDER_COLOR_BLACK, RENDER_COLOR_CYAN, true, true};
+    DrawList *list = draw_list_create();
+    TEST_REQUIRE(list != NULL);
+
+    launcher_menu_render(&snapshot, list, 13, 46, &text, &selected);
+    TEST_REQUIRE(draw_list_count(list) == 11);
+
+    DrawCommandView cmd = {0};
+    TEST_REQUIRE(draw_list_get(list, 0, &cmd));
+    TEST_REQUIRE(strcmp(cmd.text, "RetroDesk") == 0);
+    TEST_REQUIRE(cmd.style.bold);
+
+    TEST_REQUIRE(draw_list_get(list, 3, &cmd));
+    TEST_REQUIRE(strstr(cmd.text, "[F] Files") != NULL);
+    TEST_REQUIRE(strstr(cmd.text, "Browse files") != NULL);
+
+    TEST_REQUIRE(draw_list_get(list, 4, &cmd));
+    TEST_REQUIRE(strstr(cmd.text, "> [N] Notepad") != NULL);
+    TEST_REQUIRE(cmd.style.reverse);
+    TEST_REQUIRE(cmd.style.bold);
+
+    TEST_REQUIRE(draw_list_get(list, 7, &cmd));
+    TEST_REQUIRE(strcmp(cmd.text, "Desktop") == 0);
+
+    TEST_REQUIRE(draw_list_get(list, 8, &cmd));
+    TEST_REQUIRE(strstr(cmd.text, "[X] Close active window") != NULL);
+
+    draw_list_destroy(list);
+}
+
 int main(void) {
     test_legacy_status_text();
     test_taskbar_wide_snapshot_and_hits();
     test_taskbar_responsive_layouts();
+    test_launcher_menu_layout_contract();
     return 0;
 }

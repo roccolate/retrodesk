@@ -80,36 +80,31 @@ bounded deferral.
 ### KB-011 — Desktop integration is too concentrated
 
 **Area:** `src/core/desktop.c`, UI/WM integration  
-**Status:** open
+**Status:** partially resolved; decomposition still pending
 
-Desktop currently coordinates app services, registry/lifecycle, shutdown,
-Launcher, taskbar, window commands, diagnostics, status updates, and rendering.
-Recent desktop polish avoided widening public APIs by using private header-only
-bridges and macro remapping from `statusbar.h`.
+Desktop still coordinates app services, registry/lifecycle, shutdown, Launcher,
+taskbar, window commands, diagnostics, status updates, and rendering. The hidden
+header-only bridges and all macro remapping from `statusbar.h` have been removed;
+chrome state is now explicitly Desktop/WM-owned.
 
-**Risk:** hidden coupling, difficult local reasoning, macro-sensitive tests, and
-higher regression probability when adding desktop surfaces.
+**Risk:** the remaining issue is file-level concentration and change coupling, not
+process-global bridge state or macro-sensitive call flow.
 
-**Required resolution:** extract explicit Desktop-owned controllers/services for
-Launcher/taskbar/window commands. Remove translation-unit macro remapping once
-real interfaces exist.
+**Required resolution:** continue decomposing `desktop.c` into explicit private
+controllers/services without reintroducing hidden ownership.
 
 ### KB-012 — Temporary bridge state is process-global within translation units
 
-**Area:** move/resize  
-**Status:** partially resolved; one remaining temporary bridge
+**Area:** Desktop chrome state
+**Status:** resolved
 
-Maximize state is owned by each `RetroWindow`; taskbar activation and Launcher
-state are explicitly Desktop-owned. The remaining example is window-mode HUD
-state in the operation-mode bridge.
+Maximize state is owned by each `RetroWindow`. Taskbar activation, Launcher and
+F9 move/resize HUD state are explicitly instance-owned by Desktop/WM objects.
+The temporary bridge headers and `statusbar.h` function-remapping macros are
+removed.
 
-**Risk:** multiple Desktop instances or future embedding could still observe
-operation-mode state not owned by the correct Desktop object.
-
-**Removal trigger:** Desktop decomposition provides explicit per-instance state
-ownership in core/WM objects.
-
-**Target:** before beta contract freeze.
+**Resolution evidence:** independent Desktop/Window Manager regression coverage
+uses overlapping numeric `WindowId` values without cross-talk.
 
 ### KB-013 — `app_launch` return value is ambiguous
 

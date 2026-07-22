@@ -60,6 +60,10 @@ RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
 bool desktop_shutdown_pending_for_test(const Desktop *desktop);
 bool desktop_launcher_open_for_test(const Desktop *desktop);
 int desktop_launcher_selected_for_test(const Desktop *desktop);
+bool desktop_window_mode_active_for_test(const Desktop *desktop);
+bool desktop_window_resize_mode_for_test(const Desktop *desktop);
+WindowId desktop_window_mode_target_for_test(const Desktop *desktop);
+bool desktop_window_mode_blocked_for_test(const Desktop *desktop);
 #endif
 void desktop_shutdown(Desktop *desktop);
 

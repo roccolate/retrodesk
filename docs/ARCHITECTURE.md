@@ -387,15 +387,15 @@ To deliver desktop polish without prematurely widening public APIs, `statusbar.h
 includes private adapters only when compiled through `desktop.c`. Macro remapping
 redirects selected WM/statusbar operations to:
 
-- taskbar window bridge;
 - Launcher chrome bridge;
 - explicit `core/desktop_chrome` maximize gesture routing;
 - move/resize bridge.
 
 Maximize/restore state now lives in each `RetroWindow`, and F8/title-bar
 maximize gestures route explicitly through `core/desktop_chrome.c`; public
-headers no longer replace `wm_handle_event`. Launcher, taskbar and operation-mode
-bridge state still must become explicitly per-Desktop owned during decomposition.
+headers no longer replace `wm_handle_event`. Taskbar action metadata and target
+selection are consumed synchronously by Desktop, with no process-global pending
+activation state. Launcher and operation-mode bridge state remain to migrate.
 
 See [KNOWN_ISSUES.md](KNOWN_ISSUES.md), especially KB-011 and KB-012.
 

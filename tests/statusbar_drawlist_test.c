@@ -5,52 +5,7 @@
 #include "render/render.h"
 #include "ui/launcher_menu.h"
 #include "ui/statusbar.h"
-#include "ui/taskbar_window_bridge.h"
 #include "ui/theme_surface.h"
-
-struct WindowManager {
-    WindowId active;
-    WindowId existing;
-    bool minimized;
-    int focus_calls;
-    int bring_calls;
-    int minimize_calls;
-    int restore_calls;
-};
-
-WindowId wm_active_window(const WindowManager *wm) {
-    return wm ? wm->active : WINDOW_ID_INVALID;
-}
-
-bool wm_window_is_minimized(const WindowManager *wm, WindowId id) {
-    return wm && id == wm->existing && wm->minimized;
-}
-
-bool wm_minimize_window(WindowManager *wm, WindowId id) {
-    if (!wm || id != wm->existing || wm->minimized) return false;
-    wm->minimized = true;
-    wm->active = WINDOW_ID_INVALID;
-    wm->minimize_calls++;
-    return true;
-}
-
-bool wm_restore_window(WindowManager *wm, WindowId id) {
-    if (!wm || id != wm->existing || !wm->minimized) return false;
-    wm->minimized = false;
-    wm->restore_calls++;
-    return true;
-}
-
-void wm_focus_window(WindowManager *wm, WindowId id) {
-    if (!wm || id != wm->existing) return;
-    wm->minimized = false;
-    wm->active = id;
-    wm->focus_calls++;
-}
-
-void wm_bring_to_front(WindowManager *wm, WindowId id) {
-    if (wm && id == wm->existing) wm->bring_calls++;
-}
 
 static StatusBarSnapshot taskbar_snapshot(bool menu_open) {
     StatusBarSnapshot snapshot = {0};
@@ -265,64 +220,6 @@ static void test_taskbar_responsive_layouts(void) {
     statusbar_destroy(status);
 }
 
-static void test_taskbar_window_bridge(void) {
-    StatusBar *status = statusbar_create();
-    DrawList *list = draw_list_create();
-    TEST_REQUIRE(status != NULL);
-    TEST_REQUIRE(list != NULL);
-
-    StatusBarSnapshot snapshot = {0};
-    memcpy(snapshot.clock_text, "12:34:56", sizeof(snapshot.clock_text));
-    snapshot.app_count = 1;
-    snapshot.apps[0] =
-        (StatusBarAppSnapshot){"app", "App", 1, true};
-    RenderStyle style = retro_surface_theme_get(RETRO_THEME_XP)->match_statusbar;
-    statusbar_set_snapshot(status, &snapshot);
-    statusbar_render(status, list, 6, 80, &style);
-
-    WindowManager wm = {
-        .active = 42,
-        .existing = 42,
-    };
-    StatusBarAction action = desktop_taskbar_hit_test(status, 5, 8);
-    TEST_REQUIRE(action.kind == STATUSBAR_ACTION_ACTIVATE_APP);
-    TEST_REQUIRE(action.instance_count == 1);
-    TEST_REQUIRE(action.focused);
-    desktop_taskbar_focus_window(&wm, 42);
-    desktop_taskbar_bring_to_front(&wm, 42);
-    TEST_REQUIRE(wm.minimized);
-    TEST_REQUIRE(wm.minimize_calls == 1);
-    TEST_REQUIRE(wm.bring_calls == 0);
-
-    snapshot.apps[0].focused = false;
-    statusbar_set_snapshot(status, &snapshot);
-    draw_list_reset(list);
-    statusbar_render(status, list, 6, 80, &style);
-    action = desktop_taskbar_hit_test(status, 5, 8);
-    TEST_REQUIRE(action.instance_count == 1);
-    TEST_REQUIRE(!action.focused);
-    desktop_taskbar_focus_window(&wm, 42);
-    desktop_taskbar_bring_to_front(&wm, 42);
-    TEST_REQUIRE(!wm.minimized);
-    TEST_REQUIRE(wm.restore_calls == 1);
-    TEST_REQUIRE(wm.focus_calls == 1);
-    TEST_REQUIRE(wm.bring_calls == 1);
-    TEST_REQUIRE(wm.active == 42);
-
-    snapshot.apps[0].instance_count = 0;
-    statusbar_set_snapshot(status, &snapshot);
-    draw_list_reset(list);
-    statusbar_render(status, list, 6, 80, &style);
-    action = desktop_taskbar_hit_test(status, 5, 8);
-    TEST_REQUIRE(action.instance_count == 0);
-    desktop_taskbar_focus_window(&wm, 42);
-    TEST_REQUIRE(wm.focus_calls == 2);
-    TEST_REQUIRE(wm.minimize_calls == 1);
-
-    draw_list_destroy(list);
-    statusbar_destroy(status);
-}
-
 static void test_launcher_menu_layout_contract(void) {
     LauncherMenuSnapshot snapshot = {0};
     snapshot.brand = "RetroDesk";
@@ -405,7 +302,6 @@ int main(void) {
     test_legacy_status_text();
     test_taskbar_wide_snapshot_and_hits();
     test_taskbar_responsive_layouts();
-    test_taskbar_window_bridge();
     test_launcher_menu_layout_contract();
     return 0;
 }

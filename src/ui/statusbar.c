@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ui/theme_surface.h"
+
 enum {
     STATUSBAR_TEXT_CAP = 256,
     STATUSBAR_LABEL_CAP = 48,
@@ -112,26 +114,40 @@ static bool add_region(StatusBar *sb, int x, int width,
     return true;
 }
 
-static RenderStyle menu_style(const RenderStyle *base, bool open) {
+static RenderStyle fallback_menu_style(const RenderStyle *base, bool open) {
     RenderStyle style = *base;
     style.bold = true;
     if (open) style.reverse = !style.reverse;
     return style;
 }
 
-static RenderStyle app_style(const RenderStyle *base,
-                             const StatusBarAppSnapshot *app) {
+static RenderStyle fallback_app_style(const RenderStyle *base,
+                                      const StatusBarAppSnapshot *app) {
     RenderStyle style = *base;
     if (app && app->instance_count > 0) style.bold = true;
     if (app && app->focused) style.reverse = !style.reverse;
     return style;
 }
 
-static RenderStyle clock_style(const RenderStyle *base) {
+static RenderStyle fallback_clock_style(const RenderStyle *base) {
     RenderStyle style = *base;
     style.bold = true;
     style.reverse = !style.reverse;
     return style;
+}
+
+static const RenderStyle *taskbar_app_style(
+    const RetroSurfaceTheme *surface, const RenderStyle *fallback_base,
+    const StatusBarAppSnapshot *app, RenderStyle *fallback) {
+    if (surface) {
+        if (app && app->focused) return &surface->taskbar_app_focused;
+        if (app && app->instance_count > 0) {
+            return &surface->taskbar_app_running;
+        }
+        return &surface->taskbar_app_idle;
+    }
+    *fallback = fallback_app_style(fallback_base, app);
+    return fallback;
 }
 
 static void render_snapshot(StatusBar *sb, DrawList *draw_list,
@@ -143,22 +159,32 @@ static void render_snapshot(StatusBar *sb, DrawList *draw_list,
     int content_limit = show_clock ? clock_separator_x : cols;
     int cursor = 0;
     bool compact = needs_compact_labels(sb, content_limit);
+    const RetroSurfaceTheme *surface =
+        retro_surface_theme_match_statusbar(style);
+    const RenderStyle *bar_style =
+        surface ? &surface->taskbar_base : style;
 
     sb->rendered_row = y;
     sb->rendered_cols = cols;
     sb->region_count = 0;
 
-    (void)draw_list_hline(draw_list, y, 0, cols, ' ', style);
+    (void)draw_list_hline(draw_list, y, 0, cols, ' ', bar_style);
 
     if (content_limit >= STATUSBAR_MENU_WIDTH) {
-        RenderStyle button = menu_style(style, sb->snapshot.menu_open);
-        (void)draw_list_text(draw_list, y, cursor, " Apps ", &button);
+        RenderStyle fallback = fallback_menu_style(
+            style, sb->snapshot.menu_open);
+        const RenderStyle *button = surface
+                                        ? (sb->snapshot.menu_open
+                                               ? &surface->taskbar_menu_open
+                                               : &surface->taskbar_menu)
+                                        : &fallback;
+        (void)draw_list_text(draw_list, y, cursor, " Apps ", button);
         (void)add_region(sb, cursor, STATUSBAR_MENU_WIDTH,
                          STATUSBAR_REGION_MENU, 0);
         cursor += STATUSBAR_MENU_WIDTH;
 
         if (cursor < content_limit) {
-            (void)draw_list_text(draw_list, y, cursor, "|", style);
+            (void)draw_list_text(draw_list, y, cursor, "|", bar_style);
             cursor += 2;
         }
     }
@@ -169,8 +195,11 @@ static void render_snapshot(StatusBar *sb, DrawList *draw_list,
         int width = (int)strlen(sb->labels[i]);
         if (cursor + width > content_limit) break;
 
-        RenderStyle button = app_style(style, &sb->snapshot.apps[i]);
-        (void)draw_list_text(draw_list, y, cursor, sb->labels[i], &button);
+        RenderStyle fallback = {0};
+        const RenderStyle *button =
+            taskbar_app_style(surface, style, &sb->snapshot.apps[i],
+                              &fallback);
+        (void)draw_list_text(draw_list, y, cursor, sb->labels[i], button);
         (void)add_region(sb, cursor, width, STATUSBAR_REGION_APP, i);
         cursor += width;
         if (cursor < content_limit) cursor++;
@@ -181,10 +210,13 @@ static void render_snapshot(StatusBar *sb, DrawList *draw_list,
                                  ? sb->snapshot.clock_text
                                  : "--:--:--";
         char clock_text[STATUSBAR_CLOCK_WIDTH + 1];
-        RenderStyle clock = clock_style(style);
+        RenderStyle fallback = fallback_clock_style(style);
+        const RenderStyle *clock =
+            surface ? &surface->taskbar_clock : &fallback;
         (void)snprintf(clock_text, sizeof(clock_text), " %.8s ", source);
-        (void)draw_list_text(draw_list, y, clock_separator_x, "|", style);
-        (void)draw_list_text(draw_list, y, clock_x, clock_text, &clock);
+        (void)draw_list_text(draw_list, y, clock_separator_x, "|",
+                             bar_style);
+        (void)draw_list_text(draw_list, y, clock_x, clock_text, clock);
     }
 }
 

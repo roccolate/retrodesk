@@ -26,8 +26,7 @@ enum {
     /* Visual hint: window is a transient popup (centered, no title-bar drag).
        Currently no runtime effect beyond a marker; reserved for v0.2. */
     WINDOW_FLAG_POPUP = 1u << 2,
-    /* Marker: window is owned by an app instance. The desktop uses it only to
-       skip the window when closing the shell via 'w'. No other side effect. */
+    /* Marker: window is owned by an app instance. */
     WINDOW_FLAG_APP_OWNED = 1u << 3,
 };
 
@@ -65,6 +64,13 @@ bool wm_cycle_focus(WindowManager *wm);
 WindowId wm_active_window(const WindowManager *wm);
 bool wm_window_exists(const WindowManager *wm, WindowId id);
 size_t wm_window_count(const WindowManager *wm);
+
+/* A minimized window remains alive with geometry and application state intact,
+   but is excluded from focus, input hit testing, modal routing, and rendering. */
+bool wm_minimize_window(WindowManager *wm, WindowId id);
+bool wm_restore_window(WindowManager *wm, WindowId id);
+bool wm_window_is_minimized(const WindowManager *wm, WindowId id);
+
 bool wm_move_active_window(WindowManager *wm, int dy, int dx);
 bool wm_resize_active_window(WindowManager *wm, int dh, int dw);
 bool wm_get_drag_preview(const WindowManager *wm, WindowId *id, int *y, int *x);

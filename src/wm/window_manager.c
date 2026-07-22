@@ -14,6 +14,7 @@ struct RetroWindow {
     char title[64];
     WindowFlags flags;
     bool is_active;
+    bool minimized;
     bool close_requested;
     DrawList *draw_list;
     WindowDrawCallback draw_cb;
@@ -63,11 +64,35 @@ static bool wm_reserve(WindowManager *wm, size_t want) {
     return true;
 }
 
+static bool window_is_visible(const RetroWindow *window) {
+    return window && !window->minimized && !window->close_requested;
+}
+
 static void wm_update_active_flags(WindowManager *wm) {
     if (!wm) return;
     for (size_t i = 0; i < wm->count; ++i) {
-        wm->windows[i]->is_active = (wm->windows[i]->id == wm->active_id);
+        RetroWindow *window = wm->windows[i];
+        window->is_active = window_is_visible(window) &&
+                            window->id == wm->active_id;
     }
+}
+
+static void wm_select_topmost_visible(WindowManager *wm) {
+    if (!wm) return;
+    RetroWindow *active = wm_find_window(wm, wm->active_id);
+    if (window_is_visible(active)) {
+        wm_update_active_flags(wm);
+        return;
+    }
+
+    wm->active_id = WINDOW_ID_INVALID;
+    for (size_t i = wm->count; i > 0; --i) {
+        RetroWindow *candidate = wm->windows[i - 1];
+        if (!window_is_visible(candidate)) continue;
+        wm->active_id = candidate->id;
+        break;
+    }
+    wm_update_active_flags(wm);
 }
 
 static void wm_clamp_window(WindowManager *wm, RetroWindow *window) {
@@ -110,14 +135,11 @@ static void wm_cleanup_closed(WindowManager *wm) {
         wm->count--;
     }
 
-    if (wm->active_id == WINDOW_ID_INVALID && wm->count > 0) {
-        wm->active_id = wm->windows[wm->count - 1]->id;
-    }
-    wm_update_active_flags(wm);
+    wm_select_topmost_visible(wm);
 }
 
 static bool window_contains(const RetroWindow *window, int y, int x) {
-    if (!window) return false;
+    if (!window_is_visible(window)) return false;
     if (y < window->y || y >= window->y + window->h) return false;
     if (x < window->x || x >= window->x + window->w) return false;
     return true;
@@ -129,7 +151,7 @@ static bool window_title_hit(const RetroWindow *window, int y, int x) {
 }
 
 static bool window_is_focusable(const RetroWindow *window) {
-    if (!window) return false;
+    if (!window_is_visible(window)) return false;
     return (window->flags & WINDOW_FLAG_FIXED) == 0;
 }
 
@@ -142,13 +164,15 @@ static RetroWindow *wm_top_window_at(WindowManager *wm, int y, int x) {
     return NULL;
 }
 
-/* Returns the topmost modal window, or NULL if none. The topmost modal
-   receives exclusive input until dismissed. */
+/* Returns the topmost visible modal window, or NULL if none. */
 static RetroWindow *wm_topmost_modal(const WindowManager *wm) {
     if (!wm) return NULL;
     for (size_t i = wm->count; i > 0; --i) {
         RetroWindow *window = wm->windows[i - 1];
-        if (window->flags & WINDOW_FLAG_MODAL) return window;
+        if (window_is_visible(window) &&
+            (window->flags & WINDOW_FLAG_MODAL)) {
+            return window;
+        }
     }
     return NULL;
 }
@@ -263,7 +287,12 @@ void wm_close_window(WindowManager *wm, WindowId id) {
 }
 
 void wm_focus_window(WindowManager *wm, WindowId id) {
-    if (!wm || wm_find_index(wm, id) < 0) return;
+    if (!wm) return;
+    RetroWindow *window = wm_find_window(wm, id);
+    if (!window || window->close_requested) return;
+    /* Explicit focus is also the recovery path for programmatic launches,
+       shutdown prompts, and taskbar restoration. */
+    window->minimized = false;
     wm->active_id = id;
     wm_update_active_flags(wm);
 }
@@ -271,7 +300,10 @@ void wm_focus_window(WindowManager *wm, WindowId id) {
 void wm_bring_to_front(WindowManager *wm, WindowId id) {
     if (!wm) return;
     int idx = wm_find_index(wm, id);
-    if (idx < 0 || (size_t)idx == wm->count - 1) return;
+    if (idx < 0 || !window_is_visible(wm->windows[idx]) ||
+        (size_t)idx == wm->count - 1) {
+        return;
+    }
 
     RetroWindow *window = wm->windows[idx];
     for (size_t i = (size_t)idx + 1; i < wm->count; ++i) {
@@ -282,7 +314,7 @@ void wm_bring_to_front(WindowManager *wm, WindowId id) {
 
 bool wm_cycle_focus(WindowManager *wm) {
     if (!wm || wm->count < 2) return false;
-    /* Do not cycle focus while a modal window is active. */
+    /* Do not cycle focus while a visible modal window is active. */
     if (wm_topmost_modal(wm)) return false;
 
     int idx = wm_find_index(wm, wm->active_id);
@@ -316,10 +348,46 @@ size_t wm_window_count(const WindowManager *wm) {
     return wm->count;
 }
 
+bool wm_minimize_window(WindowManager *wm, WindowId id) {
+    if (!wm || id == WINDOW_ID_INVALID) return false;
+    RetroWindow *window = wm_find_window(wm, id);
+    if (!window || window->minimized ||
+        (window->flags & (WINDOW_FLAG_FIXED | WINDOW_FLAG_MODAL)) != 0) {
+        return false;
+    }
+
+    window->minimized = true;
+    window->is_active = false;
+    if (window->id == wm->drag_window_id) {
+        wm->dragging = false;
+        wm->drag_window_id = WINDOW_ID_INVALID;
+        wm->drag_session_moved = false;
+    }
+    if (window->id == wm->active_id) {
+        wm->active_id = WINDOW_ID_INVALID;
+    }
+    wm_select_topmost_visible(wm);
+    return true;
+}
+
+bool wm_restore_window(WindowManager *wm, WindowId id) {
+    if (!wm || id == WINDOW_ID_INVALID) return false;
+    RetroWindow *window = wm_find_window(wm, id);
+    if (!window || !window->minimized) return false;
+    window->minimized = false;
+    wm_update_active_flags(wm);
+    return true;
+}
+
+bool wm_window_is_minimized(const WindowManager *wm, WindowId id) {
+    RetroWindow *window = wm_find_window(wm, id);
+    return window && window->minimized;
+}
+
 bool wm_move_active_window(WindowManager *wm, int dy, int dx) {
     if (!wm) return false;
     RetroWindow *active = wm_find_window(wm, wm->active_id);
-    if (!active) return false;
+    if (!window_is_visible(active)) return false;
     if (active->flags & WINDOW_FLAG_FIXED) return false;
     active->y += dy;
     active->x += dx;
@@ -330,7 +398,10 @@ bool wm_move_active_window(WindowManager *wm, int dy, int dx) {
 bool wm_resize_active_window(WindowManager *wm, int dh, int dw) {
     if (!wm) return false;
     RetroWindow *window = wm_find_window(wm, wm->active_id);
-    if (!window || (window->flags & WINDOW_FLAG_FIXED)) return false;
+    if (!window_is_visible(window) ||
+        (window->flags & WINDOW_FLAG_FIXED)) {
+        return false;
+    }
     int rows = 0;
     int cols = 0;
     renderer_get_screen_size(wm->renderer, &rows, &cols);
@@ -352,7 +423,7 @@ bool wm_resize_active_window(WindowManager *wm, int dh, int dw) {
 bool wm_get_drag_preview(const WindowManager *wm, WindowId *id, int *y, int *x) {
     if (!wm || !wm->dragging || wm->drag_window_id == WINDOW_ID_INVALID) return false;
     RetroWindow *drag = wm_find_window(wm, wm->drag_window_id);
-    if (!drag) return false;
+    if (!window_is_visible(drag)) return false;
     if (id) *id = drag->id;
     if (y) *y = drag->y;
     if (x) *x = drag->x;
@@ -415,7 +486,7 @@ static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
 
     if (wm->dragging && wm->drag_window_id != WINDOW_ID_INVALID && mouse->moved) {
         RetroWindow *drag = wm_find_window(wm, wm->drag_window_id);
-        if (drag) {
+        if (window_is_visible(drag)) {
             drag->y = mouse->y - wm->drag_off_y;
             drag->x = mouse->x - wm->drag_off_x;
             wm_clamp_window(wm, drag);
@@ -430,13 +501,11 @@ static void wm_handle_mouse(WindowManager *wm, const RetroMouseEvent *mouse) {
     if (wm->dragging && (mouse->button1_released || mouse->button1_clicked)) {
         if (wm->drag_session_moved) {
             wm->drag_no_motion_sessions = 0;
-        } else {
-            if (wm->drag_auto_degrade) {
-                wm->drag_no_motion_sessions++;
-                if (wm->drag_no_motion_sessions >= 3) {
-                    wm->drag_enabled = false;
-                    wm->drag_degraded = true;
-                }
+        } else if (wm->drag_auto_degrade) {
+            wm->drag_no_motion_sessions++;
+            if (wm->drag_no_motion_sessions >= 3) {
+                wm->drag_enabled = false;
+                wm->drag_degraded = true;
             }
         }
         wm->dragging = false;
@@ -479,7 +548,7 @@ bool wm_handle_event(WindowManager *wm, const RetroEvent *event) {
         RetroWindow *target = wm_find_window(wm, wm->active_id);
         RetroWindow *modal = wm_topmost_modal(wm);
         if (modal) target = modal;
-        if (target && target->event_cb) {
+        if (window_is_visible(target) && target->event_cb) {
             target->event_cb(target, event, target->user_data);
         }
         wm_cleanup_closed(wm);
@@ -496,7 +565,7 @@ void wm_render(WindowManager *wm, Renderer *renderer, const RetroTheme *theme) {
 
     for (size_t i = 0; i < wm->count; ++i) {
         RetroWindow *window = wm->windows[i];
-        if (!window || !window->draw_list) continue;
+        if (!window_is_visible(window) || !window->draw_list) continue;
 
         const RenderStyle *frame = &active_theme->window_frame_inactive;
         if (wm->dragging && window->id == wm->drag_window_id) {

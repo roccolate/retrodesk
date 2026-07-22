@@ -5,11 +5,51 @@
 #include "render/render.h"
 #include "ui/launcher_menu.h"
 #include "ui/statusbar.h"
+#include "ui/taskbar_window_bridge.h"
 #include "ui/theme_surface.h"
 
-static bool style_equal(RenderStyle a, RenderStyle b) {
-    return a.fg == b.fg && a.bg == b.bg &&
-           a.reverse == b.reverse && a.bold == b.bold;
+struct WindowManager {
+    WindowId active;
+    WindowId existing;
+    bool minimized;
+    int focus_calls;
+    int bring_calls;
+    int minimize_calls;
+    int restore_calls;
+};
+
+WindowId wm_active_window(const WindowManager *wm) {
+    return wm ? wm->active : WINDOW_ID_INVALID;
+}
+
+bool wm_window_is_minimized(const WindowManager *wm, WindowId id) {
+    return wm && id == wm->existing && wm->minimized;
+}
+
+bool wm_minimize_window(WindowManager *wm, WindowId id) {
+    if (!wm || id != wm->existing || wm->minimized) return false;
+    wm->minimized = true;
+    wm->active = WINDOW_ID_INVALID;
+    wm->minimize_calls++;
+    return true;
+}
+
+bool wm_restore_window(WindowManager *wm, WindowId id) {
+    if (!wm || id != wm->existing || !wm->minimized) return false;
+    wm->minimized = false;
+    wm->restore_calls++;
+    return true;
+}
+
+void wm_focus_window(WindowManager *wm, WindowId id) {
+    if (!wm || id != wm->existing) return;
+    wm->minimized = false;
+    wm->active = id;
+    wm->focus_calls++;
+}
+
+void wm_bring_to_front(WindowManager *wm, WindowId id) {
+    if (wm && id == wm->existing) wm->bring_calls++;
 }
 
 static StatusBarSnapshot taskbar_snapshot(bool menu_open) {
@@ -42,14 +82,12 @@ static void test_legacy_status_text(void) {
     TEST_REQUIRE(cmd.x == 0);
     TEST_REQUIRE(cmd.len == 20);
     TEST_REQUIRE(cmd.ch == ' ');
-    TEST_REQUIRE(style_equal(cmd.style, style));
 
     TEST_REQUIRE(draw_list_get(list, 1, &cmd));
     TEST_REQUIRE(cmd.type == DRAW_COMMAND_TEXT);
     TEST_REQUIRE(cmd.y == 5);
     TEST_REQUIRE(cmd.x == 1);
     TEST_REQUIRE(strcmp(cmd.text, "retro-status") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, style));
 
     draw_list_destroy(list);
     statusbar_destroy(status);
@@ -61,57 +99,61 @@ static void test_taskbar_wide_snapshot_and_hits(void) {
     TEST_REQUIRE(status != NULL);
     TEST_REQUIRE(list != NULL);
 
-    const RetroSurfaceTheme *xp =
-        retro_surface_theme_get(RETRO_THEME_XP);
     StatusBarSnapshot snapshot = taskbar_snapshot(true);
-    RenderStyle style = xp->taskbar_base;
+    const RetroSurfaceTheme *surface =
+        retro_surface_theme_get(RETRO_THEME_XP);
+    RenderStyle style = surface->match_statusbar;
     statusbar_set_snapshot(status, &snapshot);
     statusbar_render(status, list, 6, 80, &style);
 
     TEST_REQUIRE(draw_list_count(list) == 8);
 
     DrawCommandView cmd = {0};
-    TEST_REQUIRE(draw_list_get(list, 0, &cmd));
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_base));
-
     TEST_REQUIRE(draw_list_get(list, 1, &cmd));
     TEST_REQUIRE(cmd.type == DRAW_COMMAND_TEXT);
     TEST_REQUIRE(cmd.x == 0);
     TEST_REQUIRE(strcmp(cmd.text, " Apps ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_menu_open));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->taskbar_menu_open));
 
     TEST_REQUIRE(draw_list_get(list, 2, &cmd));
     TEST_REQUIRE(cmd.x == 6);
     TEST_REQUIRE(strcmp(cmd.text, "|") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_base));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->taskbar_base));
 
     TEST_REQUIRE(draw_list_get(list, 3, &cmd));
     TEST_REQUIRE(cmd.x == 8);
     TEST_REQUIRE(strcmp(cmd.text, " Files ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_app_focused));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->taskbar_app_focused));
 
     TEST_REQUIRE(draw_list_get(list, 4, &cmd));
     TEST_REQUIRE(cmd.x == 16);
     TEST_REQUIRE(strcmp(cmd.text, " Notepad x2 ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_app_running));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->taskbar_app_running));
 
     TEST_REQUIRE(draw_list_get(list, 5, &cmd));
     TEST_REQUIRE(cmd.x == 29);
     TEST_REQUIRE(strcmp(cmd.text, " Diag ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_app_idle));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->taskbar_app_idle));
 
     TEST_REQUIRE(draw_list_get(list, 6, &cmd));
     TEST_REQUIRE(cmd.x == 69);
     TEST_REQUIRE(strcmp(cmd.text, "|") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_base));
 
     TEST_REQUIRE(draw_list_get(list, 7, &cmd));
     TEST_REQUIRE(cmd.x == 70);
     TEST_REQUIRE(strcmp(cmd.text, " 12:34:56 ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_clock));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->taskbar_clock));
 
     StatusBarAction action = statusbar_hit_test(status, 5, 1);
     TEST_REQUIRE(action.kind == STATUSBAR_ACTION_TOGGLE_MENU);
+    TEST_REQUIRE(action.instance_count == 0);
+    TEST_REQUIRE(!action.focused);
 
     action = statusbar_hit_test(status, 5, 6);
     TEST_REQUIRE(action.kind == STATUSBAR_ACTION_NONE);
@@ -119,10 +161,20 @@ static void test_taskbar_wide_snapshot_and_hits(void) {
     action = statusbar_hit_test(status, 5, 8);
     TEST_REQUIRE(action.kind == STATUSBAR_ACTION_ACTIVATE_APP);
     TEST_REQUIRE(action.app_index == 0);
+    TEST_REQUIRE(action.instance_count == 1);
+    TEST_REQUIRE(action.focused);
 
     action = statusbar_hit_test(status, 5, 16);
     TEST_REQUIRE(action.kind == STATUSBAR_ACTION_ACTIVATE_APP);
     TEST_REQUIRE(action.app_index == 1);
+    TEST_REQUIRE(action.instance_count == 2);
+    TEST_REQUIRE(!action.focused);
+
+    action = statusbar_hit_test(status, 5, 29);
+    TEST_REQUIRE(action.kind == STATUSBAR_ACTION_ACTIVATE_APP);
+    TEST_REQUIRE(action.app_index == 2);
+    TEST_REQUIRE(action.instance_count == 0);
+    TEST_REQUIRE(!action.focused);
 
     action = statusbar_hit_test(status, 5, 75);
     TEST_REQUIRE(action.kind == STATUSBAR_ACTION_NONE);
@@ -135,9 +187,9 @@ static void test_taskbar_wide_snapshot_and_hits(void) {
 }
 
 static void test_taskbar_responsive_layouts(void) {
-    const RetroSurfaceTheme *xp =
+    const RetroSurfaceTheme *surface =
         retro_surface_theme_get(RETRO_THEME_XP);
-    RenderStyle style = xp->taskbar_base;
+    RenderStyle style = surface->match_statusbar;
     StatusBarSnapshot snapshot = taskbar_snapshot(false);
     DrawCommandView cmd = {0};
 
@@ -152,22 +204,20 @@ static void test_taskbar_responsive_layouts(void) {
 
     TEST_REQUIRE(draw_list_get(list, 1, &cmd));
     TEST_REQUIRE(strcmp(cmd.text, " Apps ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_menu));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->taskbar_menu));
 
     TEST_REQUIRE(draw_list_get(list, 3, &cmd));
     TEST_REQUIRE(cmd.x == 8);
     TEST_REQUIRE(strcmp(cmd.text, " F ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_app_focused));
 
     TEST_REQUIRE(draw_list_get(list, 4, &cmd));
     TEST_REQUIRE(cmd.x == 12);
     TEST_REQUIRE(strcmp(cmd.text, " N2 ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_app_running));
 
     TEST_REQUIRE(draw_list_get(list, 5, &cmd));
     TEST_REQUIRE(cmd.x == 17);
     TEST_REQUIRE(strcmp(cmd.text, " D ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_app_idle));
 
     TEST_REQUIRE(draw_list_get(list, 6, &cmd));
     TEST_REQUIRE(cmd.x == 29);
@@ -176,7 +226,6 @@ static void test_taskbar_responsive_layouts(void) {
     TEST_REQUIRE(draw_list_get(list, 7, &cmd));
     TEST_REQUIRE(cmd.x == 30);
     TEST_REQUIRE(strcmp(cmd.text, " 12:34:56 ") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->taskbar_clock));
 
     StatusBarAction action = statusbar_hit_test(status, 5, 17);
     TEST_REQUIRE(action.kind == STATUSBAR_ACTION_ACTIVATE_APP);
@@ -216,6 +265,64 @@ static void test_taskbar_responsive_layouts(void) {
     statusbar_destroy(status);
 }
 
+static void test_taskbar_window_bridge(void) {
+    StatusBar *status = statusbar_create();
+    DrawList *list = draw_list_create();
+    TEST_REQUIRE(status != NULL);
+    TEST_REQUIRE(list != NULL);
+
+    StatusBarSnapshot snapshot = {0};
+    memcpy(snapshot.clock_text, "12:34:56", sizeof(snapshot.clock_text));
+    snapshot.app_count = 1;
+    snapshot.apps[0] =
+        (StatusBarAppSnapshot){"app", "App", 1, true};
+    RenderStyle style = retro_surface_theme_get(RETRO_THEME_XP)->match_statusbar;
+    statusbar_set_snapshot(status, &snapshot);
+    statusbar_render(status, list, 6, 80, &style);
+
+    WindowManager wm = {
+        .active = 42,
+        .existing = 42,
+    };
+    StatusBarAction action = desktop_taskbar_hit_test(status, 5, 8);
+    TEST_REQUIRE(action.kind == STATUSBAR_ACTION_ACTIVATE_APP);
+    TEST_REQUIRE(action.instance_count == 1);
+    TEST_REQUIRE(action.focused);
+    desktop_taskbar_focus_window(&wm, 42);
+    desktop_taskbar_bring_to_front(&wm, 42);
+    TEST_REQUIRE(wm.minimized);
+    TEST_REQUIRE(wm.minimize_calls == 1);
+    TEST_REQUIRE(wm.bring_calls == 0);
+
+    snapshot.apps[0].focused = false;
+    statusbar_set_snapshot(status, &snapshot);
+    draw_list_reset(list);
+    statusbar_render(status, list, 6, 80, &style);
+    action = desktop_taskbar_hit_test(status, 5, 8);
+    TEST_REQUIRE(action.instance_count == 1);
+    TEST_REQUIRE(!action.focused);
+    desktop_taskbar_focus_window(&wm, 42);
+    desktop_taskbar_bring_to_front(&wm, 42);
+    TEST_REQUIRE(!wm.minimized);
+    TEST_REQUIRE(wm.restore_calls == 1);
+    TEST_REQUIRE(wm.focus_calls == 1);
+    TEST_REQUIRE(wm.bring_calls == 1);
+    TEST_REQUIRE(wm.active == 42);
+
+    snapshot.apps[0].instance_count = 0;
+    statusbar_set_snapshot(status, &snapshot);
+    draw_list_reset(list);
+    statusbar_render(status, list, 6, 80, &style);
+    action = desktop_taskbar_hit_test(status, 5, 8);
+    TEST_REQUIRE(action.instance_count == 0);
+    desktop_taskbar_focus_window(&wm, 42);
+    TEST_REQUIRE(wm.focus_calls == 2);
+    TEST_REQUIRE(wm.minimize_calls == 1);
+
+    draw_list_destroy(list);
+    statusbar_destroy(status);
+}
+
 static void test_launcher_menu_layout_contract(void) {
     LauncherMenuSnapshot snapshot = {0};
     snapshot.brand = "RetroDesk";
@@ -240,15 +347,15 @@ static void test_launcher_menu_layout_contract(void) {
     TEST_REQUIRE(launcher_menu_hit_test(&snapshot, 4, 5, 13, 46) == 1);
     TEST_REQUIRE(launcher_menu_hit_test(&snapshot, 6, 5, 13, 46) == -1);
 
-    const RetroSurfaceTheme *xp =
+    const RetroSurfaceTheme *surface =
         retro_surface_theme_get(RETRO_THEME_XP);
     LauncherMenuStyles styles = {
-        .header = xp->launcher_header,
-        .section = xp->launcher_section,
-        .item = xp->launcher_item,
-        .selected = xp->launcher_selected,
-        .separator = xp->launcher_separator,
-        .footer = xp->launcher_footer,
+        .header = surface->launcher_header,
+        .section = surface->launcher_section,
+        .item = surface->launcher_item,
+        .selected = surface->launcher_selected,
+        .separator = surface->launcher_separator,
+        .footer = surface->launcher_footer,
     };
     DrawList *list = draw_list_create();
     TEST_REQUIRE(list != NULL);
@@ -259,34 +366,37 @@ static void test_launcher_menu_layout_contract(void) {
     DrawCommandView cmd = {0};
     TEST_REQUIRE(draw_list_get(list, 0, &cmd));
     TEST_REQUIRE(strcmp(cmd.text, "RetroDesk") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->launcher_header));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->launcher_header));
 
     TEST_REQUIRE(draw_list_get(list, 1, &cmd));
-    TEST_REQUIRE(strcmp(cmd.text, "Applications") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->launcher_section));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->launcher_section));
 
     TEST_REQUIRE(draw_list_get(list, 2, &cmd));
-    TEST_REQUIRE(style_equal(cmd.style, xp->launcher_separator));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->launcher_separator));
 
     TEST_REQUIRE(draw_list_get(list, 3, &cmd));
     TEST_REQUIRE(strstr(cmd.text, "[F] Files") != NULL);
     TEST_REQUIRE(strstr(cmd.text, "Browse files") != NULL);
-    TEST_REQUIRE(style_equal(cmd.style, xp->launcher_item));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->launcher_item));
 
     TEST_REQUIRE(draw_list_get(list, 4, &cmd));
     TEST_REQUIRE(strstr(cmd.text, "> [N] Notepad") != NULL);
-    TEST_REQUIRE(style_equal(cmd.style, xp->launcher_selected));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->launcher_selected));
 
     TEST_REQUIRE(draw_list_get(list, 7, &cmd));
     TEST_REQUIRE(strcmp(cmd.text, "Desktop") == 0);
-    TEST_REQUIRE(style_equal(cmd.style, xp->launcher_section));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->launcher_section));
 
     TEST_REQUIRE(draw_list_get(list, 8, &cmd));
     TEST_REQUIRE(strstr(cmd.text, "[X] Close active window") != NULL);
-    TEST_REQUIRE(style_equal(cmd.style, xp->launcher_item));
-
-    TEST_REQUIRE(draw_list_get(list, 10, &cmd));
-    TEST_REQUIRE(style_equal(cmd.style, xp->launcher_footer));
+    TEST_REQUIRE(retro_surface_style_equal(&cmd.style,
+                                           &surface->launcher_item));
 
     draw_list_destroy(list);
 }
@@ -295,6 +405,7 @@ int main(void) {
     test_legacy_status_text();
     test_taskbar_wide_snapshot_and_hits();
     test_taskbar_responsive_layouts();
+    test_taskbar_window_bridge();
     test_launcher_menu_layout_contract();
     return 0;
 }

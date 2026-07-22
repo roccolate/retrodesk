@@ -96,15 +96,15 @@ real interfaces exist.
 
 ### KB-012 — Temporary bridge state is process-global within translation units
 
-**Area:** Launcher and move/resize  
-**Status:** partially resolved; remaining temporary debt
+**Area:** move/resize  
+**Status:** partially resolved; one remaining temporary bridge
 
-Maximize state is owned by each `RetroWindow`, and taskbar activation no longer
-uses bridge-local pending state. Remaining examples are Launcher selection and
-window-mode HUD state.
+Maximize state is owned by each `RetroWindow`; taskbar activation and Launcher
+state are explicitly Desktop-owned. The remaining example is window-mode HUD
+state in the operation-mode bridge.
 
 **Risk:** multiple Desktop instances or future embedding could still observe
-Launcher or operation-mode state not owned by the correct Desktop object.
+operation-mode state not owned by the correct Desktop object.
 
 **Removal trigger:** Desktop decomposition provides explicit per-instance state
 ownership in core/WM objects.

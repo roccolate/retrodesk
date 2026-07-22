@@ -58,6 +58,8 @@ bool desktop_dispatch_event_for_test(Desktop *desktop,
 RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
                                                 const char *app_id);
 bool desktop_shutdown_pending_for_test(const Desktop *desktop);
+bool desktop_launcher_open_for_test(const Desktop *desktop);
+int desktop_launcher_selected_for_test(const Desktop *desktop);
 #endif
 void desktop_shutdown(Desktop *desktop);
 

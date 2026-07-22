@@ -10,7 +10,9 @@
 #include "core/desktop_chrome.h"
 #include "apps/apps.h"
 #include "core/key_chord.h"
+#include "ui/launcher_menu.h"
 #include "ui/statusbar.h"
+#include "ui/theme_surface.h"
 #include "wm/window_manager.h"
 
 typedef struct RunningApp {
@@ -28,6 +30,8 @@ typedef enum LauncherAction {
 
 typedef struct LauncherItem {
     const char *label;
+    const char *detail;
+    char accelerator;
     LauncherAction action;
 } LauncherItem;
 
@@ -69,12 +73,36 @@ struct Desktop {
 };
 
 static const LauncherItem k_launcher_items[] = {
-    {"Launch File Manager", LAUNCHER_ACTION_FILEMANAGER},
-    {"Launch Notepad", LAUNCHER_ACTION_NOTEPAD},
-    {"Launch Diagnostics", LAUNCHER_ACTION_TERMINAL},
-    {"Close Active Window", LAUNCHER_ACTION_CLOSE_ACTIVE},
-    {"Close Launcher", LAUNCHER_ACTION_CLOSE_MENU},
+    {"Files", "Browse files", 'F', LAUNCHER_ACTION_FILEMANAGER},
+    {"Notepad", "Edit text", 'N', LAUNCHER_ACTION_NOTEPAD},
+    {"Diagnostics", "Runtime status", 'D', LAUNCHER_ACTION_TERMINAL},
+    {"Close active window", "Ctrl+W", 'X', LAUNCHER_ACTION_CLOSE_ACTIVE},
+    {"Close menu", "Esc", 'Q', LAUNCHER_ACTION_CLOSE_MENU},
 };
+
+static LauncherMenuSnapshot desktop_launcher_snapshot(
+    const Desktop *desktop) {
+    LauncherMenuSnapshot snapshot = {0};
+    snapshot.brand = "RetroDesk";
+    snapshot.section_label = "Applications";
+    snapshot.item_count =
+        sizeof(k_launcher_items) / sizeof(k_launcher_items[0]);
+    if (snapshot.item_count > LAUNCHER_MENU_MAX_ITEMS) {
+        snapshot.item_count = LAUNCHER_MENU_MAX_ITEMS;
+    }
+    snapshot.primary_count = snapshot.item_count < 3
+                                 ? snapshot.item_count
+                                 : 3;
+    snapshot.selected = desktop ? desktop->launcher.selected : 0;
+    for (size_t i = 0; i < snapshot.item_count; ++i) {
+        snapshot.items[i] = (LauncherMenuItemView){
+            k_launcher_items[i].label,
+            k_launcher_items[i].detail,
+            k_launcher_items[i].accelerator,
+        };
+    }
+    return snapshot;
+}
 
 typedef struct TaskbarCatalogItem {
     const char *app_id;
@@ -239,54 +267,112 @@ static void desktop_launcher_execute(Desktop *desktop, LauncherAction action) {
     desktop_request_redraw(desktop);
 }
 
-static void launcher_draw(RetroWindow *window, DrawList *draw_list, void *user_data) {
-    (void)window;
+static void launcher_draw(RetroWindow *window, DrawList *draw_list,
+                          void *user_data) {
     Desktop *desktop = (Desktop *)user_data;
-    if (!desktop) return;
+    if (!desktop || !window || !draw_list) return;
 
-    const RenderStyle *text = &desktop->theme->launcher_text;
-    const RenderStyle *selected = &desktop->theme->launcher_selected;
-
-    draw_list_text(draw_list, 1, 2, "Launcher (non-blocking)", text);
-    draw_list_text(draw_list, 2, 2,
-                   "w/s or j/k to move, Enter to execute, Esc to close", text);
-
-    size_t count = sizeof(k_launcher_items) / sizeof(k_launcher_items[0]);
-    for (size_t i = 0; i < count; ++i) {
-        const RenderStyle *row = ((int)i == desktop->launcher.selected) ? selected : text;
-        draw_list_text(draw_list, 4 + (int)i, 3, k_launcher_items[i].label, row);
-    }
+    int height = 0;
+    int width = 0;
+    retro_window_get_geometry(window, NULL, NULL, &height, &width);
+    LauncherMenuSnapshot snapshot = desktop_launcher_snapshot(desktop);
+    const RetroSurfaceTheme *surface =
+        retro_surface_theme_get(desktop->config.theme_kind);
+    LauncherMenuStyles styles = {
+        .header = surface->launcher_header,
+        .section = surface->launcher_section,
+        .item = surface->launcher_item,
+        .selected = surface->launcher_selected,
+        .separator = surface->launcher_separator,
+        .footer = surface->launcher_footer,
+    };
+    launcher_menu_render_styled(&snapshot, draw_list, height, width, &styles);
 }
 
-static void launcher_event(RetroWindow *window, const RetroEvent *event, void *user_data) {
-    (void)window;
-    Desktop *desktop = (Desktop *)user_data;
-    if (!desktop || !event || event->type != RETRO_EVENT_KEY) return;
+static void launcher_select(Desktop *desktop,
+                            const LauncherMenuSnapshot *snapshot,
+                            int target) {
+    if (!desktop || !snapshot) return;
+    int selected = launcher_menu_normalize_selection(snapshot, target);
+    if (selected < 0 || selected == desktop->launcher.selected) return;
+    desktop->launcher.selected = selected;
+    desktop_request_redraw(desktop);
+}
 
+static void launcher_execute_selected(Desktop *desktop) {
+    if (!desktop) return;
+    LauncherMenuSnapshot snapshot = desktop_launcher_snapshot(desktop);
+    int selected = launcher_menu_normalize_selection(
+        &snapshot, desktop->launcher.selected);
+    if (selected < 0 || (size_t)selected >= snapshot.item_count) return;
+    desktop_launcher_execute(desktop, k_launcher_items[selected].action);
+}
+
+static void launcher_event(RetroWindow *window, const RetroEvent *event,
+                           void *user_data) {
+    Desktop *desktop = (Desktop *)user_data;
+    if (!desktop || !window || !event) return;
+
+    LauncherMenuSnapshot snapshot = desktop_launcher_snapshot(desktop);
+    if (launcher_menu_count(&snapshot) == 0) return;
+
+    if (event->type == RETRO_EVENT_MOUSE) {
+        const RetroMouseEvent *mouse = &event->data.mouse;
+        if (!mouse->has_local_coordinates) return;
+        int height = 0;
+        int width = 0;
+        retro_window_get_geometry(window, NULL, NULL, &height, &width);
+        int hit = launcher_menu_hit_test(&snapshot, mouse->local_y,
+                                         mouse->local_x, height, width);
+        if (hit < 0) return;
+        if (mouse->moved || mouse->button1_pressed ||
+            mouse->button1_clicked) {
+            launcher_select(desktop, &snapshot, hit);
+        }
+        if (mouse->button1_clicked) launcher_execute_selected(desktop);
+        return;
+    }
+
+    if (event->type != RETRO_EVENT_KEY) return;
     int key = event->data.key.key_code;
     unsigned char ch = event->data.key.ascii;
-    size_t count = sizeof(k_launcher_items) / sizeof(k_launcher_items[0]);
-    if (count == 0) return;
 
-    if (key == 27 || ch == 'q') {
+    if (key == RETRO_KEY_ESC || ch == 'q' || ch == 'Q') {
         desktop_launcher_close(desktop);
         return;
     }
-
-    if (ch == 'w' || ch == 'k' || ch == 'W' || ch == 'K') {
-        desktop->launcher.selected--;
-        if (desktop->launcher.selected < 0) desktop->launcher.selected = (int)count - 1;
+    if (key == RETRO_KEY_UP || ch == 'w' || ch == 'W' ||
+        ch == 'k' || ch == 'K') {
+        launcher_select(desktop, &snapshot,
+                        launcher_menu_move_selection(
+                            &snapshot, desktop->launcher.selected, -1));
+        return;
+    }
+    if (key == RETRO_KEY_DOWN || ch == 's' || ch == 'S' ||
+        ch == 'j' || ch == 'J') {
+        launcher_select(desktop, &snapshot,
+                        launcher_menu_move_selection(
+                            &snapshot, desktop->launcher.selected, 1));
+        return;
+    }
+    if (key == RETRO_KEY_HOME) {
+        launcher_select(desktop, &snapshot, 0);
+        return;
+    }
+    if (key == RETRO_KEY_END) {
+        launcher_select(desktop, &snapshot,
+                        (int)launcher_menu_count(&snapshot) - 1);
         return;
     }
 
-    if (ch == 's' || ch == 'j' || ch == 'S' || ch == 'J') {
-        desktop->launcher.selected = (desktop->launcher.selected + 1) % (int)count;
+    int accelerator = launcher_menu_find_accelerator(&snapshot, ch);
+    if (accelerator >= 0) {
+        launcher_select(desktop, &snapshot, accelerator);
+        launcher_execute_selected(desktop);
         return;
     }
-
-    if (key == '\n' || key == '\r' || ch == ' ') {
-        LauncherAction action = k_launcher_items[desktop->launcher.selected].action;
-        desktop_launcher_execute(desktop, action);
+    if (key == RETRO_KEY_LF || key == RETRO_KEY_CR || ch == ' ') {
+        launcher_execute_selected(desktop);
     }
 }
 
@@ -296,19 +382,23 @@ static void desktop_launcher_open(Desktop *desktop) {
     int rows = 0;
     int cols = 0;
     renderer_get_screen_size(desktop->renderer, &rows, &cols);
+    desktop->launcher.selected = 0;
+    LauncherMenuSnapshot snapshot = desktop_launcher_snapshot(desktop);
 
-    int h = 12;
-    int w = 52;
+    int h = launcher_menu_preferred_height(&snapshot);
+    int w = LAUNCHER_MENU_PREFERRED_WIDTH;
     if (h > rows - 1) h = rows - 1;
     if (w > cols) w = cols;
-    if (h < 6 || w < 20) return;
+    if (h < 6 || w < LAUNCHER_MENU_MIN_WIDTH) return;
 
+    int y = rows - 1 - h;
+    if (y < 0) y = 0;
     RetroWindowSpec spec = {
         .height = h,
         .width = w,
-        .y = (rows - h) / 2,
-        .x = (cols - w) / 2,
-        .title = "Launcher",
+        .y = y,
+        .x = 0,
+        .title = "RetroDesk",
         .flags = WINDOW_FLAG_MODAL | WINDOW_FLAG_POPUP | WINDOW_FLAG_FIXED,
         .draw_cb = launcher_draw,
         .event_cb = launcher_event,
@@ -319,7 +409,6 @@ static void desktop_launcher_open(Desktop *desktop) {
     if (wid == WINDOW_ID_INVALID) return;
 
     desktop->launcher.open = true;
-    desktop->launcher.selected = 0;
     desktop->launcher.window_id = wid;
     wm_focus_window(desktop->wm, wid);
     wm_bring_to_front(desktop->wm, wid);
@@ -1007,6 +1096,14 @@ RetroAppInstance *desktop_app_instance_for_test(Desktop *desktop,
 
 bool desktop_shutdown_pending_for_test(const Desktop *desktop) {
     return desktop && desktop->shutdown_requested;
+}
+
+bool desktop_launcher_open_for_test(const Desktop *desktop) {
+    return desktop && desktop->launcher.open;
+}
+
+int desktop_launcher_selected_for_test(const Desktop *desktop) {
+    return desktop ? desktop->launcher.selected : -1;
 }
 
 int desktop_run(Desktop *desktop) {

@@ -1,144 +1,414 @@
 # Architecture
 
+> Current against `main` at the 2026-07-22 project snapshot. Temporary bridge
+> architecture is described honestly; proposed changes in open PRs are not
+> treated as integrated.
+
+## System Shape
+
+RetroDesk is a hosted terminal desktop runtime. The Desktop owns the process-level
+services and coordinates one event loop. Applications do not own platform input
+loops and do not draw directly to curses, ANSI, PDCurses, or a native console.
+
+```text
+platform input
+      |
+      v
+ normalized RetroEvent
+      |
+      v
+ Desktop global routing --> taskbar / Launcher / window commands
+      |
+      v
+ Window Manager routing --> focused or targeted hosted app
+      |
+      v
+ app state changes / close / redraw request
+      |
+      v
+ one dirty-frame render --> one renderer flush
+```
+
 ## Layers
 
-- `core`: CLI parsing, desktop lifecycle, global commands, shared services,
-  runtime state, UTF-8 helpers, and the in-process clipboard.
-- `wm`: window collection, z-order, focus, drag, move/resize, modal routing, and
-  close lifecycle.
-- `app`: app registry and app lifecycle contract.
-- `render`: drawing abstraction, curses/ANSI adapters, draw lists, and the
-  single-frame-flush policy.
-- `platform`: backend initialization and normalized native event translation.
-- `ui`: reusable widgets operating on internal abstractions, including the
-  interactive statusbar/taskbar and UTF-8 editor widgets.
-- `storage`: file-app storage contract and platform adapters.
-- `apps`: built-in hosted apps implemented through the app runtime.
-- `theme`: visual tokens consumed by `wm`, `ui`, and apps.
+### `core`
 
-## Event Flow
+Owns:
 
-1. Optional app services receive one non-blocking, budgeted callback from the
-   single Desktop loop.
-2. `platform_poll_event()` returns a normalized `RetroEvent`.
-3. `core` handles unambiguous global commands such as function keys and control
-   chords.
-4. Taskbar mouse hit testing can consume a click before window routing.
-5. `wm_handle_event()` routes remaining events to the focused or targeted
-   window.
-6. App callbacks update their state and may request close or redraw.
-7. Desktop cleanup reconciles app requests with window existence and app
-   `can_close` policy.
+- CLI result handling;
+- Desktop create/run/shutdown lifecycle;
+- process-level services and runtime state;
+- coordinated global commands and shutdown negotiation;
+- Desktop-owned clipboard;
+- UTF-8 helpers and normalized core event contracts;
+- running-app table and app/window association;
+- budgeted app-service scheduling.
 
-Printable keys and ordinary `Tab` events belong to the focused application.
-Global routing must not steal editor text.
+`core/desktop.c` is currently too concentrated and remains an explicit
+refactoring target.
 
-## Render Flow
+### `platform`
 
-1. `core` decides whether a frame is dirty.
-2. `renderer_clear()` starts the frame.
-3. `wm_render()` asks windows/apps to append draw commands.
-4. The overlay draw list renders the interactive taskbar after app windows.
-5. `renderer_flush()` is called once at the end of the tick.
+Owns:
 
-The bottom bar is still implemented by the reusable `StatusBar` widget, but its
-snapshot mode is an interactive taskbar with app state, hit regions, instance
-counts, and clock.
+- curses/PDCurses and raw-TTY input initialization;
+- conversion from backend-native events into `RetroEvent`;
+- capability reporting;
+- terminal mode capture/restoration;
+- backend-specific mouse, resize, and modifier behavior.
 
-## App Lifecycle
+Platform-native types do not cross into public domain headers.
 
-1. The app descriptor is resolved from the registry.
-2. Required capabilities are checked before launch.
-3. An app instance and owned resource-path copy are allocated.
-4. The app-owned window is created.
-5. The descriptor `create` callback acquires app state.
-6. Any failure after `create` begins invokes the matching `destroy` path.
-7. The desktop owns the running-app slot; the app owns its private state.
-8. Close requests pass through `can_close` before the window is removed.
+### `render`
 
-This allows Notepad to defer `Ctrl+W` while it displays Save/Discard/Cancel.
+Owns:
+
+- the backend-neutral `DrawList` command model;
+- render contexts and backend dispatch;
+- curses/PDCurses drawing;
+- ANSI frame construction and diffing;
+- the only backend execution and frame-flush path.
+
+Windows, apps, and widgets append commands. They never call backend drawing or
+flush APIs directly.
+
+### `wm`
+
+Owns:
+
+- window allocation and destruction;
+- geometry, z-order, focus, active state, and hit testing;
+- modal routing;
+- capability-gated drag;
+- keyboard movement/resizing primitives;
+- minimized-window visibility/input/focus policy;
+- draw lists associated with windows.
+
+Maximize/restore geometry currently uses a header-only state extension and
+Desktop-private bridge rather than final native Window Manager ownership. This is
+integrated behavior but accepted temporary architecture.
+
+### `app`
+
+Owns:
+
+- descriptor registration and lookup;
+- capability checks;
+- lifecycle dispatch;
+- close-result semantics;
+- optional service callback dispatch;
+- app-instance state helpers.
+
+### `apps`
+
+Contains hosted built-in applications:
+
+- File Manager;
+- Notepad;
+- Diagnostics.
+
+Apps may use high-level runtime and storage interfaces. They may not poll the
+platform, start nested loops, call renderer flush, or bypass `retro_fs`.
+
+### `ui`
+
+Owns reusable presentation and interaction components:
+
+- UTF-8 text input and text buffer;
+- scroll list, buttons, dialogs, menu bar, progress bar, and tabs;
+- status bar/taskbar;
+- Launcher menu presentation;
+- theme and desktop-surface tokens;
+- move/resize HUD;
+- temporary Desktop-private integration bridges.
+
+### `storage`
+
+Defines `retro_fs`, the platform-neutral filesystem/text boundary. Integrated
+adapters are:
+
+- `retro_fs_posix.c`;
+- `retro_fs_win32.c`;
+- `retro_fs_djgpp.c`.
+
+Apps do not assign native meaning to the adapter-neutral version token.
+
+## Event Loop
+
+One Desktop loop performs this sequence:
+
+1. Invoke each active app service once with a bounded work budget.
+2. Reconcile app close requests and global-shutdown state.
+3. Poll one normalized platform event with the current timeout policy.
+4. Route global key/mouse commands that are unambiguous.
+5. Route taskbar mouse actions before ordinary window hit testing.
+6. Route remaining events through the Window Manager.
+7. Reconcile app/window lifecycle again.
+8. Refresh taskbar/status state.
+9. Render only when the frame is marked dirty.
+
+Printable text, ordinary `Tab`, and unclaimed function keys belong to the focused
+application. Global routing must not steal editor input.
 
 ## App Service Policy
 
-Apps that own asynchronous resources may expose `on_service`. Desktop invokes
-that callback from the ordinary main loop with an 8 KiB work budget. A service
-must never block, poll input, render directly, or flush a backend. Returning
-`RETRO_APP_SERVICE_REDRAW` only marks the frame dirty. While at least one service
-is active, the platform-event wait is capped at 16 ms; apps without services keep
-the configured timeout. This is the foundation for PTY, network, or subprocess
-adapters without introducing worker-owned UI state or a nested event loop.
+An app descriptor may expose `on_service` for asynchronous resources.
+
+- Desktop invokes it once per ordinary loop iteration.
+- The current work budget is 8192 bytes/units per callback.
+- An active service caps event polling at 16 ms.
+- A service returns idle or redraw intent.
+- A service does not poll platform input, render, flush, block indefinitely, or
+  create another owner thread/loop for UI state.
+
+The policy is intentionally simple O(N). Fairness/readiness/backpressure changes
+should be driven by the first measured PTY/network workload rather than by
+speculation.
+
+## Global Input Routing
+
+Current global commands:
+
+- `F1`/`F10`: Launcher;
+- `F6`: focus cycle;
+- `F8`: maximize/unmaximize;
+- `F9`: keyboard move/resize mode;
+- `Ctrl+W`: active app close request;
+- `Ctrl+Q`: coordinated global shutdown.
+
+`F2` remains application-local so File Manager Rename is not stolen by Desktop.
+
+## Window State Contracts
+
+### Focus and z-order
+
+Only eligible visible windows participate in focus cycling. Bringing a window to
+front does not bypass modal policy. Fixed desktop chrome is not treated as an
+ordinary movable application surface.
+
+### Minimize
+
+A minimized window:
+
+- remains allocated and retains its app instance and geometry;
+- is excluded from rendering;
+- is excluded from keyboard dispatch and mouse hit testing;
+- cannot receive drag or participate in modal routing;
+- is excluded from active-window selection and `F6` cycling;
+- remains part of shutdown and close ownership.
+
+Fixed and modal windows reject minimize. Explicit focus restores a minimized
+window, preserving single-instance launch and deferred-close recovery behavior.
+
+### Maximize
+
+For an ordinary active window:
+
+- maximization records its exact restore geometry;
+- maximized geometry is `(0, 0)` with full terminal width and usable height above
+  the taskbar;
+- terminal resize refreshes maximized geometry;
+- minimizing does not discard maximized state;
+- taskbar restore reapplies current maximized geometry;
+- movement and resizing are rejected until unmaximized;
+- fixed/modal windows reject the operation.
+
+Input mappings are `F8` and active title-bar double click.
+
+### Keyboard move/resize mode
+
+`F9` targets the current active ordinary window. The active frame uses the
+existing operation/drag theme token and an overlay HUD displays MOVE/RESIZE,
+geometry, and controls.
+
+- arrows adjust position or size;
+- `Tab` toggles MOVE/RESIZE;
+- `Enter`, `F9`, or `Esc` finish;
+- focus change cancels the mode;
+- fixed/no-window and maximized cases show a short explanation rather than
+  leaving a stuck mode.
+
+## Render Flow
+
+A dirty frame is rendered as:
+
+1. `renderer_clear()`;
+2. Window Manager renders each visible window using the selected theme;
+3. app callbacks append content commands into their window draw lists;
+4. Desktop renders taskbar and operation HUD into one overlay draw list;
+5. renderer executes the overlay;
+6. `renderer_flush()` runs exactly once.
+
+The operation-mode bridge may copy the immutable selected theme for one frame and
+replace only the active-frame token with `window_frame_drag`. It does not mutate
+the authoritative theme catalog.
+
+## Theme Model
+
+`RetroTheme` defines core window/body/app tokens. `RetroSurfaceTheme` defines
+explicit desktop-surface states for:
+
+- taskbar base;
+- Apps normal/open;
+- app idle/running/focused;
+- clock;
+- Launcher header/section/item/selected/separator/footer.
+
+XP, Hacker, Amiga, and Win31 share the interaction contract but use distinct
+surface identities. Unknown/custom combinations have deterministic fallback
+styles.
 
 ## Taskbar Model
 
-The desktop builds a snapshot from the running app table:
+Desktop builds a snapshot containing:
 
-- pinned app id and label;
-- number of running instances;
-- whether one instance owns focus;
-- whether the Launcher is open;
-- current clock text.
+- fixed catalog app id/label;
+- instance count;
+- focused state;
+- Launcher-open state;
+- clock text.
 
-The widget formats and renders that snapshot, records clickable regions, and
-returns actions without directly accessing Window Manager internals. Desktop
-code performs launch, focus, or instance cycling.
+The StatusBar widget:
+
+- chooses full or compact labels based on available width;
+- appends the exact draw commands;
+- records mouse regions from rendered widths;
+- returns actions without directly owning app or window lifecycle.
+
+Desktop translates taskbar actions:
+
+- zero instances -> launch;
+- running background -> focus/raise;
+- focused app -> minimize active instance;
+- minimized -> restore/focus/raise;
+- multiple instances -> deterministic cycle.
+
+Current limitation: the catalog is fixed and there is no overflow controller for
+a future larger app set.
+
+## Launcher Model
+
+The Launcher is a modal fixed popup anchored bottom-left above the taskbar. It
+uses a pure menu layout/presentation contract and a Desktop-private adapter to the
+legacy Launcher callbacks.
+
+It groups Applications and Desktop actions, supports responsive descriptions,
+keyboard navigation/accelerators, and mouse row activation. It remains in the
+single event loop and never owns a blocking menu loop.
+
+## App Lifecycle
+
+1. Resolve the descriptor.
+2. Verify required capabilities.
+3. Allocate an app instance and copy an optional resource path.
+4. Create the app-owned window.
+5. Invoke `create` to acquire private state.
+6. On failure after `create` begins, invoke matching `destroy` rollback.
+7. Associate app instance and window in Desktop's running-app table.
+8. Route normalized events and DrawList rendering.
+9. Route close through `RetroCloseResult`/`can_close` policy.
+10. Destroy app state, close the window, and free runtime-owned resources.
+
+Current API debt: `app_launch()` returns `NULL` both for failure and for the
+single-instance policy case where an existing instance was focused.
+
+## Close and Shutdown
+
+`Ctrl+W` requests close of the active app. An app may allow, defer, or cancel.
+Notepad uses deferred close to show Save/Discard/Cancel in app state without a
+nested loop.
+
+`Ctrl+Q` is transactional:
+
+- apps are asked in sequence;
+- clean authorizations do not destroy windows immediately;
+- one deferred app receives focus;
+- cancellation resets all earlier authorizations;
+- successful completion commits all closes together.
 
 ## Text and Unicode Model
 
 `TextBuffer` stores logical lines as UTF-8 byte arrays. Cursor and selection
-columns are byte offsets for storage/API compatibility, with these invariants:
+columns are byte offsets for storage/API compatibility.
 
-- every public mutation normalizes offsets to valid codepoint boundaries;
+Invariants:
+
+- public mutations normalize offsets to codepoint boundaries;
 - Left/Right, Backspace, and Delete operate on complete codepoints;
-- vertical navigation preserves terminal display columns;
-- rendering converts byte ranges to terminal cells;
-- soft Word Wrap creates visual rows only and never rewrites logical text;
-- Find returns byte-accurate ranges that become ordinary selections.
+- vertical movement preserves terminal display columns;
+- rendering converts byte ranges to cells;
+- selection may span lines;
+- undo/redo restores text and cursor boundaries;
+- soft wrap creates visual rows only;
+- Find returns byte-accurate ranges used as normal selections.
 
-The shared clipboard accepts validated UTF-8 and is process-local. It is a core
-service so multiple Notepad instances can exchange text without platform-native
-clipboard dependencies.
+The clipboard is a Desktop-owned, validated UTF-8 process service. Native system
+clipboard integration is not part of the current contract.
 
 ## Storage Boundary
 
-Apps call `retro_fs` rather than POSIX APIs. The active POSIX adapter owns path,
-listing, validation, creation, rename, stat/version, and atomic-write details.
-This prevents filesystem assumptions from leaking into app and widget code.
+File Manager and Notepad call `retro_fs`. The adapters own:
 
-## Dependency Rules
+- path representation and native conversion;
+- stat and optimistic-concurrency identity;
+- deterministic bounded listing;
+- text validation;
+- create/mkdir/rename semantics;
+- replacement strategy and platform durability limits.
 
-- `core` depends on interfaces from `wm`, `app`, `render`, `platform`, and `ui`.
-- `wm` depends on render/event contracts, not backend internals.
-- `app` depends on runtime interfaces and event/render contracts.
-- `apps` depend on app/runtime, reusable UI, core services, and high-level
-  storage contracts.
-- `ui` may use shared UTF-8 helpers but not platform-native terminal types.
-- `storage` adapters own OS-specific filesystem details.
-- `platform` and `render` may use backend-specific internals.
-
-## Modal Policy
-
-Modals are window flags or app state rendered through the main event loop. There
-are no nested blocking event loops. Save As, Find, File Manager naming prompts,
-and dirty-document confirmation all follow this rule.
+POSIX and Win32 have native replacement primitives with different APIs. DJGPP
+uses a same-directory temporary plus backup/restore transaction because DOS has
+no universal true atomic-replace syscall.
 
 ## Ownership Policy
 
-- `core` owns process-level runtime and service instances.
-- `wm` owns windows and window draw lists.
-- App runtime owns app instance allocation and lifecycle dispatch.
+- Desktop owns process-level runtime services and running-app associations.
+- Window Manager owns windows and their draw lists.
+- App runtime owns descriptor dispatch; Desktop owns instance allocation.
 - Each app owns and destroys its private state.
-- Clipboard data is owned by the shared core service.
+- Clipboard data is owned by the Desktop clipboard service.
 - Storage path objects have explicit init/destroy ownership.
+- Themes are immutable catalogs borrowed by runtime consumers.
+
+## Dependency Rules
+
+- `core` consumes high-level interfaces from other layers and owns orchestration.
+- `wm` depends on render/event contracts, not backend internals.
+- `app` depends on normalized lifecycle/event/render contracts.
+- `apps` depend on app runtime, reusable UI, core services, and `retro_fs`.
+- `ui` may use core UTF-8/event contracts but not backend-native terminal types.
+- `storage` adapters own OS filesystem details.
+- `platform` and `render` own backend-native types and calls.
+- No layer other than render executes a backend draw/flush operation.
+
+## Temporary Bridge Architecture
+
+To deliver desktop polish without prematurely widening public APIs, `statusbar.h`
+includes private adapters only when compiled through `desktop.c`. Macro remapping
+redirects selected WM/statusbar operations to:
+
+- taskbar window bridge;
+- Launcher chrome bridge;
+- maximize bridge;
+- move/resize bridge.
+
+This preserves ordinary widget/WM link contracts for unrelated tests but is not
+the desired final architecture. Bridge-local static state and the bounded
+maximize catalog must become per-Desktop/per-WM owned state during Desktop
+decomposition.
+
+See [KNOWN_ISSUES.md](KNOWN_ISSUES.md), especially KB-011 and KB-012.
 
 ## Current Product Slice
 
-The complete product slice is Linux/POSIX:
+The runtime and native storage implementations exist for POSIX, Win32, and
+DJGPP, but maturity claims differ:
 
-- File Manager consumes directory, create, rename, and open contracts.
-- Notepad consumes UTF-8 read, atomic save, and version-conflict contracts.
-- Taskbar and portable input behavior are shared runtime features.
-- Diagnostics is hosted but intentionally does not provide a shell.
+- Linux/ncurses is the primary development/product profile;
+- Windows/PDCurses has strict automated runtime/storage coverage but incomplete
+  current manual interaction evidence;
+- DOS has a validated reduced native profile with explicit filesystem and runtime
+  limits;
+- raw-TTY/ANSI and macOS remain experimental evidence profiles.
 
-Windows builds validate portable layers through PDCurses and tests, but native
-storage or deterministic app gating is still required before equivalent file-app
-support can be claimed.
+See [PORTABILITY.md](PORTABILITY.md) for the authoritative claim matrix.

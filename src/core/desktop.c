@@ -813,7 +813,7 @@ static void desktop_render_frame(Desktop *desktop) {
 }
 
 static void desktop_activate_taskbar_app(
-    Desktop *desktop, const char *app_id) {
+    Desktop *desktop, const char *app_id, bool clicked_app_focused) {
     if (!desktop || !app_id) return;
 
     size_t first = desktop->app_count;
@@ -842,10 +842,9 @@ static void desktop_activate_taskbar_app(
 
     size_t target =
         active_seen && next < desktop->app_count ? next : first;
-    wm_focus_window(desktop->wm,
-                    desktop->apps[target].window_id);
-    wm_bring_to_front(desktop->wm,
-                      desktop->apps[target].window_id);
+    WindowId target_window = desktop->apps[target].window_id;
+    (void)desktop_chrome_activate_taskbar_window(
+        desktop->wm, target_window, clicked_app_focused);
     desktop_request_redraw(desktop);
 }
 
@@ -877,7 +876,8 @@ static bool desktop_handle_taskbar_mouse(
         }
         desktop_activate_taskbar_app(
             desktop,
-            k_taskbar_catalog[action.app_index].app_id);
+            k_taskbar_catalog[action.app_index].app_id,
+            action.focused);
         return true;
     }
     return false;

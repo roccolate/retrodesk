@@ -2,6 +2,28 @@
 
 #include "core/key_chord.h"
 
+bool desktop_chrome_activate_taskbar_window(
+    WindowManager *wm, WindowId id, bool clicked_app_focused) {
+    if (!wm || id == WINDOW_ID_INVALID || !wm_window_exists(wm, id)) {
+        return false;
+    }
+
+    if (wm_window_is_minimized(wm, id)) {
+        if (!wm_restore_window(wm, id)) return false;
+        wm_focus_window(wm, id);
+        wm_bring_to_front(wm, id);
+        return wm_active_window(wm) == id;
+    }
+
+    if (clicked_app_focused && wm_active_window(wm) == id) {
+        return wm_minimize_window(wm, id);
+    }
+
+    wm_focus_window(wm, id);
+    wm_bring_to_front(wm, id);
+    return wm_active_window(wm) == id;
+}
+
 bool desktop_chrome_handle_window_event(WindowManager *wm,
                                         const RetroEvent *event) {
     if (!wm || !event) return false;

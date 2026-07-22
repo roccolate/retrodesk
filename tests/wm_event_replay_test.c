@@ -184,6 +184,51 @@ static void test_maximize_state_is_window_owned(void) {
     renderer_destroy(second_renderer);
 }
 
+static void test_taskbar_activation_is_explicit_and_stateless(void) {
+    Renderer *first_renderer = renderer_create(NULL);
+    Renderer *second_renderer = renderer_create(NULL);
+    TEST_REQUIRE(first_renderer != NULL);
+    TEST_REQUIRE(second_renderer != NULL);
+    WindowManager *first = wm_create(first_renderer);
+    WindowManager *second = wm_create(second_renderer);
+    TEST_REQUIRE(first != NULL);
+    TEST_REQUIRE(second != NULL);
+
+    RetroWindowSpec spec = boundary_spec("taskbar");
+    WindowId first_a = wm_create_window(first, &spec);
+    WindowId first_b = wm_create_window(first, &spec);
+    WindowId second_a = wm_create_window(second, &spec);
+    TEST_REQUIRE(first_a == 1 && first_b == 2 && second_a == 1);
+
+    wm_focus_window(first, first_a);
+    wm_bring_to_front(first, first_a);
+    TEST_REQUIRE(desktop_chrome_activate_taskbar_window(
+        first, first_a, true));
+    TEST_REQUIRE(wm_window_is_minimized(first, first_a));
+    TEST_REQUIRE(wm_active_window(first) == first_b);
+    TEST_REQUIRE(!wm_window_is_minimized(second, second_a));
+
+    TEST_REQUIRE(desktop_chrome_activate_taskbar_window(
+        first, first_a, false));
+    TEST_REQUIRE(!wm_window_is_minimized(first, first_a));
+    TEST_REQUIRE(wm_active_window(first) == first_a);
+
+    TEST_REQUIRE(desktop_chrome_activate_taskbar_window(
+        first, first_b, false));
+    TEST_REQUIRE(wm_active_window(first) == first_b);
+    TEST_REQUIRE(desktop_chrome_activate_taskbar_window(
+        first, first_b, true));
+    TEST_REQUIRE(wm_window_is_minimized(first, first_b));
+    TEST_REQUIRE(wm_active_window(first) == first_a);
+    TEST_REQUIRE(!desktop_chrome_activate_taskbar_window(
+        first, WINDOW_ID_INVALID, false));
+
+    wm_destroy(first);
+    wm_destroy(second);
+    renderer_destroy(first_renderer);
+    renderer_destroy(second_renderer);
+}
+
 static void test_window_mode_hud_contract(void) {
     WindowModeHudSnapshot snapshot = {
         .active = true,
@@ -239,6 +284,7 @@ int main(void) {
     test_wm_growth_failure_preserves_state();
     test_window_id_exhaustion();
     test_maximize_state_is_window_owned();
+    test_taskbar_activation_is_explicit_and_stateless();
     test_window_mode_hud_contract();
 
     Renderer *renderer = renderer_create(NULL);

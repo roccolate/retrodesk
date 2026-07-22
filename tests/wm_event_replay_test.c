@@ -1,7 +1,9 @@
 #include "test_harness.h"
 #include <stdbool.h>
+#include <string.h>
 
 #include "ui/window_maximize_bridge.h"
+#include "ui/window_mode_hud.h"
 #include "wm/window_manager.h"
 
 typedef struct WindowSpy {
@@ -55,7 +57,59 @@ static RetroEvent mouse_event(int y, int x, bool moved, bool b1_pressed, bool b1
     return event;
 }
 
+static void test_window_mode_hud_contract(void) {
+    WindowModeHudSnapshot snapshot = {
+        .active = true,
+        .resize = false,
+        .transformable = true,
+        .maximized = false,
+        .y = 3,
+        .x = 6,
+        .h = 8,
+        .w = 22,
+    };
+    char text[160];
+
+    TEST_REQUIRE(window_mode_hud_finish_key(RETRO_KEY_ESC));
+    TEST_REQUIRE(window_mode_hud_finish_key(RETRO_KEY_F9));
+    TEST_REQUIRE(window_mode_hud_finish_key(RETRO_KEY_CR));
+    TEST_REQUIRE(window_mode_hud_finish_key(RETRO_KEY_LF));
+    TEST_REQUIRE(!window_mode_hud_finish_key(RETRO_KEY_TAB));
+    TEST_REQUIRE(window_mode_hud_row(40) == 38);
+
+    TEST_REQUIRE(window_mode_hud_format(&snapshot, 80, text, sizeof(text)));
+    TEST_REQUIRE(strstr(text, "MOVE") != NULL);
+    TEST_REQUIRE(strstr(text, "22x8") != NULL);
+    TEST_REQUIRE(strstr(text, "Tab resize") != NULL);
+
+    snapshot.resize = true;
+    TEST_REQUIRE(window_mode_hud_format(&snapshot, 50, text, sizeof(text)));
+    TEST_REQUIRE(strstr(text, "RESIZE") != NULL);
+    TEST_REQUIRE(strstr(text, "Arrows") != NULL);
+
+    snapshot.transformable = false;
+    snapshot.maximized = true;
+    TEST_REQUIRE(window_mode_hud_format(&snapshot, 80, text, sizeof(text)));
+    TEST_REQUIRE(strstr(text, "MAXIMIZED") != NULL);
+    TEST_REQUIRE(strstr(text, "F8 restore") != NULL);
+
+    snapshot.maximized = false;
+    TEST_REQUIRE(window_mode_hud_format(&snapshot, 40, text, sizeof(text)));
+    TEST_REQUIRE(strstr(text, "NO MOVABLE WINDOW") != NULL);
+
+    DrawList *list = draw_list_create();
+    TEST_REQUIRE(list != NULL);
+    RenderStyle style = {RENDER_COLOR_BLACK, RENDER_COLOR_YELLOW, false, true};
+    snapshot.transformable = true;
+    snapshot.resize = false;
+    TEST_REQUIRE(window_mode_hud_render(&snapshot, list, 40, 120, &style));
+    TEST_REQUIRE(draw_list_count(list) == 2);
+    draw_list_destroy(list);
+}
+
 int main(void) {
+    test_window_mode_hud_contract();
+
     Renderer *renderer = renderer_create(NULL);
     TEST_REQUIRE(renderer != NULL);
 

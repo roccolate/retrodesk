@@ -1033,6 +1033,136 @@ static void submit_prompt(RetroAppInstance *instance) {
     app_handle_event(instance, &enter);
 }
 
+
+static void test_notepad_failed_save_as_preserves_existing_identity(void) {
+    char original[] = "/tmp/retrodesk-notepad-original-XXXXXX";
+    int original_fd = mkstemp(original);
+    TEST_REQUIRE(original_fd >= 0);
+    FILE *stream = fdopen(original_fd, "w");
+    TEST_REQUIRE(stream != NULL);
+    TEST_REQUIRE(fputs("base", stream) >= 0);
+    TEST_REQUIRE(fclose(stream) == 0);
+
+    char blocker[] = "/tmp/retrodesk-notepad-blocker-XXXXXX";
+    int blocker_fd = mkstemp(blocker);
+    TEST_REQUIRE(blocker_fd >= 0);
+    TEST_REQUIRE(close(blocker_fd) == 0);
+    char invalid_path[512];
+    fixture_path(invalid_path, sizeof(invalid_path), blocker,
+                 "cannot-create.txt");
+
+    const RetroAppDescriptor *desc = notepad_app_descriptor();
+    TEST_REQUIRE(desc != NULL);
+    RetroAppContext ctx = {
+        .desktop = NULL,
+        .theme = retro_theme_get(RETRO_THEME_XP),
+        .resource_path = original,
+    };
+    RetroAppInstance instance = {.descriptor = desc, .ctx = ctx};
+    TEST_REQUIRE(desc->create(&instance, &ctx));
+    type_notepad_char(&instance, 'x');
+
+    RetroEvent save_as = key_event(RETRO_KEY_F3, '\0');
+    app_handle_event(&instance, &save_as);
+    TEST_REQUIRE(notepad_save_as_for_test(&instance));
+    send_text(&instance, invalid_path);
+    submit_prompt(&instance);
+
+    TEST_REQUIRE(notepad_save_as_for_test(&instance));
+    TEST_REQUIRE(notepad_has_path_for_test(&instance));
+    TEST_REQUIRE(strcmp(notepad_path_for_test(&instance), original) == 0);
+    TEST_REQUIRE(notepad_dirty_for_test(&instance));
+    TEST_REQUIRE(notepad_error_for_test(&instance)[0] != '\0');
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &escape);
+    TEST_REQUIRE(!notepad_save_as_for_test(&instance));
+
+    RetroEvent save = key_event(RETRO_KEY_CTRL_S, '\0');
+    app_handle_event(&instance, &save);
+    TEST_REQUIRE(!notepad_dirty_for_test(&instance));
+
+    stream = fopen(original, "r");
+    TEST_REQUIRE(stream != NULL);
+    char content[16] = {0};
+    TEST_REQUIRE(fread(content, 1, sizeof(content) - 1, stream) == 5);
+    TEST_REQUIRE(fclose(stream) == 0);
+    TEST_REQUIRE(strcmp(content, "basex") == 0);
+
+    desc->destroy(&instance);
+    TEST_REQUIRE(unlink(blocker) == 0);
+    TEST_REQUIRE(unlink(original) == 0);
+}
+
+static void test_notepad_failed_close_save_as_remains_pending(void) {
+    char blocker[] = "/tmp/retrodesk-notepad-close-blocker-XXXXXX";
+    int blocker_fd = mkstemp(blocker);
+    TEST_REQUIRE(blocker_fd >= 0);
+    TEST_REQUIRE(close(blocker_fd) == 0);
+    char invalid_path[512];
+    fixture_path(invalid_path, sizeof(invalid_path), blocker,
+                 "cannot-create.txt");
+
+    RetroAppInstance instance = create_untitled_notepad();
+    type_notepad_char(&instance, 'x');
+    TEST_REQUIRE(app_request_close(&instance) == RETRO_CLOSE_DEFERRED);
+    RetroEvent save = key_event('s', 's');
+    app_handle_event(&instance, &save);
+    TEST_REQUIRE(notepad_save_as_for_test(&instance));
+    TEST_REQUIRE(notepad_close_after_save_for_test(&instance));
+
+    send_text(&instance, invalid_path);
+    submit_prompt(&instance);
+
+    TEST_REQUIRE(notepad_save_as_for_test(&instance));
+    TEST_REQUIRE(notepad_close_after_save_for_test(&instance));
+    TEST_REQUIRE(!notepad_has_path_for_test(&instance));
+    TEST_REQUIRE(strcmp(notepad_path_for_test(&instance), "") == 0);
+    TEST_REQUIRE(notepad_dirty_for_test(&instance));
+    TEST_REQUIRE(notepad_error_for_test(&instance)[0] != '\0');
+    TEST_REQUIRE(!app_is_close_requested(&instance));
+
+    RetroEvent escape = key_event(RETRO_KEY_ESC, '\0');
+    app_handle_event(&instance, &escape);
+    TEST_REQUIRE(!notepad_save_as_for_test(&instance));
+    TEST_REQUIRE(!notepad_close_after_save_for_test(&instance));
+    TEST_REQUIRE(!app_is_close_requested(&instance));
+
+    instance.descriptor->destroy(&instance);
+    TEST_REQUIRE(unlink(blocker) == 0);
+}
+
+static void test_notepad_successful_save_as_commits_identity(void) {
+    char target[] = "/tmp/retrodesk-notepad-save-as-XXXXXX";
+    int fd = mkstemp(target);
+    TEST_REQUIRE(fd >= 0);
+    TEST_REQUIRE(close(fd) == 0);
+    TEST_REQUIRE(unlink(target) == 0);
+
+    RetroAppInstance instance = create_untitled_notepad();
+    type_notepad_char(&instance, 'x');
+    RetroEvent save_as = key_event(RETRO_KEY_F3, '\0');
+    app_handle_event(&instance, &save_as);
+    send_text(&instance, target);
+    submit_prompt(&instance);
+
+    TEST_REQUIRE(!notepad_save_as_for_test(&instance));
+    TEST_REQUIRE(notepad_has_path_for_test(&instance));
+    TEST_REQUIRE(strcmp(notepad_path_for_test(&instance), target) == 0);
+    TEST_REQUIRE(!notepad_dirty_for_test(&instance));
+    TEST_REQUIRE(notepad_error_for_test(&instance)[0] == '\0');
+
+    FILE *stream = fopen(target, "r");
+    TEST_REQUIRE(stream != NULL);
+    char content[8] = {0};
+    TEST_REQUIRE(fread(content, 1, sizeof(content) - 1, stream) == 1);
+    TEST_REQUIRE(fclose(stream) == 0);
+    TEST_REQUIRE(strcmp(content, "x") == 0);
+
+    instance.descriptor->destroy(&instance);
+    TEST_REQUIRE(unlink(target) == 0);
+}
+
 static void populate_filemanager_fixture(const char *root, char *folder,
                                          size_t folder_size) {
     int folder_written = snprintf(folder, folder_size, "%s/folder", root);
@@ -1291,6 +1421,9 @@ int main(void) {
     test_ctrl_q_cancel_preserves_all_apps();
     test_ctrl_q_discard_commits_shutdown();
 #if !defined(_WIN32)
+    test_notepad_failed_save_as_preserves_existing_identity();
+    test_notepad_failed_close_save_as_remains_pending();
+    test_notepad_successful_save_as_commits_identity();
     test_notepad_saved_baseline_tracks_undo();
     test_notepad_save_before_close();
     test_filemanager_navigation_port();

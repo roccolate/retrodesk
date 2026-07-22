@@ -7,6 +7,7 @@
 
 #include "app/app_runtime.h"
 #include "core/checked_size.h"
+#include "core/desktop_chrome.h"
 #include "apps/apps.h"
 #include "core/key_chord.h"
 #include "ui/statusbar.h"
@@ -976,7 +977,8 @@ static bool desktop_dispatch_event(Desktop *desktop,
         consumed = desktop_handle_taskbar_mouse(desktop, &event->data.mouse);
     }
     if (!consumed) {
-        (void)wm_handle_event(desktop->wm, event);
+        (void)desktop_chrome_handle_window_event(
+            desktop->wm, event);
     }
     desktop_cleanup_apps(desktop);
     desktop_continue_shutdown(desktop);

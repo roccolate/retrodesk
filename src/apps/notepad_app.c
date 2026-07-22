@@ -349,6 +349,35 @@ static void np_paste_clipboard(NotepadState *state) {
     np_finish_manual_edit(state, &before, captured, changed);
 }
 
+
+static bool np_write_path(NotepadState *state,
+                          const RetroFsPath *path,
+                          const RetroFsVersion *expected,
+                          RetroFsVersion *written) {
+    if (!state || !state->buffer || !path) return false;
+
+    size_t length = 0;
+    char *text = text_buffer_to_text(state->buffer, &length);
+    if (!text) {
+        np_set_error(state, RETRO_FS_OOM);
+        return false;
+    }
+
+    RetroFsVersion next = {0};
+    RetroFsError error = retro_fs_write_atomic(
+        path, text, length, expected, &next);
+    if (error != RETRO_FS_OK) {
+        free(text);
+        np_set_error(state, error);
+        return false;
+    }
+
+    if (written) *written = next;
+    (void)np_set_saved_snapshot(state, text, length);
+    state->error[0] = '\0';
+    return true;
+}
+
 static bool np_save(NotepadState *state) {
     if (!state || !state->buffer || !state->has_path) {
         if (state) {
@@ -357,24 +386,14 @@ static bool np_save(NotepadState *state) {
         }
         return false;
     }
-    size_t length = 0;
-    char *text = text_buffer_to_text(state->buffer, &length);
-    if (!text) {
-        np_set_error(state, RETRO_FS_OOM);
-        return false;
-    }
+
     RetroFsVersion written = {0};
-    RetroFsError error = retro_fs_write_atomic(
-        &state->path, text, length,
-        state->version.valid ? &state->version : NULL, &written);
-    if (error != RETRO_FS_OK) {
-        free(text);
-        np_set_error(state, error);
+    const RetroFsVersion *expected =
+        state->version.valid ? &state->version : NULL;
+    if (!np_write_path(state, &state->path, expected, &written)) {
         return false;
     }
     state->version = written;
-    (void)np_set_saved_snapshot(state, text, length);
-    state->error[0] = '\0';
     return true;
 }
 
@@ -523,6 +542,7 @@ static void np_handle_search(NotepadState *state,
     }
 }
 
+
 static void np_handle_save_as(RetroAppInstance *instance,
                               NotepadState *state,
                               const RetroKeyEvent *key) {
@@ -542,11 +562,13 @@ static void np_handle_save_as(RetroAppInstance *instance,
 
     if (code == RETRO_KEY_CR || code == RETRO_KEY_LF) {
         RetroFsPath candidate = {0};
-        if (retro_fs_path_init(&candidate,
-                               text_input_text(state->path_input)) !=
-            RETRO_FS_OK) {
+        RetroFsError path_error = retro_fs_path_init(
+            &candidate, text_input_text(state->path_input));
+        if (path_error != RETRO_FS_OK) {
+            np_set_error(state, path_error);
             return;
         }
+
         RetroFsVersion existing = {0};
         if (retro_fs_stat(&candidate, &existing) == RETRO_FS_OK) {
             retro_fs_path_destroy(&candidate);
@@ -555,21 +577,21 @@ static void np_handle_save_as(RetroAppInstance *instance,
             return;
         }
 
+        bool should_close = state->close_after_save;
+        RetroFsVersion written = {0};
+        if (!np_write_path(state, &candidate, NULL, &written)) {
+            retro_fs_path_destroy(&candidate);
+            return;
+        }
+
         retro_fs_path_destroy(&state->path);
         state->path = candidate;
         state->has_path = true;
-        state->version = (RetroFsVersion){0};
+        state->version = written;
         state->save_as = false;
+        state->close_after_save = false;
 
-        bool should_close = state->close_after_save;
-        if (np_save(state)) {
-            if (should_close) np_finish_close(instance, state);
-        } else {
-            state->close_after_save = false;
-            if (should_close) {
-                app_resolve_close(instance, RETRO_CLOSE_CANCELLED);
-            }
-        }
+        if (should_close) np_finish_close(instance, state);
         return;
     }
 
@@ -890,6 +912,25 @@ bool notepad_close_after_save_for_test(const RetroAppInstance *instance) {
     if (!instance || !instance->state) return false;
     const NotepadState *state = instance->state;
     return state->close_after_save;
+}
+
+
+bool notepad_has_path_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return false;
+    const NotepadState *state = instance->state;
+    return state->has_path;
+}
+
+const char *notepad_path_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return "";
+    const NotepadState *state = instance->state;
+    return state->has_path ? retro_fs_path_cstr(&state->path) : "";
+}
+
+const char *notepad_error_for_test(const RetroAppInstance *instance) {
+    if (!instance || !instance->state) return "";
+    const NotepadState *state = instance->state;
+    return state->error;
 }
 
 size_t notepad_undo_count_for_test(const RetroAppInstance *instance) {

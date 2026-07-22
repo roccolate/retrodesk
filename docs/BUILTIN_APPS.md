@@ -175,3 +175,11 @@ move/resize. Fixed/modal desktop chrome rejects those operations.
 
 See [PROJECT_STATUS.md](PROJECT_STATUS.md), [STORAGE.md](STORAGE.md), and
 [PORTABILITY.md](PORTABILITY.md) for the exact status and evidence boundaries.
+
+## Transactional Save As identity
+
+Notepad keeps a Save As candidate path separate from the document's
+current path and version. The candidate becomes the document identity
+only after `retro_fs_write_atomic` succeeds. A failed publication keeps
+the previous path (or Untitled state), dirty state, Save As prompt, and
+pending close decision intact so the user can correct or cancel it.

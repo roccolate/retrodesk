@@ -517,6 +517,74 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *p, const char *data, size_
     return RETRO_FS_OK;
 }
 
+static void cleanup_private_candidate(const char *path, int descriptor) {
+    struct stat opened = {0};
+    struct stat named = {0};
+    bool same_object = descriptor >= 0 && fstat(descriptor, &opened) == 0 &&
+                       lstat(path, &named) == 0 &&
+                       same_stat_identity(&opened, &named);
+    if (descriptor >= 0) (void)close(descriptor);
+    if (same_object) (void)unlink(path);
+}
+
+RetroFsError retro_fs_write_new_private(const RetroFsPath *path,
+                                        const char *data, size_t length) {
+    if (!path || !path->value || !path->value[0] ||
+        (!data && length != 0)) {
+        return RETRO_FS_INVALID_ARGUMENT;
+    }
+    if (length > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;
+    if (!valid_text_content(data, length)) return RETRO_FS_INVALID_TEXT;
+
+    int flags = O_WRONLY | O_CREAT | O_EXCL;
+#ifdef O_NOFOLLOW
+    flags |= O_NOFOLLOW;
+#endif
+    int descriptor = open(path->value, flags, 0600);
+    if (descriptor < 0) {
+        int error = errno;
+#ifdef ELOOP
+        if (error == ELOOP) return RETRO_FS_CONFLICT;
+#endif
+        return map_errno(error);
+    }
+    if (fchmod(descriptor, 0600) < 0) {
+        int error = errno;
+        cleanup_private_candidate(path->value, descriptor);
+        return map_errno(error);
+    }
+
+    size_t offset = 0;
+    while (offset < length) {
+        ssize_t amount = write(descriptor, data + offset, length - offset);
+        if (amount < 0 && errno == EINTR) continue;
+        if (amount <= 0) {
+            int error = errno;
+            cleanup_private_candidate(path->value, descriptor);
+            return error == 0 ? RETRO_FS_IO : map_errno(error);
+        }
+        offset += (size_t)amount;
+    }
+    if (fsync(descriptor) < 0) {
+        int error = errno;
+        cleanup_private_candidate(path->value, descriptor);
+        return map_errno(error);
+    }
+
+    struct stat opened = {0};
+    bool identified = fstat(descriptor, &opened) == 0;
+    if (close(descriptor) < 0) {
+        int error = errno;
+        struct stat named = {0};
+        if (identified && lstat(path->value, &named) == 0 &&
+            same_stat_identity(&opened, &named)) {
+            (void)unlink(path->value);
+        }
+        return map_errno(error);
+    }
+    return RETRO_FS_OK;
+}
+
 RetroFsError retro_fs_create_file(const RetroFsPath *path) {
     if (!path || !path->value || !path->value[0]) return RETRO_FS_INVALID_ARGUMENT;
     int fd = open(path->value, O_WRONLY | O_CREAT | O_EXCL, 0666);

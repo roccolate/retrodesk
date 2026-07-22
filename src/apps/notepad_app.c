@@ -841,25 +841,19 @@ static bool np_write_recovery(RetroAppInstance *instance,
             break;
         }
 
-        FILE *existing = fopen(path, "rb");
-        if (existing) {
-            fclose(existing);
-            continue;
-        }
-
-        FILE *stream = fopen(path, "wb");
-        if (!stream) continue;
-        size_t stored = fwrite(text, 1, length, stream);
-        bool flushed = fflush(stream) == 0;
-        bool closed = fclose(stream) == 0;
-        if (stored == length && flushed && closed) {
+        RetroFsPath recovery_path = {0};
+        RetroFsError status = retro_fs_path_init(&recovery_path, path);
+        if (status != RETRO_FS_OK) break;
+        status = retro_fs_write_new_private(&recovery_path, text, length);
+        retro_fs_path_destroy(&recovery_path);
+        if (status == RETRO_FS_OK) {
             fprintf(stderr, "\nRetroDesk recovered unsaved Notepad to %s\n",
                     path);
             fflush(stderr);
             recovered = true;
             break;
         }
-        (void)remove(path);
+        if (status != RETRO_FS_CONFLICT) break;
     }
 
     free(text);

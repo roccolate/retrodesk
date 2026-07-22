@@ -1,259 +1,303 @@
 # Roadmap
 
-> Status (2026-07): RetroDesk remains pre-alpha. The File Manager, taskbar, input,
-> UTF-8 storage, Notepad parity stack, native Win32/DJGPP storage adapters, and
-> budgeted app-service tick are integrated into `main`. Automated Linux, Windows,
-> and DOS development matrices exist, but no stable release tag should be created
-> until clean candidate evidence and manual terminal smoke results are attached to
-> the exact release commit.
+> Snapshot: 2026-07-22. RetroDesk remains pre-alpha. This roadmap describes
+> sequencing, not shipped releases. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for
+> what is actually in `main` and [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for current
+> blockers and risks.
 
-## Current State
+## Roadmap Rules
 
-### Runtime and desktop
+- A milestone is not shipped merely because most implementation work exists.
+- A feature is complete only when it is in `main`, documented, regression-tested,
+  and validated for every profile claimed by the milestone.
+- PR-only work is not counted as integrated.
+- Release evidence must be tied to the exact candidate commit.
+- Data safety, lifecycle correctness, one event loop, and one flush take priority
+  over feature parity.
 
-- Explicit `core`, `platform`, `render`, `wm`, `app`, `apps`, `ui`, and `storage`
-  layers are established.
-- The desktop uses a single event loop and a single renderer flush point.
-- Global shortcuts no longer steal printable editor text.
-- The bottom status widget provides an interactive taskbar with Launcher access,
-  app state, instance counts, clock, compact labels, and mouse hit testing.
-- The taskbar and Launcher are functionally useful but visually provisional; a
-  focused redesign is scheduled under `v0.5.0`.
-- Optional app services receive bounded, non-blocking callbacks from the Desktop
-  loop without introducing worker-owned UI state or nested event loops.
-- Focus, drag, move/resize, modal routing, and lifecycle-aware close behavior are
-  test-backed.
+## Current Baseline
 
-### File Manager
+### Integrated foundations
 
-Implemented on the Linux/POSIX product slice:
+- Layered C11 runtime: `core`, `platform`, `render`, `wm`, `app`, `apps`, `ui`,
+  `storage`.
+- Single Desktop event loop and single renderer flush.
+- Transactional global shutdown and lifecycle-aware close.
+- Desktop-owned UTF-8 clipboard.
+- Adapter-neutral storage metadata and native POSIX, Win32, and DJGPP adapters.
+- Strict Linux and Windows builds/tests, sanitizer gate, non-interactive smoke,
+  pinned DJGPP build, native DOS storage contract, DOSBox-X smoke, and DOS
+  artifact generation.
+- Budgeted app-service callback contract for future asynchronous apps.
 
-- bounded directory listing and keyboard viewport;
-- arrows, `J/K`, Page Up/Down, Home/End;
-- parent navigation and refresh;
-- hidden-file toggle;
-- regular text-file open through Notepad;
-- empty-directory and file-size display;
-- rename without intentional overwrite;
-- create directory and create empty file;
-- retained selection after refresh and mutations.
+### Integrated product workflows
 
-### Notepad
+- File Manager navigation, viewport, hidden files, refresh, text open, rename,
+  directory creation, and empty-file creation.
+- Notepad UTF-8 editing, display-cell rendering, selection, clipboard,
+  undo/redo, Find, Word Wrap, Save/Save As, version conflict handling, recovery,
+  and safe dirty close.
+- Themed taskbar and Start-menu-style Launcher.
+- Minimize/restore, maximize/unmaximize, and keyboard move/resize HUD.
 
-Implemented on the Linux/POSIX product slice:
+### Work validated elsewhere but not integrated
 
-- validated UTF-8 open/save;
-- codepoint-safe editing and display-cell-aware rendering;
-- multiline selection and shared in-process clipboard;
-- bounded undo/redo;
-- Find with next-result wraparound;
-- soft Word Wrap over visual rows;
-- Save, Save As, atomic write, and version-conflict reporting;
-- explicit Save/Discard/Cancel dirty close flow;
-- multiple Notepad instances and taskbar cycling.
+- PR #27: checked collection growth and deterministic `WindowId` exhaustion;
+  stale base, rebuild required.
+- PR #24: native responsive Notepad File/Edit/View menus; stale stacked base,
+  rebuild required.
 
-### Platform status
+## Immediate Execution Order
 
-- Linux/POSIX remains the most complete and manually exercised file-app profile.
-- Windows Debug/Release portable-runtime builds and tests pass with PDCurses, and
-  the native Win32 storage adapter is integrated. Interactive Windows validation
-  remains required before claiming equivalent product maturity.
-- The native DJGPP storage adapter, DOS target, and automated DOS smoke path are
-  integrated. DOS remains a deliberately reduced profile with exact exclusions.
-- macOS remains experimental until current build, input, and smoke evidence is
-  recorded.
+### Phase A — Restore a clean integration baseline
 
-## Release Gates
+1. Rebuild PR #27 on current `main`.
+2. Re-run Linux, Windows, sanitizer, source-manifest, DJGPP, and DOSBox-X gates.
+3. Merge the hardening slice or explicitly defer it with a bounded risk record.
+4. Rebuild PR #24 on the resulting `main`; reconcile current desktop bridge and
+   window-geometry behavior before validating it.
 
-### Foundation gate
+Reason: continuing to stack UI and app work while old correctness branches remain
+open makes the repository state harder to reason about.
 
-A release candidate must pass from a clean checkout:
+### Phase B — Finish `v0.5.0` desktop polish
 
-- strict CMake configure and warning-clean build;
-- Debug and Release tests with matching manifests;
-- always-active test-oracle guard;
-- retrocore fixture validation;
-- DJGPP source-manifest synchronization;
-- non-interactive smoke;
-- interactive curses/TTY smoke for claimed terminal profiles;
-- no stale generated artifacts or unrecorded toolchain assumptions.
+Remaining work:
 
-### Product gate
+- define deterministic taskbar congestion and overflow behavior;
+- prioritize focused and running apps when width is insufficient;
+- keep every hidden entry keyboard- and mouse-accessible;
+- ensure overflow and clock regions cannot overlap;
+- add crowded-catalog and extremely narrow-screen regressions;
+- exercise focus, cycling, minimize, maximize, Launcher, and window-mode behavior
+  across all four themes;
+- complete manual visual smoke on curses and ANSI paths;
+- reduce unnecessary redraw/flicker without adding another flush owner;
+- decide whether hover/pressed/disabled states are meaningful for every backend
+  and add them only with deterministic event semantics.
 
-The candidate must demonstrate:
+Already completed for `v0.5.0`:
 
-- File Manager keyboard navigation and basic mutation workflow;
-- Notepad UTF-8 editing, close, history, clipboard, Find, wrap, and save workflow;
-- taskbar launch/focus/cycle behavior;
-- terminal control-key delivery and state restoration;
-- no known critical data-loss or lifecycle defects.
+- taskbar visual hierarchy and compact layouts;
+- Start-menu-style Launcher geometry/grouping/navigation;
+- theme-specific XP, Hacker, Amiga, and Win31 desktop surfaces;
+- taskbar minimize/restore;
+- maximize/unmaximize with geometry restoration;
+- move/resize themed frame and responsive HUD;
+- responsive DrawList regressions for current fixed catalog.
+
+Exit criteria:
+
+- every taskbar app remains reachable at supported minimum widths;
+- taskbar, Launcher, minimize/maximize, and window operation behavior is
+  regression-backed;
+- mouse hit regions match exact rendered surfaces;
+- every theme has approved manual curses and ANSI evidence;
+- no avoidable full-frame redraw/flicker regression is known.
+
+### Phase C — Reduce structural integration debt
+
+- Split Launcher/taskbar/window-command ownership out of `desktop.c`.
+- Replace translation-unit macro remapping with explicit per-instance interfaces.
+- Move maximize and window-mode state into appropriate Desktop/WM-owned objects.
+- Remove bridge-local global/static owner state.
+- Disambiguate `app_launch` results.
+- Separate diagnostics projection from platform capability ownership.
+- Surface built-in app registration failure during Desktop initialization.
+- Add selective redraw and no-op status/taskbar update suppression.
+
+This phase should precede a large app catalog or plugin system.
 
 ## Milestones
 
-### `v0.1.0`: Reproducible Foundation
+## `v0.1.0` — Reproducible Pre-Alpha Foundation
 
-Goal: tag the historical foundation only when it is reproducible and the release
-checklist is backed by exact evidence.
+**Status:** not shipped; checklist reopened.
 
-Remaining work:
+Goal: produce the first exact candidate with honest evidence, not freeze the
+project at its historical feature count.
 
-- rebuild the checklist on a clean candidate;
-- record compiler, CMake, curses/PDCurses, and fixture versions;
-- attach Debug/Release, smoke, and sanitizer evidence where available;
-- ensure documentation and source manifests match the candidate.
+Implementation available:
 
-Exit criteria: [RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md) is complete for
-the exact tag commit.
+- layered runtime and built-in apps;
+- multi-window desktop and current taskbar/Launcher behavior;
+- native storage adapters;
+- automated multi-platform development gates.
 
-### `v0.2.0`: CI, Documentation, and Portability Baseline
+Remaining release work:
 
-Goal: make project claims honest and repeatable.
+- choose one exact candidate SHA;
+- perform clean strict Debug/Release and sanitizer validation;
+- record immutable toolchain/fixture revisions;
+- run manual Linux curses, raw-TTY/ANSI, and `TERM=linux` smoke;
+- record Windows/PDCurses and reduced-DOS acceptance for the scope claimed;
+- complete the documentation, debt, compatibility, and known-issues gates;
+- attach evidence to the candidate and only then create the tag.
 
-Current progress:
+Exit criteria: every item in
+[RELEASE_0.1_CHECKLIST.md](RELEASE_0.1_CHECKLIST.md) is resolved or explicitly
+scoped out for the exact commit.
 
-- Linux static analysis and Debug/Release tests exist;
-- Windows Debug/Release portable-runtime tests exist;
-- native Win32 storage is integrated and has platform-specific contract tests;
-- native DJGPP storage, target build, source synchronization, and DOS smoke exist;
-- Debug/Release manifest comparison exists;
-- user, architecture, storage, testing, portability, app, and shortcut docs exist
-  for the integrated product slice.
+## `v0.2.0` — CI, Documentation, and Portability Baseline
 
-Remaining work:
+**Implementation status:** largely present; release status: unshipped.
 
-- synchronize all documentation and product claims with the Win32/DJGPP adapters;
-- add macOS evidence or keep the profile explicitly experimental;
-- automate more release-evidence capture;
-- establish a concise known-issues document for candidate releases.
+Completed:
 
-### `v0.3.0`: Useful Built-In Apps
+- canonical CMake build and strict warning policy;
+- always-active test oracle guard;
+- Linux static analysis, Debug/Release, sanitizers, and smoke;
+- Windows Debug/Release under PDCurses;
+- native Win32 storage tests;
+- pinned DJGPP/PDCurses/CWSDPMI build path;
+- native DOS storage contract and DOSBox-X smoke;
+- Debug/Release manifest and DJGPP source parity checks;
+- architecture, app, storage, input, portability, testing, and status docs.
 
-Goal: provide practical keyboard-first File Manager and Notepad workflows on
-Linux.
+Remaining:
 
-Status: core functionality is implemented and automated regressions exist.
+- keep all documents synchronized through the candidate;
+- automate a compact evidence manifest containing exact versions and SHAs;
+- add a release-specific compatibility and known-issues record;
+- either validate macOS or explicitly omit it from the release claim;
+- retire stale historical PRs after replacement branches are integrated.
+
+## `v0.3.0` — Useful Built-In Apps
+
+**Implementation status:** core workflows integrated; release status: unshipped.
+
+Completed:
+
+- practical File Manager navigation and basic non-destructive mutations;
+- practical UTF-8 Notepad editing, history, clipboard, Find, wrap, save, and
+  dirty-close workflows;
+- app lifecycle and storage regressions.
 
 Remaining exit work:
 
-- complete manual ncurses and raw-TTY smoke testing;
-- verify representative terminals and `TERM=linux` behavior;
-- audit error messages and narrow-terminal rendering;
-- decide whether the current functionality is sufficient for an alpha product
-  preview.
+- complete manual ncurses/raw-TTY app acceptance;
+- audit very narrow windows and error messaging;
+- decide the minimum alpha-preview app scope;
+- rebuild and decide the responsive Notepad chrome from PR #24.
 
-### `v0.4.0`: Native Windows and Secondary Profiles
+## `v0.4.0` — Native Windows and Secondary Profiles
 
-Goal: establish credible platform breadth.
+**Implementation status:** native adapters and automated profiles integrated;
+release status: unshipped.
 
-Current progress:
+Completed:
 
-- native Win32 and DJGPP storage adapters are integrated;
-- Windows Debug/Release builds and tests are automated;
-- the native DOS target and DOSBox-X smoke path are automated.
+- native Win32 storage and platform-specific tests;
+- native DJGPP storage and DOS contract test;
+- strict Windows Debug/Release CI;
+- pinned DOS build, DOSBox-X diagnostic smoke, and distribution artifact.
 
-Remaining work:
+Remaining:
 
-- validate Windows interactive PDCurses behavior and native file workflows;
-- document exact Win32 storage guarantees and known limitations;
-- document macOS build/input evidence or retain its experimental status;
-- validate the reduced DOS profile and record its exact exclusions;
-- ensure all profiles restore terminal/console state on failure and shutdown.
+- manual native Windows/PDCurses file-app and desktop acceptance;
+- documented Win32 console/PDCurses limitations for an exact candidate;
+- broader reduced-DOS manual behavior and failure-recovery evidence;
+- macOS evidence or explicit exclusion;
+- terminal/console restoration evidence for each claimed profile.
 
-Exit criteria: every claimed platform feature is backed by current build, test,
-and smoke evidence.
+Exit criteria: every platform feature in the support table has build, test, and
+appropriate interactive evidence on the release candidate.
 
-### `v0.5.0`: Window Manager, Launcher, and Desktop Polish
+## `v0.5.0` — Window Manager, Launcher, and Desktop Polish
 
-Goal: make multi-window workflows feel complete and give the desktop a coherent,
-intentional visual identity instead of a merely functional status row.
+**Implementation status:** major behavior integrated; remaining work listed in
+Phase B.
 
-Planned work:
+Goal: make multi-window workflows coherent and intentional rather than a debug
+shell around apps.
 
-- redesign the taskbar visual hierarchy so the Apps button, running applications,
-  instance state, notifications/status area, and clock read as distinct regions;
-- redesign the Launcher geometry, spacing, borders, selected-row treatment, and
-  grouping so it feels like a real Start menu rather than a debug popup;
-- define theme-specific taskbar and Launcher treatments for XP, Win31, Amiga, and
-  Hacker themes while preserving the same interaction contract;
-- improve focused, running, background, multiple-instance, disabled, pressed,
-  hovered, and future minimized-window indicators;
-- replace fragile compact labels with deterministic truncation and prioritization
-  rules for narrow terminals;
-- ensure taskbar hit regions always match the rendered buttons and never overlap
-  the clock or adjacent application entries;
-- add draw-list regressions for normal, crowded, and narrow-screen taskbar layouts;
-- perform manual visual smoke checks across curses/ANSI backends and every theme;
-- define minimize/restore and maximize contracts;
-- extend taskbar behavior to minimized windows after the WM contract exists;
-- improve keyboard move/resize feedback;
-- add stronger focus/cycling and narrow-screen behavior tests;
-- reduce redraw/flicker without violating the single-flush rule.
+Integrated:
 
-Exit criteria: the taskbar and Launcher remain fully keyboard-usable, preserve
-correct mouse hit testing, degrade predictably on narrow terminals, and have an
-approved visual treatment in every supported theme.
+- redesigned taskbar and Launcher;
+- four theme surface identities;
+- minimize/restore and maximize/unmaximize;
+- keyboard move/resize feedback;
+- responsive current-catalog layouts and hit testing.
 
-### `v0.6.0`: File and Editor Expansion
+Remaining:
 
-Goal: extend useful workflows without bypassing storage or editor contracts.
+- overflow/congestion policy;
+- stronger crowded/narrow focus and cycling tests;
+- complete visual smoke matrix;
+- redraw/flicker reduction;
+- final acceptance of pressed/hover/disabled states where backend semantics allow.
 
-Candidate File Manager work:
+## `v0.6.0` — File and Editor Expansion
 
-- delete/trash with explicit confirmation and recovery policy;
-- copy and move;
-- recursive-operation progress and cancellation;
+Goal: expand workflows without weakening storage, history, Unicode, or close
+contracts.
+
+File Manager candidates:
+
+- delete/trash with confirmation and recovery policy;
+- copy/move with no-overwrite and cross-device semantics;
+- recursive operations with progress, cancellation, and partial-failure reports;
 - previews, bookmarks, and optional dual-pane mode.
 
-Candidate Notepad work:
+Notepad candidates:
 
 - Replace and Replace All;
-- mouse cursor placement and drag selection;
-- native system clipboard integration;
-- normalization policy and broader Unicode-width validation;
-- tabs, syntax highlighting, multiple encodings, or large-file strategy only
-  after their contracts are defined.
+- mouse cursor placement, drag selection, and wheel scrolling;
+- native system clipboard behind a portable service;
+- Unicode normalization policy and broader width testing;
+- tabs, syntax highlighting, multiple encodings, and large-file strategy only
+  after explicit contracts exist.
 
-### `v0.7.0`: Configuration and Persistence
+Required first step: rebuild or replace PR #24 rather than layering new editor UI
+on its stale base.
 
-- theme/backend preference configuration;
-- explicit override precedence;
-- optional desktop/session layout persistence;
-- no hidden global state or untestable configuration paths.
+## `v0.7.0` — Configuration and Persistence
 
-### `v0.8.0`: Packaging and Distribution
+- typed configuration model;
+- explicit CLI/config/default precedence;
+- theme/backend preference persistence;
+- optional session/window layout persistence;
+- safe schema/version migration;
+- no hidden globals or backend-specific policy in app code.
+
+## `v0.8.0` — Packaging and Distribution
 
 - reproducible install/package instructions;
-- supported-platform artifacts;
-- automated smoke where terminal constraints permit;
-- release notes and known-issues evidence tied to exact commits.
+- Linux and Windows artifacts for validated profiles;
+- maintained reduced DOS package;
+- automated checksums and provenance/evidence manifest;
+- release notes and exact known-issues record;
+- installation/uninstallation behavior that does not depend on a source checkout.
 
-### `v0.9.0`: Contract Freeze and Beta Stabilization
+## `v0.9.0` — Contract Freeze and Beta Stabilization
 
-- freeze major internal contracts for the v1 cycle;
-- publish a real compatibility matrix;
-- remove release-blocking uncertainty;
-- defer or fix remaining defects explicitly;
-- complete user-facing documentation.
+- remove temporary bridge architecture;
+- freeze major public/domain contracts for the v1 cycle;
+- publish a measured compatibility matrix;
+- complete stress, failure-injection, and long-running service tests;
+- remove release-blocking uncertainty or explicitly defer it;
+- finish user-facing documentation.
 
-### `v1.0.0`: Stable Terminal Desktop Baseline
+## `v1.0.0` — Stable Terminal Desktop Baseline
 
 Target outcome:
 
 - validated Linux and Windows product profiles;
-- dependable File Manager, text editor, diagnostics, taskbar, and window
-  management;
-- predictable input/render behavior by capability profile;
-- basic configuration and persistence;
-- reproducible packaging and release evidence;
-- no known critical data-loss, lifecycle, or structural defects.
+- dependable window management, taskbar, Launcher, File Manager, Notepad, and
+  Diagnostics;
+- predictable capability-based input/render behavior;
+- basic configuration and optional persistence;
+- reproducible packaging and exact release evidence;
+- no known critical data-loss, lifecycle, ownership, or structural defects.
 
-## Prioritization Rules
+## Prioritization Policy
 
-- Finish release blockers before broad new features.
-- Preserve the single event loop and single flush point.
-- Keep backend-native and OS-native details behind adapters.
-- Require tests for input, focus, render, lifecycle, storage, and fallback changes.
-- Treat the taskbar and Launcher as first-class desktop UI, not diagnostic chrome.
-- Prefer small behavior slices that exercise existing contracts.
-- Do not claim platform or Unicode support beyond current evidence.
+- Resolve stale correctness and integration work before broad new features.
+- Treat `PROJECT_STATUS.md` as the integrated-state source.
+- Preserve one event loop and one flush point.
+- Keep platform/OS behavior behind capabilities and adapters.
+- Require lower-level and end-to-end tests for behavior changes.
+- Treat taskbar and Launcher as first-class desktop UI.
+- Never claim Unicode or platform support beyond evidence.
+- Prefer small, independently validated slices.
 - Never trade data safety or deterministic cleanup for superficial parity.

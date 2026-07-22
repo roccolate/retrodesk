@@ -901,6 +901,46 @@ static void test_launcher_state_is_desktop_owned(void) {
     destroy_test_desktop(second, second_platform);
 }
 
+static void test_window_mode_state_is_desktop_owned(void) {
+    PlatformBackend *first_platform = NULL;
+    PlatformBackend *second_platform = NULL;
+    Desktop *first = create_test_desktop(&first_platform);
+    Desktop *second = create_test_desktop(&second_platform);
+
+    RetroEvent f9 = key_event(RETRO_KEY_F9, 0);
+    TEST_REQUIRE(desktop_dispatch_event_for_test(first, &f9));
+    TEST_REQUIRE(desktop_window_mode_active_for_test(first));
+    TEST_REQUIRE(!desktop_window_mode_active_for_test(second));
+    TEST_REQUIRE(desktop_window_mode_target_for_test(first) ==
+                 desktop_active_window(first));
+
+    RetroEvent tab = key_event(RETRO_KEY_TAB, 0);
+    TEST_REQUIRE(desktop_dispatch_event_for_test(first, &tab));
+    TEST_REQUIRE(desktop_window_resize_mode_for_test(first));
+    TEST_REQUIRE(!desktop_window_resize_mode_for_test(second));
+
+    RetroEvent enter = key_event(RETRO_KEY_CR, 0);
+    TEST_REQUIRE(desktop_dispatch_event_for_test(first, &enter));
+    TEST_REQUIRE(!desktop_window_mode_active_for_test(first));
+    TEST_REQUIRE(desktop_window_mode_target_for_test(first) ==
+                 WINDOW_ID_INVALID);
+
+    TEST_REQUIRE(desktop_dispatch_event_for_test(second, &f9));
+    TEST_REQUIRE(desktop_window_mode_active_for_test(second));
+    TEST_REQUIRE(desktop_dispatch_event_for_test(second, &f9));
+    TEST_REQUIRE(!desktop_window_mode_active_for_test(second));
+
+    RetroEvent close = key_event(RETRO_KEY_CTRL_W, 0);
+    TEST_REQUIRE(desktop_dispatch_event_for_test(first, &close));
+    TEST_REQUIRE(desktop_dispatch_event_for_test(first, &f9));
+    TEST_REQUIRE(!desktop_window_mode_active_for_test(first));
+    TEST_REQUIRE(desktop_window_mode_blocked_for_test(first));
+    TEST_REQUIRE(!desktop_window_mode_blocked_for_test(second));
+
+    destroy_test_desktop(first, first_platform);
+    destroy_test_desktop(second, second_platform);
+}
+
 static int g_key_sink_f2_count;
 
 static bool key_sink_create(RetroAppInstance *instance,
@@ -1450,6 +1490,7 @@ int main(void) {
     test_notepad_shift_selection_replacement();
     test_desktop_clipboards_are_isolated();
     test_launcher_state_is_desktop_owned();
+    test_window_mode_state_is_desktop_owned();
     test_desktop_f2_reaches_focused_app();
     test_launcher_close_respects_dirty_notepad();
     test_ctrl_q_cancel_preserves_all_apps();

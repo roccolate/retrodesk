@@ -45,27 +45,6 @@ void statusbar_render(StatusBar *sb, DrawList *draw_list, int screen_rows,
 StatusBarAction statusbar_hit_test(const StatusBar *sb, int y, int x);
 void statusbar_destroy(StatusBar *sb);
 
-/* desktop.c includes this header after core/desktop.h. Keep the temporary
-   operation-mode adaptation private to that
-   translation unit so widgets retain the ordinary WM and StatusBar contracts. */
-#if defined(RETRODESK_CORE_DESKTOP_H)
-#include "ui/window_mode_bridge.h"
-#define wm_render(wm_, renderer_, theme_)                                      \
-    desktop_window_mode_render((wm_), (renderer_), (theme_),                   \
-                               &desktop->window_mode,                           \
-                               &desktop->window_resize_mode)
-#define statusbar_render(sb_, list_, rows_, cols_, style_)                     \
-    desktop_window_mode_statusbar_render(                                      \
-        (sb_), (list_), (rows_), (cols_), (style_), desktop->wm,                \
-        desktop->theme, desktop->window_mode, desktop->window_resize_mode)
-#define wm_move_active_window(wm_, dy_, dx_)                                   \
-    desktop_window_mode_move_active_window(                                    \
-        (wm_), (dy_), (dx_), &desktop->window_mode,                            \
-        &desktop->window_resize_mode, key->key_code)
-#define wm_resize_active_window(wm_, dh_, dw_)                                 \
-    desktop_window_mode_resize_active_window(                                  \
-        (wm_), (dh_), (dw_), &desktop->window_mode,                            \
-        &desktop->window_resize_mode, key->key_code)
-#endif
+
 
 #endif

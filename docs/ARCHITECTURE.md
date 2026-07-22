@@ -381,23 +381,22 @@ no universal true atomic-replace syscall.
 - `platform` and `render` own backend-native types and calls.
 - No layer other than render executes a backend draw/flush operation.
 
-## Temporary Bridge Architecture
+## Desktop chrome ownership
 
-To deliver desktop polish without prematurely widening public APIs, `statusbar.h`
-includes private adapters only when compiled through `desktop.c`. Macro remapping
-redirects selected WM/statusbar operations to:
+Desktop chrome flow is explicit and instance-owned:
 
-- explicit `core/desktop_chrome` maximize gesture routing;
-- move/resize bridge.
+- maximize/restore state lives in each `RetroWindow`;
+- F8 and title-bar gestures route through `core/desktop_chrome.c`;
+- taskbar action metadata and target selection are consumed synchronously;
+- Launcher rendering, selection, callbacks, geometry, and lifetime belong to each
+  `Desktop`;
+- F9 move/resize target, mode and one-frame blocked notice belong to each
+  `Desktop`.
 
-Maximize/restore state now lives in each `RetroWindow`, and F8/title-bar
-maximize gestures route explicitly through `core/desktop_chrome.c`; public
-headers no longer replace `wm_handle_event`. Taskbar action metadata and target
-selection are consumed synchronously by Desktop. Launcher rendering, selection,
-mouse input, accelerators, callbacks, geometry, and lifetime are also owned
-directly by each Desktop. Only operation-mode bridge state remains to migrate.
-
-See [KNOWN_ISSUES.md](KNOWN_ISSUES.md), especially KB-011 and KB-012.
+`statusbar.h` is again a pure widget contract. It includes no Desktop-private
+adapter and performs no function-like macro remapping of Window Manager or
+StatusBar operations. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md), especially KB-011
+and the resolved KB-012.
 
 ## Current Product Slice
 

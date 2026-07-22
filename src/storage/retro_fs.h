@@ -73,6 +73,12 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *path, const char *data,
                                    size_t length,
                                    const RetroFsVersion *expected,
                                    RetroFsVersion *written);
+/* Creates and writes validated text only when the destination is absent.
+   The final component is never intentionally followed or replaced. POSIX and
+   Win32 adapters apply owner-private permissions; DJGPP documents the limits
+   of DOS/FAT permission and link semantics. */
+RetroFsError retro_fs_write_new_private(const RetroFsPath *path,
+                                        const char *data, size_t length);
 
 /* Creation and rename operations never intentionally replace an existing
    destination. They return RETRO_FS_CONFLICT when the destination exists. */

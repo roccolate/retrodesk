@@ -25,6 +25,7 @@ All adapters expose domain-owned types for:
 - bounded directory listing;
 - validated text read;
 - validated version-aware text write;
+- exclusive owner-private text creation for recovery;
 - exclusive empty-file creation;
 - directory creation;
 - rename without intentional overwrite.
@@ -80,6 +81,22 @@ Ordering details:
 
 ## Mutation Contract
 
+### Write new private text
+
+`retro_fs_write_new_private()` validates text before mutation, claims the final
+path with native exclusive-create semantics, writes and flushes the complete
+content, and removes the candidate after a failed partial operation. An existing
+regular file, symlink, or reparse point returns `RETRO_FS_CONFLICT`; it is never
+followed or replaced intentionally.
+
+Platform privacy semantics are explicit:
+
+- POSIX requests and enforces mode `0600` and uses `O_NOFOLLOW` where available;
+- Win32 supplies a protected, non-inheritable DACL granting full access only to
+  the current process-token user;
+- DJGPP requests mode `0600` with `O_EXCL`, but DOS/FAT has no owner ACL or
+  symlink model, so exclusivity is the enforceable guarantee there.
+
 ### Create file
 
 `retro_fs_create_file()` creates an empty regular file exclusively. An existing
@@ -111,6 +128,13 @@ The adapter must:
 4. write the new content only after validation and version acceptance;
 5. return a new version after success.
 
+This is best-effort optimistic conflict detection, not an atomic
+compare-and-swap. Atomic whole-file publication and stale-token detection are
+separate guarantees: another writer can still change the destination between
+the final token check and the native replacement operation. Callers must treat a
+reported conflict as authoritative, but must not infer lock or CAS semantics
+from a successful save.
+
 The API permits `expected` and `written` pointers to alias. Adapters must not
 clear or overwrite the output token before expected-version comparison finishes.
 A Win32 regression discovered and fixed this exact boundary.
@@ -123,6 +147,7 @@ A Win32 regression discovered and fixed this exact boundary.
 - `stat`-derived kind, identity, size, and nanosecond modification data;
 - bounded directory enumeration;
 - exclusive create and mkdir;
+- private recovery creation with mode `0600` and final-component no-follow;
 - no-overwrite rename;
 - same-directory temporary text write;
 - file-content synchronization before replacement;
@@ -152,6 +177,7 @@ forms required for native long-path behavior.
 - deterministic directory listing;
 - volume serial/file identity/size/kind/modification data in version tokens;
 - exclusive create and directory creation;
+- private recovery creation with a protected current-user DACL;
 - no-overwrite rename;
 - same-directory temporary write;
 - replacement through `ReplaceFileW` or `MoveFileExW` according to target state;
@@ -174,6 +200,7 @@ missing-storage issue.
 - ASCII case-insensitive deterministic ordering;
 - regular text read/write with validated UTF-8 content;
 - exclusive create, mkdir, and no-overwrite rename;
+- exclusive recovery creation, with DOS/FAT ACL and symlink limits explicit;
 - version token including a content fingerprint to strengthen coarse FAT time
   metadata;
 - same-directory 8.3 temporary filenames;
@@ -220,6 +247,8 @@ Common contract tests must cover:
 - UTF-8 read/write roundtrip;
 - malformed UTF-8, NUL, controls, mixed newline, and oversized rejection;
 - exclusive file/directory creation;
+- private recovery creation, conflict preservation, final-link behavior,
+  partial-failure cleanup, and simultaneous-writer exclusion;
 - duplicate destination conflict;
 - rename success, missing source, and no-overwrite behavior;
 - versioned save and stale-token conflict;

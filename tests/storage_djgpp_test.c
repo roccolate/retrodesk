@@ -185,6 +185,18 @@ int main(void) {
     TEST_REQUIRE(retro_fs_read_text(&invalid, &text, &length, NULL) ==
                  RETRO_FS_INVALID_TEXT);
 
+
+    RetroFsPath private_path = joined(&root, "RECOV.TXT");
+    TEST_REQUIRE(retro_fs_write_new_private(&private_path, "secret\n", 7) ==
+                 RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_write_new_private(&private_path, "replace\n", 8) ==
+                 RETRO_FS_CONFLICT);
+    TEST_REQUIRE(retro_fs_read_text(&private_path, &text, &length, NULL) ==
+                 RETRO_FS_OK);
+    TEST_REQUIRE(strcmp(text, "secret\n") == 0);
+    free(text);
+    text = NULL;
+
     RetroFsPath created = joined(&root, "CREATE.TXT");
     RetroFsPath renamed = joined(&root, "RENAMED.TXT");
     RetroFsPath directory = joined(&root, "DOCS");
@@ -208,6 +220,7 @@ int main(void) {
     TEST_REQUIRE(retro_fs_read_text(&directory, &text, &length, NULL) ==
                  RETRO_FS_UNSUPPORTED);
 
+    remove_if_present(retro_fs_path_cstr(&private_path));
     remove_if_present(retro_fs_path_cstr(&a));
     remove_if_present(retro_fs_path_cstr(&b));
     remove_if_present(retro_fs_path_cstr(&utf8));
@@ -215,6 +228,7 @@ int main(void) {
     remove_if_present(retro_fs_path_cstr(&renamed));
     remove_directory_best_effort(retro_fs_path_cstr(&directory));
 
+    retro_fs_path_destroy(&private_path);
     retro_fs_path_destroy(&missing);
     retro_fs_path_destroy(&directory);
     retro_fs_path_destroy(&renamed);

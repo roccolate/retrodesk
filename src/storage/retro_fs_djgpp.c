@@ -720,6 +720,50 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *path, const char *data,
     return RETRO_FS_OK;
 }
 
+RetroFsError retro_fs_write_new_private(const RetroFsPath *path,
+                                        const char *data, size_t length) {
+    if (!path || !path->value || !path->value[0] ||
+        (!data && length != 0)) {
+        return RETRO_FS_INVALID_ARGUMENT;
+    }
+    if (length > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;
+    if (!valid_text_content(data, length)) return RETRO_FS_INVALID_TEXT;
+
+    int descriptor = open(path->value,
+                          O_WRONLY | O_CREAT | O_EXCL | O_BINARY, 0600);
+    if (descriptor < 0) {
+        int error = errno;
+        struct stat existing;
+        if ((error == EEXIST || error == EACCES) &&
+            stat(path->value, &existing) == 0) {
+            return RETRO_FS_CONFLICT;
+        }
+        return map_errno(error);
+    }
+    size_t offset = 0;
+    while (offset < length) {
+        ssize_t amount = write(descriptor, data + offset, length - offset);
+        if (amount < 0 && errno == EINTR) continue;
+        if (amount <= 0) {
+            int error = errno;
+            cleanup_temporary(path->value, descriptor);
+            return error == 0 ? RETRO_FS_IO : map_errno(error);
+        }
+        offset += (size_t)amount;
+    }
+    if (!flush_descriptor(descriptor)) {
+        int error = errno;
+        cleanup_temporary(path->value, descriptor);
+        return map_errno(error);
+    }
+    if (close(descriptor) < 0) {
+        int error = errno;
+        (void)unlink(path->value);
+        return map_errno(error);
+    }
+    return RETRO_FS_OK;
+}
+
 RetroFsError retro_fs_create_file(const RetroFsPath *path) {
     if (!path || !path->value || !path->value[0]) return RETRO_FS_INVALID_ARGUMENT;
     int descriptor = open(path->value,

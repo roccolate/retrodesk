@@ -5,6 +5,7 @@
 #endif
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <aclapi.h>
 
 #include <limits.h>
 #include <stdbool.h>
@@ -14,6 +15,10 @@
 #include <wchar.h>
 
 #include "storage/retro_fs.h"
+
+#ifndef SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+#define SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE 0x2
+#endif
 
 typedef struct Names {
     char **items;
@@ -104,6 +109,44 @@ static void delete_file(const RetroFsPath *path) {
 static void delete_directory(const RetroFsPath *path) {
     wchar_t *wide = utf8_to_wide(retro_fs_path_cstr(path));
     TEST_REQUIRE(RemoveDirectoryW(wide));
+    free(wide);
+}
+
+static void assert_private_acl(const RetroFsPath *path) {
+    wchar_t *wide = utf8_to_wide(retro_fs_path_cstr(path));
+    PACL dacl = NULL;
+    PSECURITY_DESCRIPTOR descriptor = NULL;
+    DWORD status = GetNamedSecurityInfoW(
+        wide, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+        NULL, NULL, &dacl, NULL, &descriptor);
+    TEST_REQUIRE(status == ERROR_SUCCESS);
+    TEST_REQUIRE(dacl != NULL);
+
+    SECURITY_DESCRIPTOR_CONTROL control = 0;
+    DWORD revision = 0;
+    TEST_REQUIRE(GetSecurityDescriptorControl(descriptor, &control, &revision));
+    TEST_REQUIRE((control & SE_DACL_PROTECTED) != 0);
+    ACL_SIZE_INFORMATION information = {0};
+    TEST_REQUIRE(GetAclInformation(dacl, &information, sizeof(information),
+                                   AclSizeInformation));
+    TEST_REQUIRE(information.AceCount == 1);
+    ACCESS_ALLOWED_ACE *ace = NULL;
+    TEST_REQUIRE(GetAce(dacl, 0, (void **)&ace));
+    TEST_REQUIRE(ace->Header.AceType == ACCESS_ALLOWED_ACE_TYPE);
+    TEST_REQUIRE((ace->Header.AceFlags & INHERITED_ACE) == 0);
+
+    HANDLE token = NULL;
+    TEST_REQUIRE(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token));
+    DWORD needed = 0;
+    (void)GetTokenInformation(token, TokenUser, NULL, 0, &needed);
+    TEST_REQUIRE(GetLastError() == ERROR_INSUFFICIENT_BUFFER && needed > 0);
+    TOKEN_USER *user = malloc(needed);
+    TEST_REQUIRE(user != NULL);
+    TEST_REQUIRE(GetTokenInformation(token, TokenUser, user, needed, &needed));
+    TEST_REQUIRE(EqualSid(&ace->SidStart, user->User.Sid));
+    free(user);
+    TEST_REQUIRE(CloseHandle(token));
+    LocalFree(descriptor);
     free(wide);
 }
 
@@ -207,6 +250,44 @@ int main(void) {
     TEST_REQUIRE(retro_fs_read_text(&invalid, &text, &length, NULL) ==
                  RETRO_FS_INVALID_TEXT);
 
+
+    RetroFsPath private_path = joined(&root, "recovery.txt");
+    TEST_REQUIRE(retro_fs_write_new_private(&private_path, "secret\n", 7) ==
+                 RETRO_FS_OK);
+    assert_private_acl(&private_path);
+    TEST_REQUIRE(retro_fs_write_new_private(&private_path, "replace\n", 8) ==
+                 RETRO_FS_CONFLICT);
+    TEST_REQUIRE(retro_fs_read_text(&private_path, &text, &length, NULL) ==
+                 RETRO_FS_OK);
+    TEST_REQUIRE(strcmp(text, "secret\n") == 0);
+    free(text);
+    text = NULL;
+
+    RetroFsPath private_victim = joined(&root, "victim.txt");
+    RetroFsPath private_link = joined(&root, "victim-link.txt");
+    raw_write(&private_victim, "victim\n", 7);
+    wchar_t *victim_native = utf8_to_wide(retro_fs_path_cstr(&private_victim));
+    wchar_t *link_native = utf8_to_wide(retro_fs_path_cstr(&private_link));
+    if (CreateSymbolicLinkW(link_native, victim_native,
+                            SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE)) {
+        TEST_REQUIRE(retro_fs_write_new_private(&private_link, "attack\n", 7) ==
+                     RETRO_FS_CONFLICT);
+        TEST_REQUIRE(retro_fs_read_text(&private_victim, &text, &length, NULL) ==
+                     RETRO_FS_OK);
+        TEST_REQUIRE(strcmp(text, "victim\n") == 0);
+        free(text);
+        text = NULL;
+        delete_file(&private_link);
+    } else {
+        DWORD link_error = GetLastError();
+        TEST_REQUIRE(link_error == ERROR_PRIVILEGE_NOT_HELD ||
+                     link_error == ERROR_ACCESS_DENIED ||
+                     link_error == ERROR_INVALID_PARAMETER ||
+                     link_error == ERROR_NOT_SUPPORTED);
+    }
+    free(link_native);
+    free(victim_native);
+
     RetroFsPath created = joined(&root, "created.txt");
     RetroFsPath renamed = joined(&root, "renamed.txt");
     RetroFsPath directory = joined(&root, "docs");
@@ -230,6 +311,8 @@ int main(void) {
     TEST_REQUIRE(retro_fs_read_text(&directory, &text, &length, NULL) ==
                  RETRO_FS_UNSUPPORTED);
 
+    delete_file(&private_victim);
+    delete_file(&private_path);
     delete_file(&a);
     delete_file(&b);
     delete_file(&fresh);
@@ -238,6 +321,10 @@ int main(void) {
     delete_file(&renamed);
     delete_directory(&directory);
 
+
+    retro_fs_path_destroy(&private_link);
+    retro_fs_path_destroy(&private_victim);
+    retro_fs_path_destroy(&private_path);
     retro_fs_path_destroy(&missing);
     retro_fs_path_destroy(&directory);
     retro_fs_path_destroy(&renamed);

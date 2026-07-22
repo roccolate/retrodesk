@@ -133,6 +133,9 @@ endfunction()
 add_executable(retrodesk ${RETRODESK_SOURCES})
 target_include_directories(retrodesk PRIVATE ${CMAKE_SOURCE_DIR}/src)
 retrodesk_apply_quality(retrodesk)
+if (WIN32)
+    target_link_libraries(retrodesk PRIVATE advapi32)
+endif()
 
 include(GNUInstallDirs)
 install(TARGETS retrodesk RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -442,6 +445,9 @@ if (ENABLE_TESTS AND BUILD_TESTING)
         src/ui/theme.c
     )
     target_include_directories(desktop_runtime_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    if (WIN32)
+        target_link_libraries(desktop_runtime_test PRIVATE advapi32)
+    endif()
     add_test(NAME desktop_runtime_test COMMAND desktop_runtime_test)
 
     if (WIN32)
@@ -451,6 +457,7 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             src/core/utf8.c
         )
         target_include_directories(storage_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(storage_test PRIVATE advapi32)
         add_test(NAME storage_test COMMAND storage_test)
     elseif (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "DOS")
         add_executable(storage_test
@@ -482,6 +489,9 @@ if (ENABLE_TESTS AND BUILD_TESTING)
             src/ui/theme.c
         )
         target_include_directories(retrocore_event_fixture_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        if (WIN32)
+            target_link_libraries(retrocore_event_fixture_test PRIVATE advapi32)
+        endif()
         target_compile_definitions(retrocore_event_fixture_test PRIVATE
             RETROCORE_SPEC_DIR=${RETROCORE_SPEC_DIR}
         )

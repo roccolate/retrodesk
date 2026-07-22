@@ -2,10 +2,13 @@
 
 #include <fcntl.h>
 #include <stdbool.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "storage/retro_fs.h"
@@ -156,6 +159,114 @@ int main(void) {
     TEST_REQUIRE(retro_fs_write_atomic(&invalid, c1_control, 3,
                                        NULL, NULL) == RETRO_FS_INVALID_TEXT);
 
+
+    char path_private[512];
+    char path_private_link[512];
+    char path_private_victim[512];
+    char path_partial[512];
+    char path_race[512];
+    TEST_REQUIRE(snprintf(path_private, sizeof(path_private),
+                          "%s/private.txt", dir) > 0);
+    TEST_REQUIRE(snprintf(path_private_link, sizeof(path_private_link),
+                          "%s/private-link.txt", dir) > 0);
+    TEST_REQUIRE(snprintf(path_private_victim, sizeof(path_private_victim),
+                          "%s/private-victim.txt", dir) > 0);
+    TEST_REQUIRE(snprintf(path_partial, sizeof(path_partial),
+                          "%s/partial.txt", dir) > 0);
+    TEST_REQUIRE(snprintf(path_race, sizeof(path_race),
+                          "%s/race.txt", dir) > 0);
+
+    RetroFsPath private_path = {0};
+    RetroFsPath private_link = {0};
+    RetroFsPath partial_path = {0};
+    RetroFsPath race_path = {0};
+    TEST_REQUIRE(retro_fs_path_init(&private_path, path_private) == RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_path_init(&private_link, path_private_link) == RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_path_init(&partial_path, path_partial) == RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_path_init(&race_path, path_race) == RETRO_FS_OK);
+
+    mode_t previous_umask = umask(0);
+    TEST_REQUIRE(retro_fs_write_new_private(&private_path, "secret\n", 7) ==
+                 RETRO_FS_OK);
+    (void)umask(previous_umask);
+    struct stat private_metadata;
+    TEST_REQUIRE(stat(path_private, &private_metadata) == 0);
+    TEST_REQUIRE((private_metadata.st_mode & 0777) == 0600);
+    TEST_REQUIRE(retro_fs_write_new_private(&private_path, "replace\n", 8) ==
+                 RETRO_FS_CONFLICT);
+    TEST_REQUIRE(retro_fs_read_text(&private_path, &text, &length, NULL) ==
+                 RETRO_FS_OK);
+    TEST_REQUIRE(strcmp(text, "secret\n") == 0);
+    free(text);
+    text = NULL;
+
+    write_file(path_private_victim, "victim\n");
+    TEST_REQUIRE(symlink(path_private_victim, path_private_link) == 0);
+    TEST_REQUIRE(retro_fs_write_new_private(&private_link, "attack\n", 7) ==
+                 RETRO_FS_CONFLICT);
+    RetroFsPath private_victim = {0};
+    TEST_REQUIRE(retro_fs_path_init(&private_victim, path_private_victim) ==
+                 RETRO_FS_OK);
+    TEST_REQUIRE(retro_fs_read_text(&private_victim, &text, &length, NULL) ==
+                 RETRO_FS_OK);
+    TEST_REQUIRE(strcmp(text, "victim\n") == 0);
+    free(text);
+    text = NULL;
+
+    struct rlimit original_limit;
+    TEST_REQUIRE(getrlimit(RLIMIT_FSIZE, &original_limit) == 0);
+    if (original_limit.rlim_cur == RLIM_INFINITY || original_limit.rlim_cur > 1) {
+        struct rlimit limited = original_limit;
+        limited.rlim_cur = 1;
+        void (*previous_handler)(int) = signal(SIGXFSZ, SIG_IGN);
+        TEST_REQUIRE(previous_handler != SIG_ERR);
+        TEST_REQUIRE(setrlimit(RLIMIT_FSIZE, &limited) == 0);
+        RetroFsError partial_status = retro_fs_write_new_private(
+            &partial_path, "partial\n", 8);
+        TEST_REQUIRE(setrlimit(RLIMIT_FSIZE, &original_limit) == 0);
+        TEST_REQUIRE(signal(SIGXFSZ, previous_handler) != SIG_ERR);
+        TEST_REQUIRE(partial_status != RETRO_FS_OK);
+        TEST_REQUIRE(retro_fs_stat(&partial_path, &version) ==
+                     RETRO_FS_NOT_FOUND);
+    }
+
+    int gate[2];
+    TEST_REQUIRE(pipe(gate) == 0);
+    pid_t first_writer = fork();
+    TEST_REQUIRE(first_writer >= 0);
+    if (first_writer == 0) {
+        char token = 0;
+        (void)close(gate[1]);
+        if (read(gate[0], &token, 1) != 1) _exit(3);
+        RetroFsError status = retro_fs_write_new_private(
+            &race_path, "race\n", 5);
+        _exit(status == RETRO_FS_OK ? 0 :
+              (status == RETRO_FS_CONFLICT ? 2 : 3));
+    }
+    pid_t second_writer = fork();
+    TEST_REQUIRE(second_writer >= 0);
+    if (second_writer == 0) {
+        char token = 0;
+        (void)close(gate[1]);
+        if (read(gate[0], &token, 1) != 1) _exit(3);
+        RetroFsError status = retro_fs_write_new_private(
+            &race_path, "race\n", 5);
+        _exit(status == RETRO_FS_OK ? 0 :
+              (status == RETRO_FS_CONFLICT ? 2 : 3));
+    }
+    (void)close(gate[0]);
+    TEST_REQUIRE(write(gate[1], "xx", 2) == 2);
+    TEST_REQUIRE(close(gate[1]) == 0);
+    int first_status = 0;
+    int second_status = 0;
+    TEST_REQUIRE(waitpid(first_writer, &first_status, 0) == first_writer);
+    TEST_REQUIRE(waitpid(second_writer, &second_status, 0) == second_writer);
+    TEST_REQUIRE(WIFEXITED(first_status) && WIFEXITED(second_status));
+    int first_code = WEXITSTATUS(first_status);
+    int second_code = WEXITSTATUS(second_status);
+    TEST_REQUIRE((first_code == 0 && second_code == 2) ||
+                 (first_code == 2 && second_code == 0));
+
     RetroFsPath created = {0};
     RetroFsPath renamed = {0};
     RetroFsPath directory = {0};
@@ -187,6 +298,12 @@ int main(void) {
     TEST_REQUIRE(version.valid);
     TEST_REQUIRE(version.kind == RETRO_FS_KIND_DIRECTORY);
 
+
+    retro_fs_path_destroy(&race_path);
+    retro_fs_path_destroy(&partial_path);
+    retro_fs_path_destroy(&private_victim);
+    retro_fs_path_destroy(&private_link);
+    retro_fs_path_destroy(&private_path);
     retro_fs_path_destroy(&link_path);
     retro_fs_path_destroy(&invalid);
     retro_fs_path_destroy(&utf8);
@@ -198,6 +315,12 @@ int main(void) {
     retro_fs_path_destroy(&fresh);
     retro_fs_path_destroy(&a);
     retro_fs_path_destroy(&root);
+
+    unlink(path_race);
+    unlink(path_partial);
+    unlink(path_private_link);
+    unlink(path_private_victim);
+    unlink(path_private);
     unlink(path_link);
     unlink(path_a);
     unlink(path_b);

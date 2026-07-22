@@ -7,6 +7,7 @@
 #endif
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <aclapi.h>
 
 #include <limits.h>
 #include <stdio.h>
@@ -51,6 +52,87 @@ static RetroFsError map_win32_error(DWORD error) {
         default:
             return RETRO_FS_IO;
     }
+}
+
+typedef struct RetroPrivateSecurity {
+    HANDLE token;
+    TOKEN_USER *user;
+    PACL acl;
+    SECURITY_DESCRIPTOR descriptor;
+    SECURITY_ATTRIBUTES attributes;
+} RetroPrivateSecurity;
+
+static void private_security_destroy(RetroPrivateSecurity *security) {
+    if (!security) return;
+    if (security->acl) LocalFree(security->acl);
+    free(security->user);
+    if (security->token) CloseHandle(security->token);
+    *security = (RetroPrivateSecurity){0};
+}
+
+static RetroFsError private_security_init(RetroPrivateSecurity *security) {
+    if (!security) return RETRO_FS_INVALID_ARGUMENT;
+    *security = (RetroPrivateSecurity){0};
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &security->token)) {
+        return map_win32_error(GetLastError());
+    }
+
+    DWORD needed = 0;
+    (void)GetTokenInformation(security->token, TokenUser, NULL, 0, &needed);
+    if (needed == 0 || GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        DWORD error = GetLastError();
+        private_security_destroy(security);
+        return map_win32_error(error);
+    }
+    security->user = malloc(needed);
+    if (!security->user) {
+        private_security_destroy(security);
+        return RETRO_FS_OOM;
+    }
+    if (!GetTokenInformation(security->token, TokenUser, security->user,
+                             needed, &needed)) {
+        DWORD error = GetLastError();
+        private_security_destroy(security);
+        return map_win32_error(error);
+    }
+
+    EXPLICIT_ACCESSW access = {0};
+    access.grfAccessPermissions = FILE_ALL_ACCESS;
+    access.grfAccessMode = SET_ACCESS;
+    access.grfInheritance = NO_INHERITANCE;
+    access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    access.Trustee.TrusteeType = TRUSTEE_IS_USER;
+    access.Trustee.ptstrName = (LPWSTR)security->user->User.Sid;
+    DWORD acl_status = SetEntriesInAclW(1, &access, NULL, &security->acl);
+    if (acl_status != ERROR_SUCCESS) {
+        private_security_destroy(security);
+        return map_win32_error(acl_status);
+    }
+    if (!InitializeSecurityDescriptor(&security->descriptor,
+                                      SECURITY_DESCRIPTOR_REVISION) ||
+        !SetSecurityDescriptorDacl(&security->descriptor, TRUE,
+                                   security->acl, FALSE) ||
+        !SetSecurityDescriptorControl(&security->descriptor,
+                                      SE_DACL_PROTECTED,
+                                      SE_DACL_PROTECTED)) {
+        DWORD error = GetLastError();
+        private_security_destroy(security);
+        return map_win32_error(error);
+    }
+    security->attributes.nLength = sizeof(security->attributes);
+    security->attributes.lpSecurityDescriptor = &security->descriptor;
+    security->attributes.bInheritHandle = FALSE;
+    return RETRO_FS_OK;
+}
+
+static void discard_private_handle(HANDLE handle, const wchar_t *path) {
+    if (handle == INVALID_HANDLE_VALUE) return;
+    FILE_DISPOSITION_INFO disposition = {0};
+    disposition.DeleteFile = TRUE;
+    BOOL delete_on_close = SetFileInformationByHandle(
+        handle, FileDispositionInfo, &disposition, sizeof(disposition));
+    (void)CloseHandle(handle);
+    if (!delete_on_close && path) (void)DeleteFileW(path);
 }
 
 static RetroFsError duplicate_utf8(const char *value, char **out) {
@@ -814,6 +896,68 @@ RetroFsError retro_fs_write_atomic(const RetroFsPath *path, const char *data,
         status = retro_fs_stat(path, written);
         if (status != RETRO_FS_OK) *written = (RetroFsVersion){0};
     }
+    return RETRO_FS_OK;
+}
+
+
+RetroFsError retro_fs_write_new_private(const RetroFsPath *path,
+                                        const char *data, size_t length) {
+    if (!path || !path->value || !path->value[0] ||
+        (!data && length != 0)) {
+        return RETRO_FS_INVALID_ARGUMENT;
+    }
+    if (length > RETRO_FS_MAX_TEXT) return RETRO_FS_TOO_LARGE;
+    if (!valid_text_content(data, length)) return RETRO_FS_INVALID_TEXT;
+
+    wchar_t *native = NULL;
+    RetroFsError status = path_to_native(path->value, &native);
+    if (status != RETRO_FS_OK) return status;
+
+    RetroPrivateSecurity security = {0};
+    status = private_security_init(&security);
+    if (status != RETRO_FS_OK) {
+        free(native);
+        return status;
+    }
+    HANDLE handle = CreateFileW(
+        native, GENERIC_WRITE | DELETE, 0, &security.attributes, CREATE_NEW,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH |
+            FILE_FLAG_OPEN_REPARSE_POINT,
+        NULL);
+    private_security_destroy(&security);
+    if (handle == INVALID_HANDLE_VALUE) {
+        DWORD error = GetLastError();
+        free(native);
+        return map_win32_error(error);
+    }
+
+    size_t offset = 0;
+    while (offset < length) {
+        DWORD stored = 0;
+        size_t remaining = length - offset;
+        DWORD wanted = remaining > (size_t)MAXDWORD ? MAXDWORD : (DWORD)remaining;
+        if (!WriteFile(handle, data + offset, wanted, &stored, NULL) ||
+            stored == 0) {
+            DWORD error = GetLastError();
+            discard_private_handle(handle, native);
+            free(native);
+            return error == ERROR_SUCCESS ? RETRO_FS_IO : map_win32_error(error);
+        }
+        offset += (size_t)stored;
+    }
+    if (!FlushFileBuffers(handle)) {
+        DWORD error = GetLastError();
+        discard_private_handle(handle, native);
+        free(native);
+        return map_win32_error(error);
+    }
+    if (!CloseHandle(handle)) {
+        DWORD error = GetLastError();
+        (void)DeleteFileW(native);
+        free(native);
+        return map_win32_error(error);
+    }
+    free(native);
     return RETRO_FS_OK;
 }
 

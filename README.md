@@ -1,116 +1,172 @@
 # RetroDesk
 
-A retro desktop environment for the terminal. Think Windows 3.1 / 95 in your
-console, written in C11 with strict layering, platform abstraction, and a
-documented contract.
+A retro desktop environment for the terminal, written in C11 with explicit
+runtime ownership, platform adapters, a backend-neutral drawing model, and a
+strict automated test matrix.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Architecture: C11 / curses](https://img.shields.io/badge/C-C11%20%2F%20curses-blue.svg)]()
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)]()
 
----
+> Canonical status: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)  
+> Known risks: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
 
-## What Is It
+## What RetroDesk Is
 
-RetroDesk is an experimental terminal desktop runtime in C11. It hosts multiple
-windows, supports curses and ANSI render paths, and now includes a useful
-Linux/POSIX product slice for File Manager and Notepad. It is still pre-alpha:
-release claims remain narrower than the code that compiles in CI.
+RetroDesk is a portable, keyboard-first terminal desktop runtime. It hosts
+multiple applications inside managed windows and keeps input, rendering,
+storage, lifecycle, and platform-specific behavior behind explicit contracts.
 
-It is the C rewrite of [RetroTUI](https://github.com/roccolate/retrotui).
-RetroTUI is used as a behavior reference and risk catalog, not as the
-architecture template.
+It began as a C rewrite of
+[RetroTUI](https://github.com/roccolate/retrotui), but RetroTUI is now treated as
+a behavior reference and risk catalog rather than an architecture template.
+RetroDesk has its own layered runtime, tests, and portability policy.
+
+The project is useful enough to exercise real File Manager and Notepad workflows,
+but it remains **pre-alpha**. No stable release tag exists, and release claims
+require automated and interactive evidence tied to one exact candidate commit.
 
 ## Current State
 
-The runtime is layered around `core`, `platform`, `render`, `wm`, `app`, `apps`,
-`ui`, and `storage`.
+The current `main` includes:
 
-Implemented product workflows include:
+- one Desktop event loop and one frame-flush point;
+- a multi-window manager with focus, z-order, modal routing, close, drag,
+  minimize/restore, maximize/unmaximize, and keyboard move/resize;
+- a themed interactive taskbar and bottom-left Start-menu-style Launcher;
+- XP, Hacker, Amiga, and Win31 desktop-surface treatments;
+- File Manager navigation and non-destructive basic mutations;
+- UTF-8 Notepad editing, selection, clipboard, undo/redo, Find, Word Wrap, save,
+  version conflict handling, and safe dirty close;
+- native storage adapters for POSIX, Win32, and DJGPP/DOS;
+- curses and ANSI render paths plus curses/PDCurses and raw-TTY input paths where
+  supported;
+- optional budgeted app services for future PTY/network/subprocess workloads;
+- strict Linux, Windows, sanitizer, and DOSBox-X development gates.
 
-- an interactive bottom taskbar with Launcher, app state, instance counts, and
-  clock;
-- keyboard-first multi-window focus and move/resize behavior;
-- File Manager navigation, scrolling, hidden-file toggle, refresh, open,
-  rename, new directory, and new file;
-- UTF-8 Notepad editing, selection, shared clipboard, undo/redo, Find, soft Word
-  Wrap, Save, Save As, and safe dirty-document close handling;
-- validated UTF-8 reads and atomic POSIX writes with conflict detection;
-- Diagnostics as a read-only runtime view, not a shell or PTY.
+Two older branches are **not** integrated:
 
-Linux/POSIX remains the complete file-app profile. Windows Debug and Release are
-built and tested in CI for portable runtime behavior, but equivalent File
-Manager/Notepad storage support still requires a native Windows adapter or
-explicit product gating.
+- PR #27: checked collection growth and deterministic `WindowId` exhaustion;
+- PR #24: native responsive Notepad File/Edit/View menu chrome.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining work and
-[docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md) for coding rules.
+Do not treat features from those PRs as part of `main` until they are rebuilt on
+current history and merged.
+
+## Feature Overview
+
+### Desktop and windows
+
+- Focus and z-order management.
+- Capability-gated title-bar drag.
+- `F6` focus cycling.
+- Taskbar minimize/restore.
+- `F8` maximize/unmaximize and title-bar double click.
+- `F9` keyboard move/resize mode with live geometry HUD.
+- Fixed and modal window policy.
+- Lifecycle-aware `Ctrl+W` close.
+- Transactional `Ctrl+Q` shutdown across dirty applications.
+
+### Taskbar and Launcher
+
+- Separate Apps, application, separator, and clock regions.
+- Idle, running, focused, menu-open, and clock visual states.
+- Multiple-instance counts.
+- Responsive full/compact labels.
+- Exact mouse hit regions.
+- Start-menu-style Launcher anchored above the bottom-left taskbar.
+- Keyboard navigation, Home/End, accelerators, and mouse selection.
+
+### Built-in applications
+
+- **File Manager** — directory traversal, scrolling, hidden files, refresh,
+  regular-text open, rename, new directory, and new empty file.
+- **Notepad** — validated UTF-8 editing, display-cell rendering, multiline
+  selection, process-local clipboard, bounded undo/redo, Find, soft Word Wrap,
+  Save/Save As, conflicts, recovery, and Save/Discard/Cancel close.
+- **Diagnostics** — runtime/backend/capability information. It is not a shell or
+  terminal emulator.
+
+### Storage
+
+- **POSIX:** complete native adapter with temporary-file atomic replacement.
+- **Win32:** UTF-8 public API over UTF-16 Win32 paths, Unicode filenames/data,
+  deterministic listing, native identity/version tokens, and Win32 atomic
+  replacement APIs.
+- **DJGPP/DOS:** native reduced adapter with DOS path semantics, ASCII-oriented
+  filenames, validated UTF-8 content, deterministic case-insensitive listing,
+  and backup/restore replacement.
+
+See [docs/STORAGE.md](docs/STORAGE.md) for exact guarantees and limitations.
+
+## Platform Position
+
+| Profile | Current position |
+| --- | --- |
+| Linux + ncurses | Primary development and product profile; pre-alpha |
+| Linux raw TTY + ANSI | Experimental fallback requiring broader manual terminal evidence |
+| Windows + PDCurses | Strict Debug/Release tests and native Win32 storage are integrated; interactive maturity evidence remains incomplete |
+| DOS + DJGPP/PDCurses | Native reduced profile with automated build, storage contract, DOSBox-X smoke, and artifact generation |
+| macOS | Experimental and currently unvalidated |
+
+A successful build is not automatically a release-support claim. See
+[docs/PORTABILITY.md](docs/PORTABILITY.md).
 
 ## Preview
 
 ![RetroDesk Linux/POSIX preview with File Manager](docs/assets/retrodesk-preview.png)
 
-## Features
-
-- **Window manager** — focus, z-order, modal routing, drag, move, resize, and
-  lifecycle-aware close.
-- **Dual render backend** — native curses or ANSI fallback with frame diffing.
-- **Themeable** — XP, Hacker, Amiga, and Win31 themes.
-- **Interactive taskbar** — Apps menu, pinned app entries, focused/running
-  states, instance counts, clock, hit testing, and compact labels.
-- **UI widget library** — UTF-8 text input, selection-aware multi-line buffer,
-  scrollable list, button, dialog, menu bar, progress bar, tabs, and status bar.
-- **File Manager** — keyboard viewport, directory traversal, text-file open,
-  refresh, hidden files, rename, create directory, and create empty file.
-- **Notepad** — UTF-8 editing, selection, clipboard, undo/redo, Find, Word Wrap,
-  atomic save, Save As, and Save/Discard/Cancel close flow.
-- **Storage contract** — bounded directory listing, validated UTF-8 text,
-  exclusive creation, rename, atomic writes, and stale-version detection.
-- **Portable input contract** — curses and raw-TTY event translation, modifier
-  decoding, keyboard-first degradation, and restored terminal state.
+The screenshot may lag current taskbar/Launcher polish; the behavior and status
+documents are authoritative.
 
 ## Build
 
-### Verified development requirements
+### Linux prerequisites
 
-- **Linux** — `ncurses` development headers (`apt install libncurses-dev`).
-- **Compiler** — GCC or Clang with C11 (`-std=c11`).
+```bash
+# Debian / Ubuntu
+sudo apt install build-essential cmake libncurses-dev
 
-Other profiles are documented in [INSTALL.md](INSTALL.md) and
-[docs/PORTABILITY.md](docs/PORTABILITY.md). They are not all equivalent product
-profiles.
+# Fedora
+sudo dnf install gcc cmake ncurses-devel
 
-### Build commands
+# Arch Linux
+sudo pacman -S base-devel cmake ncurses
+```
+
+### Configure and build
 
 ```bash
 git clone https://github.com/roccolate/retrodesk.git
 cd retrodesk
 cmake -S . -B build
-cmake --build build
-```
-
-The repository `Makefile` is a thin CMake wrapper:
-
-```bash
-make                # build via CMake
-make test           # build and run ctest
-make smoke          # interactive PTY smoke test
-make smoke-linux-vc # TERM=linux keyboard-first smoke test
-make smoke-ci       # non-interactive smoke path
-```
-
-## Usage
-
-```bash
-# Run with default theme (XP)
+cmake --build build --parallel
 ./build/retrodesk
+```
 
-# Change theme
+The repository Makefile is a thin CMake wrapper:
+
+```bash
+make                # configure and build
+make test           # Debug tests
+make test-all       # Debug + Release and manifest parity
+make test-sanitize  # ASan/UBSan/leak gate where supported
+make smoke          # interactive PTY smoke
+make smoke-linux-vc # TERM=linux keyboard-first smoke
+make smoke-ci       # non-interactive startup smoke
+```
+
+Windows, DOS, and macOS instructions are in [INSTALL.md](INSTALL.md).
+
+## Run Options
+
+```bash
+# Themes
+./build/retrodesk --theme=xp
 ./build/retrodesk --theme=hacker
 ./build/retrodesk --theme=amiga
 ./build/retrodesk --theme=win31
 
-# Choose backend
+# Rendering/input profiles
 ./build/retrodesk --render-backend=curses
 ./build/retrodesk --render-backend=ansi
 ./build/retrodesk --input-backend=curses
@@ -118,161 +174,139 @@ make smoke-ci       # non-interactive smoke path
 
 # Diagnostics
 ./build/retrodesk --bench-startup
+./build/retrodesk --diagnose
 ./build/retrodesk --help
 ```
 
-## Essential Hotkeys
+Backend combinations are platform-validated. Unsupported combinations fail
+explicitly instead of silently selecting a partial implementation.
+
+## Essential Desktop Controls
 
 | Key | Action |
 | --- | --- |
-| `F1` or `F10` | Open the Launcher |
-| `F6` | Focus the next window |
-| `F9` | Enter move/resize mode |
+| `F1` | Open the Launcher |
+| `F10` | Open the Launcher, or close it when focused |
+| `F6` | Focus the next eligible window |
+| `F8` | Maximize or restore the active ordinary window |
+| `F9` | Enter keyboard move mode |
 | `Ctrl+W` | Request close of the active app window |
-| `Ctrl+Q` | Quit RetroDesk |
+| `Ctrl+Q` | Begin coordinated shutdown |
 
-In move/resize mode, arrow keys apply the operation, `Tab` switches between move
-and resize, and `Esc` exits the mode.
+Inside `F9` mode:
 
-Application-specific shortcuts are documented in
+- arrows move or resize;
+- `Tab` switches between MOVE and RESIZE;
+- `Enter`, `F9`, or `Esc` finish;
+- a themed HUD shows mode, geometry, and available controls.
+
+The complete input contract is in
 [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md).
 
-## Taskbar
+## Taskbar Behavior
 
-The bottom status widget acts as an interactive taskbar:
+The bottom row is a themed taskbar rather than a textual diagnostic legend.
+Depending on width, it renders full or compact controls for:
 
 ```text
-[Apps] [Files*] [Notepad:2.] [Diag ]                         19:42:33
+Apps | Files | Notepad x2 | Diag                         19:42:33
 ```
 
-`*` marks the focused app, `.` marks a running background app, and `:N` shows
-multiple instances. Clicking an entry launches, focuses, or cycles the app.
+- Clicking Apps toggles the Launcher.
+- Clicking a closed app launches it.
+- Clicking a running background app focuses it.
+- Clicking the focused app minimizes its active window.
+- Clicking a minimized app restores, focuses, and raises it.
+- Multiple instances cycle deterministically.
 
-## Project Structure
+The current catalog is fixed to Files, Notepad, and Diagnostics. A general
+overflow model is still pending.
+
+## Architecture at a Glance
 
 ```text
 src/
-├── main.c                 # Entry point
-├── core/
-│   ├── cli.c              # Command-line parsing
-│   ├── clipboard.c        # Desktop-owned validated UTF-8 clipboard
-│   ├── desktop.c          # Desktop runtime, Launcher, taskbar integration
-│   ├── key_chord.c        # Portable key constants/chords
-│   ├── utf8.c             # UTF-8 decoding, validation, and cell width
-│   └── event.h            # Normalized key/mouse events and modifiers
-├── platform/
-│   ├── platform.c         # Platform abstraction
-│   ├── platform_curses.c  # ncurses/PDCurses backend
-│   ├── platform_tty_raw.c # Raw TTY + ANSI input
-│   └── tty_decoder.c      # Escape sequence and modifier decoder
-├── render/
-│   ├── render.c           # Backend dispatcher
-│   └── ansi_renderer.c    # ANSI renderer with frame diff
-├── wm/
-│   └── window_manager.c   # Window ownership, focus, z-order, move/resize
-├── app/
-│   └── app_runtime.c      # App lifecycle and registry
-├── ui/
-│   ├── text_input.c       # UTF-8 single-line input
-│   ├── text_buffer.c      # UTF-8 multi-line editor core
-│   ├── scroll_list.c      # Scrollable list widget
-│   ├── statusbar.c        # Status bar and interactive taskbar view
-│   └── theme.c            # Theme system
-├── storage/
-│   ├── retro_fs.h         # File-app storage contract
-│   └── retro_fs_posix.c   # Active POSIX adapter
-└── apps/
-    ├── filemanager_app.c  # File Manager
-    ├── notepad_app.c      # Notepad
-    └── terminal_app.c     # Diagnostics, not a shell
+├── main.c                 entry point and CLI result handling
+├── core/                  Desktop lifecycle, services, clipboard, UTF-8 helpers
+├── platform/              curses/PDCurses and raw-TTY normalized input
+├── render/                backend-neutral draw lists, curses and ANSI rendering
+├── wm/                    windows, focus, z-order, drag, minimize/maximize state
+├── app/                   descriptor registry and hosted app lifecycle
+├── apps/                  File Manager, Notepad, Diagnostics
+├── ui/                    widgets, themes, taskbar, Launcher, desktop bridges
+└── storage/               portable contract plus POSIX, Win32, and DJGPP adapters
 ```
 
-## Development
+Important architectural invariants:
 
-### Add a widget
+- no nested app/modal event loops;
+- apps and widgets append draw commands but never flush;
+- backend-native types stay inside platform/render adapters;
+- file apps use `retro_fs` rather than native filesystem calls;
+- platform differences are capabilities or adapters, not hidden partial behavior;
+- ownership and cleanup are explicit.
 
-1. Create `src/ui/mywidget.{h,c}`.
-2. Follow the lifecycle and draw-list patterns in existing widgets.
-3. Add the source to `CMakeLists.txt` and, when applicable, the DJGPP manifest.
-4. Add an always-active test under `tests/`.
-5. Build warning-clean with strict flags and run the relevant test matrix.
-
-### Coding standards
-
-See [docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md). Highlights:
-
-- C11 with `-Wall -Wextra -Wpedantic -Werror`.
-- Null-safe and bounds-safe interfaces.
-- Explicit ownership and paired cleanup.
-- No backend-native types in public domain headers.
-- No nested modal loops.
-- Tests required for behavior changes.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Testing
+
+The repository validates behavior with always-active test oracles; it does not
+use release-disabled `assert()` as the sole oracle.
 
 ```bash
 make check-test-oracles
 make test
 make test-all
+make test-sanitize
 make smoke-ci
 ```
 
-Unit and integration tests run without `initscr()`. Interactive terminal behavior
-still requires PTY smoke testing before a release claim.
+Current automated development coverage includes Linux static analysis,
+Debug/Release tests, sanitizers, manifest comparison, Windows Debug/Release,
+pinned DJGPP build, native DOS storage contract, DOSBox-X application smoke, and
+DOS artifact generation.
+
+Interactive visual/input acceptance is still required for release claims. See
+[docs/TESTING.md](docs/TESTING.md).
 
 ## Current Limitations
 
-- Complete filesystem-backed workflows are POSIX-only.
-- File Manager does not yet provide delete/trash, copy, move, recursive
-  operations, previews, bookmarks, or dual-pane mode.
-- Notepad does not yet provide Replace, system clipboard integration, rich text,
-  syntax highlighting, multiple encodings, or very-large-file editing.
-- Find preserves accents and does not perform Unicode normalization.
+- No stable release tag or exact candidate evidence bundle.
+- No taskbar overflow surface for a future larger app catalog.
+- Desktop integration remains concentrated and uses temporary private bridge
+  macros/state that should be replaced by explicit per-instance controllers.
+- Checked collection growth and deterministic `WindowId` exhaustion are proposed
+  in stale PR #27, not integrated.
+- Native responsive Notepad menu chrome is proposed in stale PR #24, not
+  integrated.
+- File Manager lacks destructive/recursive operations, copy/move, previews,
+  bookmarks, and dual-pane mode.
+- Notepad lacks Replace, native system clipboard, mouse editing, normalization,
+  syntax highlighting, multiple encodings, and a large-file strategy.
 - Diagnostics is not a terminal emulator.
-- Minimize, maximize, Settings, plugins, and session persistence are absent.
-- ANSI/raw input and full Unicode terminal-width behavior need broader manual
-  terminal validation.
+- Windows and DOS have native storage but still need broader interactive product
+  evidence; macOS is unvalidated.
+- Full Unicode normalization and terminal-width behavior are intentionally not
+  claimed.
 
-## Troubleshooting
-
-### Build fails with `curses.h not found`
-
-```bash
-sudo apt install libncurses-dev   # Debian / Ubuntu
-brew install ncurses             # macOS
-make clean && make
-```
-
-### Unsupported terminal or odd rendering
-
-```bash
-./build/retrodesk --render-backend=ansi
-echo $TERM
-TERM=xterm ./build/retrodesk
-```
-
-### Mouse not working
-
-```bash
-./build/retrodesk --input-backend=tty
-```
-
-Mouse behavior is capability-gated. The Linux virtual console remains
-keyboard-first when reliable pointer behavior is unavailable.
+The maintained risk register is
+[docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
 
 ## Documentation
 
-- [docs/INDEX.md](docs/INDEX.md) — recommended reading order.
-- [docs/BUILTIN_APPS.md](docs/BUILTIN_APPS.md) — File Manager, Notepad, and
-  Diagnostics behavior.
-- [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md) — complete input and
-  taskbar reference.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/STORAGE.md](docs/STORAGE.md)
-- [docs/TESTING.md](docs/TESTING.md)
-- [docs/PORTABILITY.md](docs/PORTABILITY.md)
-- [docs/ROADMAP.md](docs/ROADMAP.md)
-- [docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md)
+Recommended entry points:
+
+- [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) — exact current state.
+- [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) — active risks and limitations.
+- [docs/INDEX.md](docs/INDEX.md) — complete reading order.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — runtime contracts.
+- [docs/BUILTIN_APPS.md](docs/BUILTIN_APPS.md) — application behavior.
+- [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md) — input reference.
+- [docs/STORAGE.md](docs/STORAGE.md) — filesystem guarantees.
+- [docs/PORTABILITY.md](docs/PORTABILITY.md) — platform claims.
+- [docs/TESTING.md](docs/TESTING.md) — validation strategy.
+- [docs/ROADMAP.md](docs/ROADMAP.md) — next work.
+- [docs/RELEASE_0.1_CHECKLIST.md](docs/RELEASE_0.1_CHECKLIST.md) — release gate.
 
 ## License
 
@@ -280,8 +314,9 @@ MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-- [RetroTUI](https://github.com/roccolate/retrotui) — behavior reference for the
-  C rewrite.
-- ArmoniOS — source of the taskbar behavior model reused under the project’s MIT
+- [RetroTUI](https://github.com/roccolate/retrotui) — behavior reference and risk
+  catalog.
+- ArmoniOS — source of the taskbar behavior model reused under the project's MIT
   licensing decision.
-- The contributors who audited the runtime and built the widget/test foundation.
+- Contributors and reviewers who hardened the runtime, platform adapters, apps,
+  tests, and documentation.
